@@ -1,0 +1,35 @@
+{
+    "meta_columns": [
+        "Model",
+        "Concatenate"
+    ],
+    "column_mapping": {
+        "Model": "car_name",
+        "Concatenate": "full_variant_name"
+    },
+    "price_components": [
+        "Ex Showroom Price",
+        "Insurance (with Depreciation Cover)‡",
+        "Registration",
+        "Hyundai Genuine Acc Kit",
+        "TCS*",
+        "FasTag⁰",
+        "Ext Warr†",
+        "Shield Of Trust®"
+    ],
+    "discount_components": [
+        "Cash Discount \nAll Customers",
+        "Additional Discount from DEALER",
+        "Extra Kitty On TR cases",
+        "Additional For\n POI /Corporate Customers",
+        "Additional For Exchange Customers",
+        "Additional For Scrappage* Customers",
+        "Additional For Upward Sales# Customers"
+    ],
+    "accessories": [
+        { "name": "Seat Cover", "listed_price": 8000 },
+        { "name": "Floor Mat", "listed_price": 2500 },
+        { "name": "Mud Flap", "listed_price": 1200 },
+        { "name": "Body Cover", "listed_price": 1800 }
+]
+}

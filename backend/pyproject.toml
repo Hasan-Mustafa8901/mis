@@ -1,0 +1,16 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.135.2",
+    "pandas>=3.0.2",
+    "sqlmodel>=0.0.37",
+]
+
+[dependency-groups]
+dev = [
+    "rich>=14.3.3",
+]
