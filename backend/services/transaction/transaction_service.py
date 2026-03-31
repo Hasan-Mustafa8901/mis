@@ -434,7 +434,7 @@ class TransactionService:
         total_price = sum(actual_amounts.get(name, 0) for name in price_names)
         print(f"apply_funds_reconciliation : {total_price=}\n")
 
-        total_discount = audit_result["actual_discount"]
+        total_discount = audit_result["pricelist_discount"]
         print(f"apply_funds_reconciliation : {total_discount=}\n")
 
         net_receivable = total_price - total_discount
@@ -488,8 +488,8 @@ class TransactionService:
         # ─────────────────────────────
         # 2. UPDATE TOTALS
         # ─────────────────────────────
-        transaction.total_actual_discount = audit_result["actual_discount"]
-        transaction.total_allowed_discount = audit_result["allowed_discount"]
+        transaction.total_actual_discount = audit_result["pricelist_discount"]
+        transaction.total_allowed_discount = audit_result["invoice_discount"]
         transaction.total_excess_discount = audit_result["excess_discount"]
         transaction.status = audit_result["status"]
         print(f"update_transaction_with_audit : {transaction.status=}\n")
@@ -509,8 +509,8 @@ class TransactionService:
         # ─────────────────────────────
         # 4. UPDATE ITEMS FROM AUDIT
         # ─────────────────────────────
-        transaction.total_actual_discount = audit_result["actual_discount"]
-        transaction.total_allowed_discount = audit_result["allowed_discount"]
+        transaction.total_actual_discount = audit_result["pricelist_discount"]
+        transaction.total_allowed_discount = audit_result["invoice_discount"]
         transaction.total_excess_discount = audit_result["excess_discount"]
         transaction.status = audit_result["status"]
 
