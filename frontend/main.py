@@ -14,6 +14,7 @@ import httpx
 from datetime import date
 from nicegui import ui
 
+
 # ══════════════════════════════════════════════════════════════
 # CONFIG & SHARED CONSTANTS
 # ══════════════════════════════════════════════════════════════
@@ -457,8 +458,9 @@ async def dashboard_page() -> None:
 
     # ── aggregate dashboard stats ─────────────────────────
     total_entries = len(transactions)
-    total_discount = sum(t.get("total_discount", 0) or 0 for t in transactions)
-    total_excess = sum(t.get("excess_discount", 0) or 0 for t in transactions)
+    total_discount = sum((t.get("total_allowed_discount", 0)) for t in transactions)
+
+    total_excess = sum((t.get("total_excess_discount", 0)) for t in transactions)
 
     with ui.element("div").classes("page-wrap"):
         # ── Dashboard stat cards ───────────────────────────
