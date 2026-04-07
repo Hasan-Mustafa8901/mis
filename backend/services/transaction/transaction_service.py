@@ -488,8 +488,8 @@ class TransactionService:
         # ─────────────────────────────
         # 2. UPDATE TOTALS
         # ─────────────────────────────
-        transaction.total_actual_discount = audit_result["pricelist_discount"]
-        transaction.total_allowed_discount = audit_result["invoice_discount"]
+        transaction.total_actual_discount = audit_result["invoice_discount"]
+        transaction.total_allowed_discount = audit_result["pricelist_discount"]
         transaction.total_excess_discount = audit_result["excess_discount"]
         transaction.status = audit_result["status"]
         print(f"update_transaction_with_audit : {transaction.status=}\n")
@@ -509,8 +509,8 @@ class TransactionService:
         # ─────────────────────────────
         # 4. UPDATE ITEMS FROM AUDIT
         # ─────────────────────────────
-        transaction.total_actual_discount = audit_result["pricelist_discount"]
-        transaction.total_allowed_discount = audit_result["invoice_discount"]
+        transaction.total_actual_discount = audit_result["invoice_discount"]
+        transaction.total_allowed_discount = audit_result["pricelist_discount"]
         transaction.total_excess_discount = audit_result["excess_discount"]
         transaction.status = audit_result["status"]
 

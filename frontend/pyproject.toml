@@ -6,5 +6,11 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.28.1",
-    "nicegui>=3.9.0",
+    "nicegui[highcharts]>=3.9.0",
+]
+
+[dependency-groups]
+dev = [
+    "selenium>=4.41.0",
+    "webdriver-manager>=4.0.2",
 ]

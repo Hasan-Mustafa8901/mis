@@ -27,7 +27,11 @@ def reset_db():
 def seed_masters():
     with Session(engine) as session:
         # 1. Add Outlets
-        outlet = Outlet(name="Main Showroom", city="Delhi", state="Delhi")
+        outlet = Outlet(name="HN Showroom", city="Lucknow", state="Uttar Pradesh")
+        session.add(outlet)
+        session.commit()
+        session.refresh(outlet)
+        outlet = Outlet(name="RR Showroom", city="Lucknow", state="Uttar Pradesh")
         session.add(outlet)
         session.commit()
         session.refresh(outlet)
@@ -50,8 +54,15 @@ def seed_masters():
             session.add(tl)
 
         # 3. Add Banks
-        bank = Bank(name="HDFC Bank")
-        session.add(bank)
+        banks = [
+            "HDFC Bank",
+            "ICICI Bank",
+            "State Bank of India",
+            "Axis Bank",
+            "Kotak Mahindra Bank",
+        ]
+        for bank_name in banks:
+            session.add(Bank(name=bank_name))
 
         # 4. Add Discount Components (Initial set based on column_config.json)
         components = [
@@ -59,9 +70,9 @@ def seed_masters():
             ("Ex Showroom Price", "price", "price_charged", 1),
             ("Insurance (With Depreciation Cover)", "price", "price_charged", 2),
             ("Registration", "price", "price_charged", 3),
-            ("Hyundai Genuine Acc Kit", "price", "price_charged", 4),
+            ("Genuine Acc Kit", "price", "price_charged", 4),
             ("TCS", "price", "price_charged", 5),
-            ("Fastag", "price", "price_charged", 6),
+            ("FasTag", "price", "price_charged", 6),
             ("Ext Warr", "price", "price_charged", 7),
             ("Shield Of Trust", "price", "price_charged", 8),
             # Discount Components
@@ -81,6 +92,12 @@ def seed_masters():
                 "discount",
                 "discount_allowed",
                 7,
+            ),
+            (
+                "Maximum benefit due to price increase",
+                "discount",
+                "discount_allowed",
+                8,
             ),
         ]
         for name, type_, section, order in components:
