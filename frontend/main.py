@@ -145,6 +145,93 @@ async def fetch_reference_data() -> dict:
 
 
 # ══════════════════════════════════════════════════════════════
+# GLOBAL WIDGETS & INP HELPER
+# ══════════════════════════════════════════════════════════════
+def format_num_inr(num_val):
+    """Format float into standard accounting formatting, e.g. 1,000.00"""
+    return f"{float(num_val):,.2f}"
+
+
+def get_eval_math(val_str):
+    import re
+
+    val_clean = str(val_str).replace(",", "").strip()
+    if not val_clean:
+        return None
+    if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", val_clean):
+        return eval(val_clean)
+    return None
+
+
+def parsed_val(ui_input_element) -> float | int:
+    """Safe evaluation helper to get the numeric underlying float value from accounting_input or ui.number"""
+    if not ui_input_element:
+        return 0
+    v = getattr(ui_input_element, "value", None)
+    if not v:
+        return 0
+    try:
+        if isinstance(v, (int, float)):
+            return float(v)
+        v_str = str(v).replace(",", "").strip()
+        import re
+
+        if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
+            res = float(eval(v_str))
+            return int(res) if res.is_integer() else res
+        return float(v_str) if "." in v_str else int(v_str)
+    except Exception:
+        return 0
+
+
+def accounting_input(label_text: str, placeholder: str = "", container_classes: str = "w-full") -> ui.input:
+    with ui.column().classes(f"gap-0 {container_classes} mb-1"):
+        inp = ui.input(label=label_text, placeholder=placeholder).props(
+            "outlined dense"
+        ).classes("w-full")
+        hint = ui.label("").classes(
+            "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2"
+        )
+
+    def handle_eval(e):
+        val = e.value
+        if not val:
+            hint.set_text("")
+            return
+        try:
+            res = get_eval_math(val)
+            if res is not None:
+                res_str = format_num_inr(res)
+                val_clean = str(val).replace(",", "").strip()
+                if val_clean != str(res) and not val_clean.replace(".", "").isdigit():
+                    hint.set_text(f"= {res_str}")
+                else:
+                    hint.set_text("")
+                hint.classes(replace="text-red-500", add="text-green-600")
+                return
+        except Exception:
+            pass
+        hint.set_text("Invalid math")
+        hint.classes(replace="text-green-600", add="text-red-500")
+
+    def handle_blur(e=None):
+        if not inp.value:
+            return
+        try:
+            res = get_eval_math(inp.value)
+            if res is not None:
+                inp.set_value(format_num_inr(res))
+                hint.set_text("")
+        except Exception:
+            pass
+
+    inp.on_value_change(handle_eval)
+    inp.on("blur", handle_blur)
+    inp.on("keyup.enter", handle_blur)
+    return inp
+
+
+# ══════════════════════════════════════════════════════════════
 # TOPBAR  (shared component for both pages)
 # ══════════════════════════════════════════════════════════════
 def render_topbar(page_label: str) -> None:
@@ -317,7 +404,7 @@ def render_table(transactions):
         if is_num:
             col[":valueFormatter"] = (
                 "params.value != null"
-                " ? '₹' + Number(params.value).toLocaleString('en-IN')"
+                " ? '₹' + Number(params.value).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})"
                 " : '—'"
             )
             col["type"] = "numericColumn"
@@ -678,8 +765,12 @@ async def dashboard_page() -> None:
             def compute_analytics(txns: list) -> dict:
                 """Compute all dashboard metrics from a transaction list."""
                 total_entries = len(txns)
+                # print(txns[0])
                 total_discount = sum(
                     t.get("total_allowed_discount", 0) or 0 for t in txns
+                )
+                total_actual_discount = sum(
+                    t.get("total_actual_discount", 0) or 0 for t in txns
                 )
                 total_excess = sum(t.get("total_excess_discount", 0) or 0 for t in txns)
                 excess_cases = sum(1 for t in txns if t.get("status") == "Excess")
@@ -810,10 +901,10 @@ async def dashboard_page() -> None:
                             "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#6366F1] shadow-sm rounded-xl"
                         ):
                             ui.label("📋").classes(
-                                "absolute right-4 top-4 text-[30px] opacity-10 select-none"
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
                             )
-                            ui.label("Total Transactions").classes(
-                                "text-[9.5px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                            ui.label("Total Deliveries").classes(
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(str(a["total_entries"])).classes(
                                 "text-[24px] font-bold text-gray-900 leading-none mb-1.5 mono"
@@ -825,16 +916,31 @@ async def dashboard_page() -> None:
                                 ui.label(f"{a['excess_cases']} Excess").classes(
                                     "bg-red-50 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded"
                                 )
-
+                        # # KPI Card: Total Allowed Discount
+                        # with ui.card().classes(
+                        #     "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#10B981] shadow-sm rounded-xl"
+                        # ):
+                        #     ui.label("💸").classes(
+                        #         "absolute right-4 top-4 text-[30px] opacity-25 select-none"
+                        #     )
+                        #     ui.label("Total Discount Given").classes(
+                        #         "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                        #     )
+                        #     ui.label(f"₹{a['total_actual_discount']:,.0f}").classes(
+                        #         "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
+                        #     )
+                        #     ui.label(
+                        #         f"Avg ₹{a['avg_discount']:,.0f} / transaction"
+                        #     ).classes("text-[11px] text-gray-400")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
                             "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#10B981] shadow-sm rounded-xl"
                         ):
                             ui.label("💸").classes(
-                                "absolute right-4 top-4 text-[30px] opacity-10 select-none"
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
                             )
-                            ui.label("Total Allowed Discount").classes(
-                                "text-[9.5px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                            ui.label("Total Allowable Discount").classes(
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(f"₹{a['total_discount']:,.0f}").classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
@@ -848,10 +954,10 @@ async def dashboard_page() -> None:
                             f"relative overflow-hidden p-4.5 px-5 bg-white border-t-4 shadow-sm rounded-xl border-[{excess_color}]"
                         ):
                             ui.label("⚠️").classes(
-                                "absolute right-4 top-4 text-[30px] opacity-10 select-none"
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
                             )
                             ui.label("Total Excess Discount").classes(
-                                "text-[9.5px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(f"₹{a['total_excess']:,.0f}").classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
@@ -1467,8 +1573,8 @@ class FormState:
         self.discount_listed_labels: dict[str, ui.label] = {}
 
         # Component inputs
-        self.price_inputs: dict[str, ui.number] = {}
-        self.discount_inputs: dict[str, ui.number] = {}
+        self.price_inputs: dict[str, ui.input] = {}
+        self.discount_inputs: dict[str, ui.input] = {}
         self.discount_rows: dict[str, ui.row] = {}
 
         # Checkboxes
@@ -1478,32 +1584,32 @@ class FormState:
         # Invoice Section
         self.invoice_number: ui.input | None = None
         self.invoice_date: ui.input | None = None
-        self.invoice_ex_showroom: ui.number | None = None
-        self.invoice_discount: ui.number | None = None
-        self.invoice_taxable_value: ui.number | None = None
-        self.invoice_cgst: ui.number | None = None
-        self.invoice_sgst: ui.number | None = None
-        self.invoice_igst: ui.number | None = None
-        self.invoice_cess: ui.number | None = None
-        self.invoice_total: ui.number | None = None
+        self.invoice_ex_showroom: ui.input | None = None
+        self.invoice_discount: ui.input | None = None
+        self.invoice_taxable_value: ui.input | None = None
+        self.invoice_cgst: ui.input | None = None
+        self.invoice_sgst: ui.input | None = None
+        self.invoice_igst: ui.input | None = None
+        self.invoice_cess: ui.input | None = None
+        self.invoice_total: ui.input | None = None
 
         # Payment Section
-        self.payment_cash: ui.number | None = None
-        self.payment_bank: ui.number | None = None
-        self.payment_finance: ui.number | None = None
-        self.payment_exchange: ui.number | None = None
+        self.payment_cash: ui.input | None = None
+        self.payment_bank: ui.input | None = None
+        self.payment_finance: ui.input | None = None
+        self.payment_exchange: ui.input | None = None
 
         # Live calc labels
         self.lbl_discount: ui.label | None = None
         self.lbl_excess: ui.label | None = None
 
     @property
-    def all_component_inputs(self) -> dict[str, ui.number]:
+    def all_component_inputs(self) -> dict[str, ui.input]:
         return {**self.price_inputs, **self.discount_inputs}
 
     @property
     def live_discount(self) -> int:
-        return sum(int(inp.value or 0) for inp in self.discount_inputs.values())
+        return sum(int(parsed_val(inp)) for inp in self.discount_inputs.values())
 
     def is_valid(self) -> tuple[bool, str]:
         def _val(f):
@@ -1637,13 +1743,13 @@ def build_form_sec_vehicle(state: FormState) -> None:
             )
             state.vin_no = (
                 ui.input(label="VIN Number *")
-                .classes("w-full")
+                .classes("w-full uppercase")
                 .props("outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.engine_no = (
                 ui.input(label="Engine Number *")
-                .classes("w-full")
+                .classes("w-full uppercase")
                 .props("outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
@@ -1655,7 +1761,7 @@ def build_form_sec_vehicle(state: FormState) -> None:
             )
             state.vehicle_regn_no = (
                 ui.input(label="Vehicle Regn Number")
-                .classes("w-full")
+                .classes("w-full uppercase")
                 .props("outlined dense")
             )
             state.regn_date = (
@@ -1713,9 +1819,9 @@ def build_form_sec_customer(state: FormState) -> None:
                 .props("outlined dense")
             )
             state.cust_address = (
-                ui.input(label="Address *")
+                ui.textarea(label="Address *")
                 .classes("w-full")
-                .props("outlined dense")
+                .props("outlined dense rows=2")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.cust_city = (
@@ -1748,12 +1854,14 @@ def build_form_sec_customer(state: FormState) -> None:
                         )
                     },
                 )
-                .classes("w-full")
+                .classes("w-full uppercase")
                 .props("outlined dense")
                 .on(
                     "update:model-value",
                     lambda e: (
-                        state.cust_pan.set_value(e.value.upper()) if e.value else None,
+                        state.cust_pan.set_value(e.args.upper())
+                        if isinstance(e.args, str)
+                        else None,
                         _fs_revalidate(state),
                     ),
                 )
@@ -1850,12 +1958,8 @@ def build_form_sec_prices(state: FormState) -> None:
 
                         # Input
                         inp = (
-                            ui.number(
-                                placeholder="Enter Charged Price", format="%.0f", min=0
-                            )
-                            .classes("w-60 num-input")
-                            .props("outlined dense")
-                        )
+                            accounting_input("", placeholder="Enter Charged Price", container_classes="w-60")
+                        ).props("dense")
 
                         state.price_inputs[name] = inp
                         state.price_match_toggles[name] = toggle
@@ -1863,7 +1967,7 @@ def build_form_sec_prices(state: FormState) -> None:
                         def on_toggle(_, name=name, inp=inp, toggle=toggle):
                             if toggle.value:
                                 val = state.listed_prices.get(name, 0)
-                                inp.set_value(val)
+                                inp.set_value(format_num_inr(val))
                                 inp.set_enabled(False)  # disable input
                             else:
                                 inp.set_enabled(True)  # re-enable input
@@ -1871,7 +1975,7 @@ def build_form_sec_prices(state: FormState) -> None:
                             _fs_update_live(state)
 
                         toggle.on("update:model-value", on_toggle)
-                        inp.on("update:model-value", lambda: _fs_update_live(state))
+                        inp.on_value_change(lambda _: _fs_update_live(state))
 
         else:
             ui.label("No price components — check /components endpoint.").classes(
@@ -1902,11 +2006,9 @@ def build_form_sec_prices(state: FormState) -> None:
                         )
 
                         inp = (
-                            ui.number(placeholder="₹", format="%.0f", min=0)
-                            .classes("w-60 num-input")
-                            .props("outlined dense")
-                            .on("update:model-value", lambda: _fs_update_live(state))
-                        )
+                            accounting_input("", placeholder="₹", container_classes="w-60")
+                        ).props("dense")
+                        inp.on_value_change(lambda _: _fs_update_live(state))
 
                         state.discount_inputs[name] = inp
                         state.discount_match_toggles[name] = toggle
@@ -1915,7 +2017,7 @@ def build_form_sec_prices(state: FormState) -> None:
                         def on_toggle(_, name=name, inp=inp, toggle=toggle):
                             if toggle.value:
                                 val = state.listed_prices.get(name, 0)
-                                inp.set_value(val)
+                                inp.set_value(format_num_inr(val))
                                 inp.set_enabled(False)  # disable input
                             else:
                                 inp.set_enabled(True)  # re-enable input
@@ -2003,11 +2105,7 @@ def build_form_sec_accessories(state: FormState) -> None:
             )
 
             # ── Charged Input ─────────────────────────
-            state.acc_charged = (
-                ui.number(label="Actual Charged (₹)", format="%.0f", min=0)
-                .classes("w-full num-input")
-                .props("outlined dense")
-            )
+            state.acc_charged = accounting_input(label_text="Actual Charged (₹)")
 
 
 def build_form_sec_delivery(state: FormState) -> None:
@@ -2046,30 +2144,30 @@ def build_form_sec_audit(state: FormState) -> None:
 
 def build_form_sec_invoice(state: FormState) -> None:
     def calculate_taxes():
-        taxable = state.invoice_taxable_value.value or 0
+        taxable = parsed_val(state.invoice_taxable_value)
         cgst = taxable * 0.09
         sgst = taxable * 0.09
-        state.invoice_cgst.set_value(cgst)
-        state.invoice_sgst.set_value(sgst)
+        state.invoice_cgst.set_value(format_num_inr(cgst))
+        state.invoice_sgst.set_value(format_num_inr(sgst))
         calculate_total()
 
     def calculate_total():
-        taxable = state.invoice_taxable_value.value or 0
-        cgst = state.invoice_cgst.value or 0
-        sgst = state.invoice_sgst.value or 0
+        taxable = parsed_val(state.invoice_taxable_value)
+        cgst = parsed_val(state.invoice_cgst)
+        sgst = parsed_val(state.invoice_sgst)
         igst = (
-            state.invoice_igst.value or 0
+            parsed_val(state.invoice_igst)
             if state.igst_toggle and state.igst_toggle.value
             else 0
         )
         cess = (
-            state.invoice_cess.value or 0
+            parsed_val(state.invoice_cess)
             if state.cess_toggle and state.cess_toggle.value
             else 0
         )
 
         total = taxable + cgst + sgst + igst + cess
-        state.invoice_total.set_value(int(total))
+        state.invoice_total.set_value(format_num_inr(total))
 
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
@@ -2079,65 +2177,48 @@ def build_form_sec_invoice(state: FormState) -> None:
             ui.label("Invoice Details").classes("text-[15px] font-bold text-gray-900")
 
         with ui.grid(columns=3).classes("w-full gap-5"):
-            state.invoice_number = ui.input(label="Invoice Number").props(
-                "outlined dense"
+            state.invoice_number = (
+                ui.input(label="Invoice Number")
+                .classes("uppercase")
+                .props("outlined dense")
             )
             state.invoice_date = ui.input(label="Invoice Date").props(
                 'outlined dense type="date"'
             )
 
-            state.invoice_ex_showroom = ui.number(
-                label="Ex-Showroom Price (From Price List)",
-                format="%.0f",
-            ).props("outlined dense readonly")
-            state.invoice_ex_showroom.on(
-                "update:model-value", lambda: _fs_update_live(state)
+            state.invoice_ex_showroom = accounting_input(
+                label_text="Ex-Showroom Price (From Price List)"
             )
+            state.invoice_ex_showroom.props("readonly")
+            state.invoice_ex_showroom.on_value_change(lambda _: _fs_update_live(state))
 
-            state.invoice_discount = ui.number(label="Discount", format="%.0f").props(
-                "outlined dense"
-            )
-            state.invoice_discount.on(
-                "update:model-value", lambda: _fs_update_live(state)
-            )
+            state.invoice_discount = accounting_input(label_text="Discount")
+            state.invoice_discount.on_value_change(lambda _: _fs_update_live(state))
 
-            state.invoice_taxable_value = ui.number(
-                label="Taxable Value", format="%.0f"
-            ).props("outlined dense")
-            state.invoice_taxable_value.on(
-                "update:model-value",
+            state.invoice_taxable_value = accounting_input(label_text="Taxable Value")
+            state.invoice_taxable_value.on_value_change(
                 lambda _: (
                     calculate_taxes(),
                     calculate_total(),
                     _fs_update_live(state),
-                ),
+                )
             )
 
-            state.invoice_cgst = ui.number(label="CGST", format="%.0f").props(
-                "outlined dense"
-            )
-            state.invoice_cgst.on("update:model-value", calculate_total)
+            state.invoice_cgst = accounting_input(label_text="CGST")
+            state.invoice_cgst.on_value_change(lambda _: calculate_total())
 
-            state.invoice_sgst = ui.number(label="SGST", format="%.0f").props(
-                "outlined dense"
-            )
-            state.invoice_sgst.on("update:model-value", calculate_total)
+            state.invoice_sgst = accounting_input(label_text="SGST")
+            state.invoice_sgst.on_value_change(lambda _: calculate_total())
 
             state.igst_toggle = ui.switch("Apply IGST").props("dense")
-            state.invoice_igst = ui.number(label="IGST", format="%.0f").props(
-                "outlined dense"
-            )
-            state.invoice_igst.on("update:model-value", calculate_total)
+            state.invoice_igst = accounting_input(label_text="IGST")
+            state.invoice_igst.on_value_change(lambda _: calculate_total())
 
             state.cess_toggle = ui.switch("Apply CESS").props("dense")
-            state.invoice_cess = ui.number(label="CESS", format="%.0f").props(
-                "outlined dense"
-            )
-            state.invoice_cess.on("update:model-value", calculate_total)
+            state.invoice_cess = accounting_input(label_text="CESS")
+            state.invoice_cess.on_value_change(lambda _: calculate_total())
 
-            state.invoice_total = ui.number(
-                label="Total Invoice Value", format="%.0f"
-            ).props("outlined dense")
+            state.invoice_total = accounting_input(label_text="Total Invoice Value")
 
         def toggle_taxes():
             state.invoice_igst.set_enabled(state.igst_toggle.value)
@@ -2162,22 +2243,11 @@ def build_form_sec_payment(state: FormState) -> None:
             ui.label("💳").classes("text-[20px] select-none")
             ui.label("Payment Received").classes("text-[15px] font-bold text-gray-900")
 
-        with ui.grid(columns=4).classes("w-full gap-2"):
-            state.payment_cash = ui.number(label="Cash Payment", format="%.0f").props(
-                "outlined dense"
-            )
-
-            state.payment_bank = ui.number(label="Bank Payment", format="%.0f").props(
-                "outlined dense"
-            )
-
-            state.payment_finance = ui.number(label="Finance", format="%.0f").props(
-                "outlined dense"
-            )
-
-            state.payment_exchange = ui.number(label="Exchange", format="%.0f").props(
-                "outlined dense"
-            )
+        with ui.grid(columns=4).classes("w-full gap-2 items-start"):
+            state.payment_cash = accounting_input("Cash Payment")
+            state.payment_bank = accounting_input("Bank Payment")
+            state.payment_finance = accounting_input("Finance")
+            state.payment_exchange = accounting_input("Exchange")
 
         # ── Dynamic Enable/Disable ─────────────
         def toggle_fields():
@@ -2364,27 +2434,34 @@ def _fs_update_live(state: FormState) -> None:
         found_ex = state.price_inputs["Ex-Showroom Price"]
 
     if state.invoice_ex_showroom and found_ex:
-        price_val = int(found_ex.value or 0)
-        if state.invoice_ex_showroom.value != price_val:
-            state.invoice_ex_showroom.set_value(price_val)
+        price_val = int(parsed_val(found_ex))
+        if parsed_val(state.invoice_ex_showroom) != price_val:
+            state.invoice_ex_showroom.set_value(format_num_inr(price_val))
 
     # 2. Sync Total Discount from Components -> Invoice Discount field
     total_comp_discount = state.live_discount
-    if state.invoice_discount and state.invoice_discount.value != total_comp_discount:
-        state.invoice_discount.set_value(total_comp_discount)
+    if (
+        state.invoice_discount
+        and parsed_val(state.invoice_discount) != total_comp_discount
+    ):
+        state.invoice_discount.set_value(format_num_inr(total_comp_discount))
 
     # 3. Read current values for labels
     inv_discount = (
-        int(state.invoice_discount.value or 0) if state.invoice_discount else 0
+        int(parsed_val(state.invoice_discount)) if state.invoice_discount else 0
     )
+    # print(f"inv_discount: {inv_discount}")
     ex_showroom = (
-        int(state.invoice_ex_showroom.value or 0) if state.invoice_ex_showroom else 0
+        int(parsed_val(state.invoice_ex_showroom)) if state.invoice_ex_showroom else 0
     )
+    # print(f"ex_showroom: {ex_showroom}")
 
     # 4. Update Labels
     state.lbl_discount.set_text(f"₹{inv_discount:,.0f}")
+    # print(f"lbl_discount: {state.lbl_discount.text}")
 
     excess = ex_showroom - inv_discount
+    # print(f"excess: {excess}")
     if state.lbl_excess:
         state.lbl_excess.set_text(f"₹{excess:,.0f}")
         # Color coding: Green if positive net price, Red if negative/zero
@@ -2446,11 +2523,12 @@ def _fs_update_visibility(state: FormState) -> None:
         return bool(cb and cb.value)
 
     def norm(s: str) -> str:
-        return re.sub(r'[^a-zA-Z0-9]', '', s).lower()
+        return re.sub(r"[^a-zA-Z0-9]", "", s).lower()
 
     visibility_rules = {
         norm("Extra Kitty On TR cases"): is_checked("tr_case"),
-        norm("Additional For POI /Corporate Customers"): is_checked("corporate") or is_checked("govt_employee"),
+        norm("Additional For POI /Corporate Customers"): is_checked("corporate")
+        or is_checked("govt_employee"),
         norm("Additional For Exchange Customers"): is_checked("exchange"),
         norm("Additional For Scrappage Customers"): is_checked("scrap"),
         norm("Additional For Upward Sales Customers"): is_checked("upgrade"),
@@ -2465,7 +2543,7 @@ def _fs_update_visibility(state: FormState) -> None:
             if not visible:
                 inp = state.discount_inputs.get(name)
                 toggle = state.discount_match_toggles.get(name)
-                
+
                 if toggle and toggle.value:
                     toggle.set_value(False)
 
@@ -2498,25 +2576,28 @@ def _fs_clear_prices(state: FormState) -> None:
 
 
 def _fs_show_error(state: FormState, msg: str) -> None:
-    if state.error_banner:
-        state.error_banner.set_content(f'<div class="error-banner">⚠ &nbsp;{msg}</div>')
+    if state.error_banner and state.error_msg_label:
+        state.error_msg_label.set_text(msg)
+        state.error_banner.set_visibility(True)
 
 
 def _fs_clear_error(state: FormState) -> None:
-    if state.error_banner:
-        state.error_banner.set_content("")
+    if state.error_banner and state.error_msg_label:
+        state.error_banner.set_visibility(False)
+        state.error_msg_label.set_text("")
 
 
 # ══════════════════════════════════════════════════════════════
 # SUBMIT HANDLER
 # ══════════════════════════════════════════════════════════════
 async def _fs_handle_submit(state: FormState) -> None:
-    if not state.error_banner:
+    if not state.error_banner or not state.error_msg_label:
         return
 
     valid, msg = state.is_valid()
     if not valid:
-        state.error_banner.set_content(msg)
+        state.error_msg_label.set_text(msg)
+        state.error_banner.set_visibility(True)
         return
 
     payload = build_payload(state)
@@ -2526,7 +2607,8 @@ async def _fs_handle_submit(state: FormState) -> None:
         ui.notify("✅ Transaction saved", color="green")
         ui.navigate.to("/")
     except Exception as e:
-        state.error_banner.set_content(str(e))
+        state.error_msg_label.set_text(str(e))
+        state.error_banner.set_visibility(True)
 
 
 def build_payload(state: FormState) -> dict:
@@ -2534,7 +2616,20 @@ def build_payload(state: FormState) -> dict:
         return x.value if x else None
 
     def intval(x):
-        return int(x.value or 0) if x else 0
+        if not x:
+            return 0
+        v = x.value
+        if not v:
+            return 0
+        try:
+            v_str = str(v).replace(",", "").strip()
+            import re
+
+            if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
+                return int(float(eval(v_str)))
+            return int(float(v_str))
+        except Exception:
+            return 0
 
     # ─────────────────────────────
     # COMPONENTS (CRITICAL)
