@@ -9,6 +9,7 @@ from db.models import (
     Employee,
     TransactionAccessoryLink,
     Accessory,
+    User,
 )
 from services.discount.discount_service import DiscountService
 from datetime import datetime
@@ -137,6 +138,7 @@ class TransactionService:
             variant_id=payload["variant_id"],
             outlet_id=payload["outlet_id"],
             sales_executive_id=payload["sales_executive_id"],
+            created_by=payload.get("user_id", ""),
             booking_date=payload["booking_date"],
             # VEHICLE
             customer_file_number=payload.get("customer_file_number"),
@@ -217,6 +219,11 @@ class TransactionService:
         This allows full fidelity to the original Excel MIS template.
         """
         transaction = session.get(Transaction, transaction_id)
+        user = (
+            session.get(User, transaction.created_by)
+            if transaction.created_by
+            else None
+        )
         if not transaction:
             return {}
 
@@ -224,6 +231,7 @@ class TransactionService:
         data = {
             "id": transaction.id,
             "status": transaction.status,
+            "created_by": user.name if user else None,
             "created_at": transaction.created_at.isoformat()
             if transaction.created_at
             else None,
@@ -363,50 +371,83 @@ class TransactionService:
 
     @staticmethod
     def apply_funds_reconciliation(
-        session: Session, transaction, payload, audit_result
+        session: Session,
+        transaction: Transaction,
+        payload: Dict[str, Any],
+        # audit_result: Dict[str, Any],
     ):
 
         from sqlmodel import select
-        from db.models import DiscountComponent
+        from db.models import TransactionItem
 
-        actual_amounts = payload.get("actual_amounts", {})
-        # ── Price Components
-        components = session.exec(select(DiscountComponent)).all()
-        price_names = {c.name for c in components if c.type == "price"}
+        items = session.exec(
+            select(TransactionItem).where(
+                TransactionItem.transaction_id == transaction.id
+            )
+        ).all()
 
-        total_price = sum(actual_amounts.get(name, 0) for name in price_names)
+        ON_ROAD_COMPONENTS = {
+            "ex showroom price",
+            "insurance",
+            "registration",
+            "hyundai genuine acc kit",
+            "tcs",
+            "fastag",
+            "ext warr",
+            "shield of trust",
+        }
+        total_on_road = 0.0
 
-        total_discount = audit_result["pricelist_discount"]
+        for item in items:
+            if item.component_name.lower().strip() in ON_ROAD_COMPONENTS:
+                total_on_road += item.actual_amount
 
-        net_receivable = total_price - total_discount
+        # accessory_total = sum(
+        #     acc.listed_price for acc in transaction.accessories
+        # )
+        # total_on_road += accessory_total
 
-        # ── Payments
-        payment = payload.get("payment_details", {})
+        DISCOUNT_COMPONENTS = {
+            "cash discount all customers",
+            "additional discount from dealer",
+            "extra kitty on tr cases",
+            "additional for poi /corporate customers",
+            "additional for exchange customers",
+            "additional for scrappage customers",
+            "additional for upward sales customers",
+        }
+
+        total_discount = 0.0
+
+        for item in items:
+            if item.component_name.lower().strip() in DISCOUNT_COMPONENTS:
+                total_discount += item.actual_amount
+
+        total_receivable = total_on_road - total_discount
+
+        payments = payload.get("payment_details", {})
 
         total_received = (
-            (payment.get("cash") or 0)
-            + (payment.get("bank") or 0)
-            + (payment.get("finance") or 0)
-            + (payment.get("exchange") or 0)
+            payments.get("bank", 0)
+            + payments.get("cash", 0)
+            + payments("finance", 0)
+            + payments.get("exchange", 0)
         )
 
-        balance = net_receivable - total_received
+        balance = total_received - total_receivable
 
-        # ── STORE
-        transaction.total_price_charged = total_price
-        transaction.total_discount = total_discount
-        transaction.net_receivable = net_receivable
-
-        transaction.total_received = total_received
-        transaction.balance_amount = balance
-
-        # ── STATUS
-        if abs(balance) < 1:
-            transaction.payment_status = "Matched"
+        if balance == 0:
+            payment_status = "Settled"
         elif balance > 0:
-            transaction.payment_status = "Short"
+            payment_status = "Excess"
         else:
-            transaction.payment_status = "Excess"
+            payment_status = "Short"
+
+        transaction.balance = balance
+        transaction.payment_status = payment_status
+
+        session.add(transaction)
+        session.flush()
 
     @staticmethod
     def update_transaction_with_audit(

@@ -2,19 +2,26 @@ from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
-from zoneinfo import ZoneInfo
 from services.utils import get_ist_now
+from enum import Enum
+
+
+class UserRole(str, Enum):
+    AUDITOR = "auditor"
+    ADMIN = "admin"
+    CLIENT = "client"
 
 
 ## User Table
 class User(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    password_hash: str = Field(index=True)
-    role: str = Field(index=True)  # "auditor", "manager/audit", "client"
-    is_active: bool = True
+    name: str = Field(index=True, unique=True)
+    password_hash: str
+    role: UserRole = Field(default=UserRole.AUDITOR, index=True)
+
+    is_active: bool = Field(default=True)
+    is_logged_in: bool = Field(default=False)
     created_at: datetime = Field(default_factory=get_ist_now)
-    is_logged_in: bool = False
 
 
 # =========================
@@ -199,6 +206,7 @@ class Transaction(SQLModel, table=True):
     balance_amount: float = 0.0
     payment_status: Optional[str] = None
 
+    created_by: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=get_ist_now)
 
     # Relationships
