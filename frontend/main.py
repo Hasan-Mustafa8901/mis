@@ -8,7 +8,7 @@ Backend: FastAPI at http://localhost:8000
 """
 
 import re
-
+import json
 import httpx
 from datetime import date
 from collections import defaultdict
@@ -184,11 +184,15 @@ def parsed_val(ui_input_element) -> float | int:
         return 0
 
 
-def accounting_input(label_text: str, placeholder: str = "", container_classes: str = "w-full") -> ui.input:
+def accounting_input(
+    label_text: str, placeholder: str = "", container_classes: str = "w-full"
+) -> ui.input:
     with ui.column().classes(f"gap-0 {container_classes} mb-1"):
-        inp = ui.input(label=label_text, placeholder=placeholder).props(
-            "outlined dense"
-        ).classes("w-full")
+        inp = (
+            ui.input(label=label_text, placeholder=placeholder)
+            .props("outlined dense")
+            .classes("w-full")
+        )
         hint = ui.label("").classes(
             "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2"
         )
@@ -290,8 +294,9 @@ def build_ordered_columns(row: dict):
     ordered += [k for k in keys if "_actual" in k and "Discount" in k]
 
     # 4. Allowed + diff (keep near actual)
-    ordered += [k for k in keys if "_allowed" in k]
-    ordered += [k for k in keys if "_diff" in k]
+    # ordered += [k for k in keys if "_allowed" in k]
+    # ordered += [k for k in keys if "_diff" in k]
+    # ordered += [k for k in keys if "net_" in k]
 
     # 5. Conditions
     ordered += pick("cond_")
@@ -309,6 +314,9 @@ def build_ordered_columns(row: dict):
 
     # 9. Totals
     ordered += [
+        "net_receivable",
+        "total_received",
+        "balance_amount",
         "total_actual_discount",
         "total_allowed_discount",
         "total_excess_discount",
@@ -363,8 +371,8 @@ def render_table(transactions):
             tok in k
             for tok in (
                 "_actual",
-                "_allowed",
-                "_diff",
+                # "_allowed",
+                # "_diff",
                 "total_",
                 "price",
                 "amount",
@@ -372,6 +380,7 @@ def render_table(transactions):
                 "excess",
                 "payment",
                 "invoice_",
+                "net_",
             )
         )
     }
@@ -765,7 +774,6 @@ async def dashboard_page() -> None:
             def compute_analytics(txns: list) -> dict:
                 """Compute all dashboard metrics from a transaction list."""
                 total_entries = len(txns)
-                # print(txns[0])
                 total_discount = sum(
                     t.get("total_allowed_discount", 0) or 0 for t in txns
                 )
@@ -780,6 +788,9 @@ async def dashboard_page() -> None:
                 )
                 avg_discount = (
                     round(total_discount / total_entries) if total_entries else 0
+                )
+                avg_actual_discount = (
+                    round(total_actual_discount / total_entries) if total_entries else 0
                 )
 
                 # Time series (month-on-month)
@@ -823,6 +834,7 @@ async def dashboard_page() -> None:
                     )
                     outlet = t.get("outlet_name") or t.get("outlet") or "Unknown"
                     vname = t.get("variant_name") or t.get("variant") or "Unknown"
+                    actual_discount = t.get("total_actual_discount", 0) or 0
                     ex = t.get("total_excess_discount", 0) or 0
                     disc = t.get("total_allowed_discount", 0) or 0
 
@@ -848,11 +860,13 @@ async def dashboard_page() -> None:
                 return dict(
                     total_entries=total_entries,
                     total_discount=total_discount,
+                    total_actual_discount=total_actual_discount,
                     total_excess=total_excess,
                     excess_cases=excess_cases,
                     ok_cases=ok_cases,
                     compliance_pct=compliance_pct,
                     avg_discount=avg_discount,
+                    avg_actual_discount=avg_actual_discount,
                     ts_labels=ts_lbl,
                     ts_discount=ts_disc,
                     ts_excess=ts_exc,
@@ -900,7 +914,7 @@ async def dashboard_page() -> None:
                         with ui.card().classes(
                             "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#6366F1] shadow-sm rounded-xl"
                         ):
-                            ui.label("📋").classes(
+                            ui.label("🚗").classes(
                                 "absolute right-4 top-4 text-[30px] opacity-25 select-none"
                             )
                             ui.label("Total Deliveries").classes(
@@ -916,22 +930,22 @@ async def dashboard_page() -> None:
                                 ui.label(f"{a['excess_cases']} Excess").classes(
                                     "bg-red-50 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded"
                                 )
-                        # # KPI Card: Total Allowed Discount
-                        # with ui.card().classes(
-                        #     "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#10B981] shadow-sm rounded-xl"
-                        # ):
-                        #     ui.label("💸").classes(
-                        #         "absolute right-4 top-4 text-[30px] opacity-25 select-none"
-                        #     )
-                        #     ui.label("Total Discount Given").classes(
-                        #         "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
-                        #     )
-                        #     ui.label(f"₹{a['total_actual_discount']:,.0f}").classes(
-                        #         "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
-                        #     )
-                        #     ui.label(
-                        #         f"Avg ₹{a['avg_discount']:,.0f} / transaction"
-                        #     ).classes("text-[11px] text-gray-400")
+                        # KPI Card: Total Allowed Discount
+                        with ui.card().classes(
+                            "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#10B981] shadow-sm rounded-xl"
+                        ):
+                            ui.label("💸").classes(
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
+                            )
+                            ui.label("Total Discount Given").classes(
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                            )
+                            ui.label(f"₹{a['total_actual_discount']:,.0f}").classes(
+                                "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
+                            )
+                            ui.label(
+                                f"Avg ₹{a['avg_actual_discount']:,.0f} / transaction"
+                            ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
                             "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#10B981] shadow-sm rounded-xl"
@@ -947,7 +961,7 @@ async def dashboard_page() -> None:
                             )
                             ui.label(
                                 f"Avg ₹{a['avg_discount']:,.0f} / transaction"
-                            ).classes("text-[11px] text-gray-400")
+                            ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
                         with ui.card().classes(
@@ -973,7 +987,7 @@ async def dashboard_page() -> None:
                             # KPI Card: Compliance Rate
                             ui.label(
                                 f"{a['ok_cases']} of {a['total_entries']} transactions OK"
-                            ).classes("text-[11px] text-gray-400")
+                            ).classes("text-[14px] text-gray-600")
 
                     # ── SALES ANALYTICS ────────────────────────────────
                     with ui.row().classes("w-full items-center gap-2 mb-3 mt-6"):
@@ -1600,6 +1614,7 @@ class FormState:
         self.payment_exchange: ui.input | None = None
 
         # Live calc labels
+        self.lbl_allowed: ui.label | None = None
         self.lbl_discount: ui.label | None = None
         self.lbl_excess: ui.label | None = None
 
@@ -1958,7 +1973,11 @@ def build_form_sec_prices(state: FormState) -> None:
 
                         # Input
                         inp = (
-                            accounting_input("", placeholder="Enter Charged Price", container_classes="w-60")
+                            accounting_input(
+                                "",
+                                placeholder="Enter Charged Price",
+                                container_classes="w-60",
+                            )
                         ).props("dense")
 
                         state.price_inputs[name] = inp
@@ -2006,7 +2025,9 @@ def build_form_sec_prices(state: FormState) -> None:
                         )
 
                         inp = (
-                            accounting_input("", placeholder="₹", container_classes="w-60")
+                            accounting_input(
+                                "", placeholder="₹", container_classes="w-60"
+                            )
                         ).props("dense")
                         inp.on_value_change(lambda _: _fs_update_live(state))
 
@@ -2279,13 +2300,21 @@ def build_form_sec_live_bar(state: FormState) -> None:
         ui.element("div").classes("w-[1px] h-4 bg-white/10")
 
         with ui.row().classes("items-center gap-2"):
-            ui.label("Total Discount:").classes("text-[11px] text-white/50")
+            ui.label("Allowable Discount (As per Price List):").classes(
+                "text-[11px] text-white/50"
+            )
+            state.lbl_allowed = ui.label("₹0").classes(
+                "text-[16px] font-bold text-white mono"
+            )
+
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Discount Given:").classes("text-[11px] text-white/50")
             state.lbl_discount = ui.label("₹0").classes(
                 "text-[16px] font-bold text-white mono"
             )
 
         with ui.row().classes("items-center gap-2"):
-            ui.label("Excess (after save):").classes("text-[11px] text-white/50")
+            ui.label("Excess Discount:").classes("text-[11px] text-white/50")
             state.lbl_excess = ui.label("—").classes(
                 "text-[16px] font-bold text-white/30 mono"
             )
@@ -2447,25 +2476,32 @@ def _fs_update_live(state: FormState) -> None:
         state.invoice_discount.set_value(format_num_inr(total_comp_discount))
 
     # 3. Read current values for labels
+    allowed_discount = 0
+    if hasattr(state, "listed_prices") and state.listed_prices:
+        for name, inp in state.discount_inputs.items():
+            row = state.discount_rows.get(name)
+            if row is None or row.visible:
+                val = state.listed_prices.get(name)
+                if val is not None:
+                    allowed_discount += int(val)
+
     inv_discount = (
         int(parsed_val(state.invoice_discount)) if state.invoice_discount else 0
     )
-    # print(f"inv_discount: {inv_discount}")
-    ex_showroom = (
-        int(parsed_val(state.invoice_ex_showroom)) if state.invoice_ex_showroom else 0
-    )
-    # print(f"ex_showroom: {ex_showroom}")
 
     # 4. Update Labels
-    state.lbl_discount.set_text(f"₹{inv_discount:,.0f}")
-    # print(f"lbl_discount: {state.lbl_discount.text}")
+    if hasattr(state, "lbl_allowed") and state.lbl_allowed:
+        state.lbl_allowed.set_text(f"₹{allowed_discount:,.0f}")
 
-    excess = ex_showroom - inv_discount
-    # print(f"excess: {excess}")
+    if state.lbl_discount:
+        state.lbl_discount.set_text(f"₹{inv_discount:,.0f}")
+
+    # Excess Discount = Actual Discount - Allowed Discount
+    excess = inv_discount - allowed_discount
     if state.lbl_excess:
         state.lbl_excess.set_text(f"₹{excess:,.0f}")
-        # Color coding: Green if positive net price, Red if negative/zero
-        if excess > 0:
+        # Color coding: Green if actual <= allowed (good), Red if actual > allowed (bad)
+        if excess <= 0:
             state.lbl_excess.style("color:#6EE7B7")  # Soft green
         else:
             state.lbl_excess.style("color:#FCA5A5")  # Soft red

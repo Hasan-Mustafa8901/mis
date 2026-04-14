@@ -2,13 +2,24 @@ from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
+from zoneinfo import ZoneInfo
+from services.utils import get_ist_now
+
+
+## User Table
+class User(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    password_hash: str = Field(index=True)
+    role: str = Field(index=True)  # "auditor", "manager/audit", "client"
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=get_ist_now)
+    is_logged_in: bool = False
 
 
 # =========================
 #  CORE MASTERS
 # =========================
-
-
 class Customer(SQLModel, table=True):
     # TODO: Make aaadhar_number and pan_number unique in the DB to prevent duplicates. Handle gracefully in API.
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -21,7 +32,7 @@ class Customer(SQLModel, table=True):
     address: Optional[str] = None
     city: Optional[str] = None
     pin_code: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_ist_now)
 
     transactions: List["Transaction"] = Relationship(back_populates="customer")
 
@@ -29,7 +40,7 @@ class Customer(SQLModel, table=True):
 class Car(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_ist_now)
 
     variants: List["Variant"] = Relationship(back_populates="car")
 
@@ -44,7 +55,7 @@ class Variant(SQLModel, table=True):
     transmission: Optional[str] = None
     model_year: Optional[int] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_ist_now)
 
     car: Optional[Car] = Relationship(back_populates="variants")
     price_list_items: List["PriceListItem"] = Relationship(back_populates="variant")
@@ -55,17 +66,16 @@ class Outlet(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     city: Optional[str] = None
     state: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_ist_now)
 
 
+# This table is for client employees data only.
 class Employee(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
-    employee_code: Optional[str] = Field(default=None, index=True)
     outlet_id: int = Field(foreign_key="outlet.id")
     designation: Optional[str] = None  # e.g., "Sales Executive", "Team Leader"
-    is_active: bool = True
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_ist_now)
 
 
 class Bank(SQLModel, table=True):
@@ -94,7 +104,7 @@ class PriceList(SQLModel, table=True):
     valid_from: date
     valid_to: Optional[date] = None
     name: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_ist_now)
 
     items: List["PriceListItem"] = Relationship(back_populates="price_list")
 
@@ -189,7 +199,7 @@ class Transaction(SQLModel, table=True):
     balance_amount: float = 0.0
     payment_status: Optional[str] = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=get_ist_now)
 
     # Relationships
     customer: Customer = Relationship(back_populates="transactions")
@@ -212,3 +222,44 @@ class TransactionItem(SQLModel, table=True):
     difference: float = 0.0
 
     transaction: Optional[Transaction] = Relationship(back_populates="items")
+
+
+class EditRequest(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    # ─────────────────────────────
+    # RELATIONS
+    # ─────────────────────────────
+    transaction_id: int = Field(foreign_key="transaction.id", index=True)
+
+    requested_by: Optional[int] = Field(
+        foreign_key="user.id"
+    )  # TODO: Remove this make it mandatory.
+    reviewed_by: Optional[int] = Field(default=None, foreign_key="user.id")
+
+    # ─────────────────────────────
+    # TIMESTAMPS
+    # ─────────────────────────────
+    requested_at: datetime = Field(default_factory=get_ist_now)
+    reviewed_at: Optional[datetime] = None
+
+    # ─────────────────────────────
+    # CHANGE DETAILS
+    # ─────────────────────────────
+    field: str = Field(index=True)  # e.g. "insurance", "registration", "cash_discount"
+
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+
+    # ─────────────────────────────
+    # REVIEW / WORKFLOW
+    # ─────────────────────────────
+    status: str = Field(default="pending", description="pending | approved | rejected")
+
+    remarks: Optional[str] = None
+    rejection_reason: Optional[str] = None
+
+    # ─────────────────────────────
+    # RELATIONSHIPS (optional but useful)
+    # ─────────────────────────────
+    transaction: Optional["Transaction"] = Relationship()

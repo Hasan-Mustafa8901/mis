@@ -220,7 +220,7 @@ class DiscountService:
         print(f"calculate_discount : Excess discount: {excess_discount=}\n")
 
         # 5. Status
-        status = "Excess" if excess_discount > 0 else "UnderLimit"
+        status = "Excess Discount" if excess_discount > 0 else "No Excess Discount"
         print(f"calculate_discount : Status: {status=}\n")
 
         return {

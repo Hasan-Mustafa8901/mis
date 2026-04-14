@@ -1,5 +1,4 @@
 from sqlmodel import Session, select
-from rich import print
 from typing import Dict, Any, List, Optional
 from db.models import (
     Transaction,
@@ -16,7 +15,6 @@ from datetime import datetime
 
 
 def normalize_conditions_delivery_checks(payload: dict) -> dict:
-    print("normalize_conditions_delivery_checks :  function called\n")
     payload["conditions"] = {
         k: bool(v) for k, v in payload.get("conditions", {}).items()
     }
@@ -27,8 +25,6 @@ def normalize_conditions_delivery_checks(payload: dict) -> dict:
 
 
 def convert_date_fields(payload: dict, fields: List[str]) -> dict:
-    print("convert date fields : function called")
-
     for field in fields:
         if isinstance(payload.get(field), str):
             payload[field] = datetime.strptime(payload[field], "%Y-%m-%d").date()
@@ -47,29 +43,12 @@ class TransactionService:
         missing = [f for f in required if not payload.get(f)]
         if missing or not isinstance(payload.get("actual_amounts"), dict):
             raise ValueError(f"Missing fields: {', '.join(missing)}")
-        print(
-            f"create_full_transaction : {payload.get('conditions', {})=}\n{payload.get('delivery_checks', {})=}\n"
-        )
-
-        print(
-            "create_full_transaction : Creating full transaction with payload:",
-            payload,
-            "\n",
-        )
 
         # Normalize (convert to bool) for conditions and delivery checks to ensure consistent data types for logic processing. The API layer can also handle this, but we ensure it here for safety.)
         payload = normalize_conditions_delivery_checks(payload)
 
-        print("create_full_transaction : Payload after normalization", payload, "\n")
-
         # Convert dates (converts the dates from string to date objects, which is required for DB and logic processing. The API layer can also handle this, but we ensure it here for safety.)
         payload = convert_date_fields(payload, ["booking_date", "registration_date"])
-
-        print(
-            "create_full_transaction : Payload after date format conversion",
-            payload,
-            "\n",
-        )
 
         # Accessories variance
         # TODO: Check this part.
@@ -80,23 +59,11 @@ class TransactionService:
             acc["variance"] = charged - allowed
             payload["accessories_details"] = acc
 
-        print(
-            "create_full_transaction : Payload after accessories variance",
-            payload,
-            "\n",
-        )
-
         # ─────────────────────────────
         # STEP 1: RAW SAVE
         # Save all data as-is without any logic applied. This ensures we have a complete record of the original input for audit and debugging purposes.
         # ─────────────────────────────
         transaction = TransactionService.create_transaction_raw(session, payload)
-        print(
-            "create_full_transaction : Payload and transaction creation after create_transaction_raw",
-            payload,
-            transaction,
-            "\n",
-        )
 
         # ─────────────────────────────
         # STEP 2: AUDIT
@@ -109,12 +76,6 @@ class TransactionService:
             payload.get("actual_amounts", {}),
             transaction.conditions,
         )
-        print(
-            "create_full_transaction : Payload and audit results after calculate_audit",
-            payload,
-            audit_result,
-            "\n",
-        )
 
         # ─────────────────────────────
         # STEP 3: APPLY AUDIT
@@ -124,22 +85,11 @@ class TransactionService:
                 session, transaction.id, audit_result
             )
 
-        print(
-            "create_full_transaction : Payload  after update_transaction_with_audit",
-            payload,
-            transaction,
-            "\n",
-        )
         # ─────────────────────────────
         # STEP 4: FUNDS RECONCILIATION
         # ─────────────────────────────
         TransactionService.apply_funds_reconciliation(
             session, transaction, payload, audit_result
-        )
-        print(
-            "create_full_transaction : Payload  after update_transaction_with_audit",
-            audit_result,
-            "\n",
         )
 
         session.commit()
@@ -160,9 +110,6 @@ class TransactionService:
         It also links the accessories and creates transaction items with actual amounts.
         It does not perform any logic or calculations, it just saves the raw data as-is.
         """
-        print(
-            "create_transaction_raw : Creating transaction with payload:", payload, "\n"
-        )
         # ─────────────────────────────
         # 1. CUSTOMER (CREATE ALWAYS)
         # Create customer object saves customer in the DB.
@@ -179,7 +126,6 @@ class TransactionService:
             city=cust_data.get("city"),
             pin_code=cust_data.get("pin_code"),
         )
-        print("create_transaction_raw : saves customer details in Db:", customer, "\n")
         session.add(customer)
         session.flush()  # get ID
 
@@ -208,7 +154,6 @@ class TransactionService:
             exchange_details=payload.get("exchange_details", {}),
             audit_info=payload.get("audit_info", {}),
         )
-        print("create_transaction_raw : Creating Transaction", transaction, "\n")
         session.add(transaction)
         session.flush()
         # ─────────────────────────────
@@ -233,9 +178,6 @@ class TransactionService:
                     accessory_id=acc_id,
                 )
                 session.add(link)
-            print(
-                f"create_transaction_raw : Linked accessories with IDs {accessory_ids} to transaction {transaction.id}\n"
-            )
         # ─────────────────────────────
         # 3. COMPONENT ITEMS (CRITICAL)
         # ─────────────────────────────
@@ -260,12 +202,10 @@ class TransactionService:
                 allowed_amount=0,  # filled later
                 difference=0,  # filled later
             )
-            print("create_transaction_raw : Creating item", item, "\n")
             session.add(item)
 
         session.commit()
         session.refresh(transaction)
-        print(f"create_transaction_raw : This is the transaction {transaction}")
         return transaction
 
     @staticmethod
@@ -392,6 +332,13 @@ class TransactionService:
                 )
 
         data["accessories"] = accessories_data
+        data.update(
+            {
+                "net_receivable": transaction.net_receivable,
+                "total_received": transaction.total_received,
+                "balance_amount": transaction.balance_amount,
+            }
+        )
 
         # 8. Totals
         data.update(
@@ -423,22 +370,15 @@ class TransactionService:
         from db.models import DiscountComponent
 
         actual_amounts = payload.get("actual_amounts", {})
-        print("apply_funds_reconciliation : actual amounts", actual_amounts, "\n")
-
         # ── Price Components
         components = session.exec(select(DiscountComponent)).all()
         price_names = {c.name for c in components if c.type == "price"}
 
-        print(f"apply_funds_reconciliation : {price_names=}\n")
-
         total_price = sum(actual_amounts.get(name, 0) for name in price_names)
-        print(f"apply_funds_reconciliation : {total_price=}\n")
 
         total_discount = audit_result["pricelist_discount"]
-        print(f"apply_funds_reconciliation : {total_discount=}\n")
 
         net_receivable = total_price - total_discount
-        print(f"apply_funds_reconciliation : {net_receivable=}\n")
 
         # ── Payments
         payment = payload.get("payment_details", {})
@@ -449,10 +389,8 @@ class TransactionService:
             + (payment.get("finance") or 0)
             + (payment.get("exchange") or 0)
         )
-        print(f"apply_funds_reconciliation : {total_received=}\n")
 
         balance = net_receivable - total_received
-        print(f"apply_funds_reconciliation : {balance=}\n")
 
         # ── STORE
         transaction.total_price_charged = total_price
@@ -492,7 +430,6 @@ class TransactionService:
         transaction.total_allowed_discount = audit_result["pricelist_discount"]
         transaction.total_excess_discount = audit_result["excess_discount"]
         transaction.status = audit_result["status"]
-        print(f"update_transaction_with_audit : {transaction.status=}\n")
         # ─────────────────────────────
         # 3. FETCH EXISTING ITEMS
         # ─────────────────────────────
@@ -501,10 +438,8 @@ class TransactionService:
                 TransactionItem.transaction_id == transaction_id
             )
         ).all()
-        print(f"update_transaction_with_audit : {items} and {len(items)=}\n")
 
         item_map = {item.component_id: item for item in items}
-        print(f"update_transaction_with_audit : {item_map=}\n")
 
         # ─────────────────────────────
         # 4. UPDATE ITEMS FROM AUDIT
@@ -519,7 +454,4 @@ class TransactionService:
         # ─────────────────────────────
         session.add(transaction)
         session.flush()
-        print(
-            f"update_transaction_with_audit : After update transaction totals - total_actual_discount: {transaction.total_actual_discount}, total_allowed_discount: {transaction.total_allowed_discount}, total_excess_discount: {transaction.total_excess_discount}\n"
-        )
         return transaction

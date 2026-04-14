@@ -20,6 +20,7 @@ from services.discount.discount_service import DiscountService
 from services.transaction.transaction_service import TransactionService
 from services.price_list.price_list_service import PriceListService
 
+from routes.edit_routes import router as edit_requests_router
 from rich import print
 
 
@@ -42,6 +43,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(edit_requests_router)
 
 
 @app.get("/")
@@ -174,89 +177,6 @@ def api_create_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# @app.post("/transactions")
-# def api_create_transaction(
-#     payload: Dict[str, Any],
-#     session: Session = Depends(get_session),
-# ):
-#     """
-#     Creates a full MIS transaction following the correct workflow:
-#     1. Create RAW transaction data first.
-#     2. Perform discount audit.
-#     3. Update transaction + items with audit results.
-#     """
-#     try:
-#         # STEP 0: Payload Validation
-#         required = ["variant_id", "booking_date", "outlet_id", "sales_executive_id"]
-#         missing = [f for f in required if not payload.get(f)]
-#         if missing or not isinstance(payload.get("actual_amounts"), dict):
-#             raise HTTPException(
-#                 status_code=400,
-#                 detail=f"Invalid input: Missing {', '.join(missing)} and actual_amounts (dict) must exist",
-#             )
-
-#         # STEP 0.5: Normalize Conditions and Delivery Checks
-#         payload["conditions"] = {
-#             k: bool(v) for k, v in payload.get("conditions", {}).items()
-#         }
-#         payload["delivery_checks"] = {
-#             k: bool(v) for k, v in payload.get("delivery_checks", {}).items()
-#         }
-
-#         # STEP 0.6: Accessories Variance Computation
-#         acc = payload.get("accessories_details", {})
-#         if acc:
-#             charged = acc.get("charged_amount", 0)
-#             allowed = acc.get("allowed_amount", 0)
-#             acc["variance"] = charged - allowed
-#             payload["accessories_details"] = acc
-
-#         # Convert date strings to date objects
-#         from datetime import datetime
-
-#         if isinstance(payload.get("booking_date"), str):
-#             payload["booking_date"] = datetime.strptime(
-#                 payload["booking_date"], "%Y-%m-%d"
-#             ).date()
-#         if isinstance(payload.get("delivery_date"), str):
-#             payload["delivery_date"] = datetime.strptime(
-#                 payload["delivery_date"], "%Y-%m-%d"
-#             ).date()
-#         if isinstance(payload.get("registration_date"), str):
-#             payload["registration_date"] = datetime.strptime(
-#                 payload["registration_date"], "%Y-%m-%d"
-#             ).date()
-
-#         # STEP 1: Save RAW transaction data first
-#         transaction = TransactionService.create_transaction_raw(session, payload)
-
-#         # STEP 2: Perform discount audit
-#         audit_result = DiscountService.calculate_audit(
-#             session,
-#             transaction.variant_id,
-#             transaction.booking_date,
-#             payload.get("actual_amounts", {}),
-#             transaction.conditions,
-#         )
-
-#         # STEP 3: Update existing transaction and its items
-#         transaction = TransactionService.update_transaction_with_audit(
-#             session, transaction.id, audit_result
-#         )
-
-#         return {
-#             "id": transaction.id,
-#             "status": transaction.status,
-#             "summary": audit_result,
-#         }
-
-#     except Exception as e:
-#         import traceback
-
-#         print(traceback.format_exc())
-#         raise HTTPException(status_code=400, detail=str(e))
-
-
 @app.post("/transactions/{transaction_id}/calculate")
 def api_recalculate_transaction(
     transaction_id: int,
@@ -322,70 +242,6 @@ def get_all_transactions(session: Session = Depends(get_session)):
 def get_accessories(session: Session = Depends(get_session)):
     accs = session.exec(select(Accessory)).all()
     return accs
-
-
-# @app.get("/transactions")
-# def get_all_transactions(session: Session = Depends(get_session)):
-#     transactions = session.exec(select(Transaction)).all()
-
-#     result = []
-
-#     for txn in transactions:
-#         # use reconstruction
-#         data = TransactionService.get_transaction_reconstruction(session, txn.id)
-
-#         # FLATTEN everything into ONE row
-#         flat = {}
-#         flat["customer_name"] = data.get("customer_name")
-#         flat["mobile"] = data.get("mobile_number")
-
-#         flat["variant"] = data.get("variant_name")
-
-#         # --- CUSTOMER ---
-#         flat["customer_name"] = data.get("customer", {}).get("name")
-#         flat["mobile"] = data.get("customer", {}).get("mobile_number")
-
-#         # --- VEHICLE ---
-#         flat["variant"] = data.get("vehicle", {}).get("variant_name")
-#         flat["booking_date"] = data.get("booking_date")
-
-#         # --- COMPONENTS ---
-#         for item in data.get("components", []):
-#             name = item["component_name"]
-#             flat[name] = item["actual_amount"]
-
-#         # --- CONDITIONS ---
-#         for k, v in data.get("conditions", {}).items():
-#             flat[k] = v
-
-#         # --- ACCESSORIES ---
-#         acc = data.get("accessories_details", {})
-#         flat["accessories_list"] = acc.get("items")
-#         flat["accessories_charged"] = acc.get("charged_amount")
-
-#         # --- DELIVERY CHECKS ---
-#         for k, v in data.get("delivery_checks", {}).items():
-#             flat[k] = v
-
-#         # --- AUDIT ---
-#         flat["observations"] = data.get("audit_info", {}).get("observations")
-
-#         # --- TOTALS ---
-#         flat["total_discount"] = data.get("total_actual_discount")
-#         flat["excess_discount"] = data.get("total_excess_discount")
-#         flat["status"] = data.get("status")
-
-#         # --- ID ---
-#         flat["id"] = txn.id
-
-#         result.append(flat)
-
-#     return result
-
-
-# @app.get("/transactions", response_model=List[Transaction])
-# def api_list_transactions(session: Session = Depends(get_session)):
-#     return TransactionService.list_transactions(session)
 
 
 @app.get("/transactions/{transaction_id}")
