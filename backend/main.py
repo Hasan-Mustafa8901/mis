@@ -21,6 +21,7 @@ from services.transaction.transaction_service import TransactionService
 from services.price_list.price_list_service import PriceListService
 
 from routes.edit_routes import router as edit_requests_router
+from routes.auth_routes import router as auth_router
 from rich import print
 
 
@@ -45,6 +46,7 @@ app.add_middleware(
 )
 
 app.include_router(edit_requests_router)
+app.include_router(auth_router)
 
 
 @app.get("/")

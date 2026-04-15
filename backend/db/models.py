@@ -7,9 +7,9 @@ from enum import Enum
 
 
 class UserRole(str, Enum):
-    AUDITOR = "auditor"
     ADMIN = "admin"
     CLIENT = "client"
+    AUDITOR = "auditor"
 
 
 ## User Table
