@@ -3,7 +3,14 @@ import pandas as pd
 from datetime import datetime, date
 from typing import Optional, Union
 from sqlmodel import Session, select
-from db.models import Car, Variant, PriceList, PriceListItem, DiscountComponent
+from db.models import (
+    Car,
+    Variant,
+    PriceList,
+    PriceListItem,
+    DiscountComponent,
+    FuelType,
+)
 from rich import print
 
 
@@ -98,6 +105,7 @@ class PriceListIngestionService:
         for _, row in df.iterrows():
             raw_model = row.iloc[0]
             raw_variant = row.iloc[4]  # Concatenate column
+            fuel_type_col = row.iloc[5]
 
             if pd.isna(raw_model) or pd.isna(raw_variant):
                 continue
@@ -107,6 +115,7 @@ class PriceListIngestionService:
 
             car_name = str(raw_model).strip()
             full_variant = str(raw_variant).strip()
+            fuel_type = str(fuel_type_col).lower().strip()
 
             # --- Car ---
             car = session.exec(select(Car).where(Car.name == car_name)).first()
@@ -125,6 +134,7 @@ class PriceListIngestionService:
                     car_id=car.id,
                     variant_name=full_variant,
                     full_variant_name=full_variant,
+                    fuel_type=FuelType(fuel_type),
                     model_year=2025,
                 )
                 session.add(variant)

@@ -7,3 +7,4 @@ tests
 *.xlsx
 .venv
 old_code
+.nicegui/

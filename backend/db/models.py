@@ -12,6 +12,38 @@ class UserRole(str, Enum):
     AUDITOR = "auditor"
 
 
+class FuelType(str, Enum):
+    CNG = "cng"
+    PET = "petrol"
+    DIESEL = "diesel"
+    EV = "electric"
+
+
+class ComplaintStatus(str, Enum):
+    ESCALATED = "escalated"
+    RESOLVED = "resolved"
+    UNRESOLVED = "unresolved"
+    DETAILS_PENDING_FROM_COMPLAINANT = "details pending from complainant"
+    PENDING_WITH_COMPLAINEE = "pending with complainee"
+    PENDING_WITH_COMPLAINEE_STATION_TEAM = "pending with complainee station team"
+
+
+class ComplaintFlag(str, Enum):
+    GREEN = "green"
+    YELLOW = "yellow"
+    ORANGE = "orange"
+    RED = "red"
+
+
+# tracking duration (in months)
+FLAG_DURATIONS = {
+    ComplaintFlag.GREEN: 0,
+    ComplaintFlag.YELLOW: 1,
+    ComplaintFlag.ORANGE: 2,
+    ComplaintFlag.RED: 3,
+}
+
+
 ## User Table
 class User(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
@@ -58,7 +90,7 @@ class Variant(SQLModel, table=True):
 
     variant_name: str
     full_variant_name: str  # Concatenated name for MIS display
-    fuel_type: Optional[str] = None
+    fuel_type: FuelType
     transmission: Optional[str] = None
     model_year: Optional[int] = None
 
@@ -174,9 +206,14 @@ class Transaction(SQLModel, table=True):
     invoice_number: Optional[str] = Field(default=None, index=True)
     customer_file_number: Optional[str] = None
 
+    stage: str = Field(default="booking")  # booking | delivery
+    mode: str = Field(default="booking")  # booking | book_and_delivery
+    delivery_checklist: Dict[str, bool] = Field(default={}, sa_column=Column(JSON))
+    booking_checklist: Dict[str, bool] = Field(default={}, sa_column=Column(JSON))
+
     # Vehicle Instance Details
-    vin_number: Optional[str] = Field(default=None, index=True)
-    engine_number: Optional[str] = None
+    vin_number: str
+    engine_number: str
     color: Optional[str] = None
     registration_number: Optional[str] = None
     registration_date: Optional[date] = None
@@ -188,22 +225,22 @@ class Transaction(SQLModel, table=True):
     # Additional MIS Sections
     exchange_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     finance_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    delivery_checks: Dict[str, bool] = Field(default={}, sa_column=Column(JSON))
     audit_info: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     invoice_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     payment_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
 
     # Audit Results
+    # other_discount: float = 0.0
     total_allowed_discount: float = 0.0
     total_actual_discount: float = 0.0
     total_excess_discount: float = 0.0
-    status: str = "UnderLimit"  # "UnderLimit", "Excess"
+    status: str = "No Excess Discount"  # "UnderLimit", "Excess"
     total_price_charged: float = 0.0
     total_discount: float = 0.0
-    net_receivable: float = 0.0
 
+    total_receivable: float = 0.0
     total_received: float = 0.0
-    balance_amount: float = 0.0
+    balance: float = 0.0
     payment_status: Optional[str] = None
 
     created_by: Optional[int] = Field(default=None, foreign_key="user.id")

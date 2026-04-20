@@ -8,12 +8,14 @@ Backend: FastAPI at http://localhost:8000
 """
 
 import re
-import json
+from utils import build_component_map_from_booking
 import httpx
 from datetime import date
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
+
+from auth import set_token, get_token, clear_token, protected_page
 
 
 # ══════════════════════════════════════════════════════════════
@@ -39,6 +41,17 @@ DELIVERY_CHECK_KEYS = [
     ("rto", "RTO"),
     ("finance", "Finance"),
     ("evaluation_certificate", "Evaluation Certificate"),
+]
+BOOKING_CHECK_KEYS = [
+    ("customer_kyc", "Customer KYC"),
+    ("vehicle_details", "Vehicle Details"),
+    ("price_quotation", "Price Quotation"),
+    ("receipts", "Receipts"),
+    ("accessories_indent", "Accessories Indent"),
+    ("exchange_details", "Exchange Details"),
+    ("md_reference", "MD Reference Approval"),
+    ("corp_id", "Corp ID"),
+    ("customer_sign", "Customer Sign"),
 ]
 
 # ══════════════════════════════════════════════════════════════
@@ -131,6 +144,7 @@ async def fetch_reference_data() -> dict:
     result = {}
     for key, path, fallback in [
         ("cars", "/cars", []),
+        ("variants", "/variants", []),
         ("components", "/components", []),
         ("outlets", "/outlets", [{"id": 1, "name": "Main Outlet"}]),
         ("executives", "/sales-executives", [{"id": 1, "name": "Default SE"}]),
@@ -261,6 +275,63 @@ def render_topbar(page_label: str) -> None:
         ui.label("AUDIT PORTAL").classes(
             "bg-[#E8402A] text-white text-[10px] font-bold tracking-[0.6px] px-2.5 py-0.5 rounded-full"
         )
+
+
+# ══════════════════════════════════════════════════════════════
+# LOGIN PAGE
+# ══════════════════════════════════════════════════════════════
+@ui.page("/login")
+def login_page():
+
+    if get_token():
+        ui.navigate.to("/")
+    render_topbar("Login Page")
+    with ui.column().classes("absolute-center items-center gap-4 w-80"):
+        with ui.card().classes("shadow-md w-full"):
+            ui.label("Login").classes("text-2xl font-bold")
+
+            username = ui.input("Username").props("outlined").classes("w-full")
+            password = (
+                ui.input("Password", password=True, password_toggle_button=True)
+                .props("outlined")
+                .classes("w-full")
+            )
+
+            async def handle_login():
+                try:
+                    async with httpx.AsyncClient() as client:
+                        r = await client.post(
+                            f"{BASE_URL}/auth/login",
+                            json={
+                                "name": username.value,
+                                "password": password.value,
+                            },
+                            timeout=10,
+                        )
+                        r.raise_for_status()
+                        data = r.json()
+
+                    set_token(data["access_token"])
+                    ui.notify("Login successful", type="positive")
+                    ui.navigate.to("/")
+
+                except Exception:
+                    ui.notify("Invalid credentials", type="negative")
+
+            ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
+
+
+def sidebar():
+    with ui.column().classes("h-full justify-between w-full p-4 bg-white shadow"):
+        with ui.column().classes("mt-auto items-center"):
+
+            def handle_logout():
+                clear_token()
+                ui.navigate.to("/login")
+
+            ui.button("Logout", on_click=handle_logout).props(
+                "color=red outline"
+            ).classes("w-full")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -449,12 +520,13 @@ def render_table(transactions):
                 "pagination": True,
                 "paginationPageSize": 25,
                 "rowSelection": "single",
+                "rowHeight": 30,
                 "suppressCellFocus": True,
             },
             theme="balham",
             auto_size_columns=False,
         )
-        .classes("w-full")
+        .classes("w-full h-100")
         .style("font-family:Inter,sans-serif;font-size:13px;")
     )
 
@@ -462,7 +534,7 @@ def render_table(transactions):
         row = e.args.get("data", {})
         txn_id = row.get("id")
         if txn_id:
-            ui.navigate.to(f"/form?transaction_id={txn_id}")
+            ui.navigate.to(f"/form?transaction_id={txn_id}&stage=delivery")
 
     grid.on("cellClicked", on_cell_clicked)
 
@@ -648,10 +720,31 @@ def render_bar_chart(
     ).style(f"height:{height}px;width:100%")
 
 
+def open_new_entry_dialog():
+    with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
+        ui.label("Create New Entry").classes("text-lg font-bold mb-2")
+
+        ui.button(
+            "Booking",
+            on_click=lambda: (dialog.close(), ui.navigate.to("/form?stage=booking")),
+        ).classes("w-full")
+
+        ui.button(
+            "Delivery",
+            on_click=lambda: (
+                dialog.close(),
+                ui.navigate.to("/form?stage=delivery&mode=direct"),
+            ),
+        ).classes("w-full")
+
+    dialog.open()
+
+
 # ══════════════════════════════════════════════════════════════
 #                        PAGE 1: DASHBOARD
 # ══════════════════════════════════════════════════════════════
 @ui.page("/")
+@protected_page
 async def dashboard_page() -> None:
     render_topbar("Dashboard")
 
@@ -724,7 +817,7 @@ async def dashboard_page() -> None:
             ui.label("Quick Actions").classes(
                 "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
             )
-            with ui.link(target="/form").classes(
+            with ui.button(on_click=open_new_entry_dialog).classes(
                 "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             ):
                 ui.icon("add").classes("text-primary text-lg text-weight-bold")
@@ -734,6 +827,7 @@ async def dashboard_page() -> None:
             ):
                 ui.icon("settings").classes("text-primary text-lg text-weight-bold")
                 ui.label("Settings").classes("text-weight-bold pl-2")
+            sidebar()
 
         # ── MAIN CONTENT ─────────────────────────────────────
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
@@ -759,7 +853,7 @@ async def dashboard_page() -> None:
                         .props("outlined dense")
                     )
                     with (
-                        ui.button(on_click=lambda: ui.navigate.to("/form"))
+                        ui.button(on_click=open_new_entry_dialog)
                         .classes(
                             "bg-[#E8402A] text-white font-semibold text-[13px] px-4.5 py-2 rounded-[7px] shadow-[0_3px_10px_rgba(232,64,42,0.3)]"
                         )
@@ -1264,7 +1358,7 @@ async def dashboard_page() -> None:
                                             "text-[13px] font-bold text-red-600 mono"
                                         )
                             else:
-                                ui.label("No excess transactions 🎉").classes(
+                                ui.label("No excess transactions").classes(
                                     "w-full text-center py-8 text-gray-400 text-[13px]"
                                 )
 
@@ -1368,7 +1462,9 @@ async def dashboard_page() -> None:
 #                   PAGE: MIS TABLE
 # ══════════════════════════════════════════════════════════════
 @ui.page("/mis-table")
+@protected_page
 async def mis_table_page(month: str | None = None) -> None:
+
     render_topbar("MIS Table")
 
     try:
@@ -1450,7 +1546,7 @@ async def mis_table_page(month: str | None = None) -> None:
                         "text-[12px] text-gray-400"
                     )
                 with (
-                    ui.button(on_click=lambda: ui.navigate.to("/form"))
+                    ui.button(on_click=open_new_entry_dialog)
                     .classes(
                         "bg-[#E8402A] text-white font-semibold text-[13px] px-4.5 py-2 rounded-[7px] shadow-sm"
                     )
@@ -1469,6 +1565,7 @@ async def mis_table_page(month: str | None = None) -> None:
 
 
 @ui.page("/settings")
+@protected_page
 def settings_page():
     render_topbar("Settings")
 
@@ -1525,10 +1622,19 @@ class FormState:
     def __init__(self):
         # Edit mode
         self.txn_id: int | None = None
+        self.booking_id: int | None = None
         self.edit_mode: bool = False
+        self.is_direct_delivery: bool = False
+
+        self.stage: str = "booking"  # booking | delivery
+        self.mode: str = "booking"  # booking | book-and-delivery
+        self.booking_date: ui.input | None = None
+        self.delivery_date: ui.input | None = None
+        self.booking_data: dict = {}
 
         # Reference data
         self.cars: list = []
+        self.variants: list = []
         self.components: list = []
         self.outlets: list = []
         self.executives: list = []
@@ -1542,7 +1648,6 @@ class FormState:
         # UI element refs — vehicle
         self.car_select: ui.select | None = None
         self.variant_select: ui.select | None = None
-        self.booking_date: ui.input | None = None
         self.outlet_select: ui.select | None = None
         self.exec_select: ui.select | None = None
         self.cust_file_no: ui.input | None = None
@@ -1594,6 +1699,12 @@ class FormState:
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
         self.delivery_cbs: dict[str, ui.checkbox] = {}
+        self.booking_cbs: dict[str, ui.checkbox] = {}
+        self.overrides = {
+            "customer": False,
+            "vehicle": False,
+            "price": False,
+        }
 
         # Invoice Section
         self.invoice_number: ui.input | None = None
@@ -1617,6 +1728,9 @@ class FormState:
         self.lbl_allowed: ui.label | None = None
         self.lbl_discount: ui.label | None = None
         self.lbl_excess: ui.label | None = None
+        self.stage_toggle = None
+        self.delivery_mode = None
+        self.booking_select = None
 
     @property
     def all_component_inputs(self) -> dict[str, ui.input]:
@@ -1683,10 +1797,146 @@ class FormState:
         return True, ""
 
 
+def on_car_change(state, car_id):
+    variants = [v for v in state.variants if v["car_id"] == car_id]
+
+    options = {v["id"]: v["variant_name"] for v in variants}
+
+    state.variant_select.options = options
+
+
+def _map_car_and_variant(state, data):
+    car_name = data.get("car_name")
+    variant_name = data.get("variant_name")
+
+    # ── STEP 1: Find Car ID ─────────────
+    car_id = None
+    for car in state.cars:
+        if car["name"].strip().lower() == (car_name or "").strip().lower():
+            car_id = car["id"]
+            break
+
+    if not car_id:
+        return
+
+    # ── STEP 2: Set Car ─────────────
+    state.car_select.set_value(car_id)
+    state.car_id = car_id
+
+    # ── STEP 3: Build Variant Options (CRITICAL) ─────────────
+    variants = [v for v in state.variants if v["car_id"] == car_id]
+
+    options = {v["id"]: v["variant_name"] for v in variants}
+
+    # 👉 FORCE update options
+    state.variant_select.clear()
+    state.variant_select.options = options
+    state.variant_select.update()
+
+    # ── STEP 4: Find Variant ID ─────────────
+    variant_id = None
+    for v in variants:
+        if (
+            variant_name
+            and variant_name.strip().lower() in v["variant_name"].strip().lower()
+        ):
+            variant_id = v["id"]
+            break
+
+    if not variant_id:
+        return
+
+    # ── STEP 5: Set Variant ─────────────
+    ui.timer(0.05, lambda: state.variant_select.set_value(variant_id), once=True)
+    state.variant_id = variant_id
+
+
+def populate_from_booking(state: FormState, data: dict):
+
+    if not data:
+        return
+
+    # ── Customer ─────────────────
+    if state.cust_name:
+        state.cust_name.set_value(data.get("customer_name", ""))
+
+    if state.cust_mobile:
+        state.cust_mobile.set_value(data.get("mobile_number", ""))
+
+    if state.cust_email:
+        state.cust_email.set_value(data.get("email", ""))
+
+    if state.cust_pan:
+        state.cust_pan.set_value(data.get("pan_number", ""))
+
+    if state.cust_aadhar:
+        state.cust_aadhar.set_value(data.get("aadhar_number", ""))
+
+    if state.cust_address:
+        state.cust_address.set_value(data.get("address", ""))
+
+    if state.cust_city:
+        state.cust_city.set_value(data.get("city", ""))
+
+    if state.cust_pincode:
+        state.cust_pincode.set_value(data.get("pin_code", ""))
+
+    # ── Vehicle ──────────────────
+    if state.cust_file_no:
+        state.cust_file_no.set_value(data.get("customer_file_number", ""))
+
+    if state.vin_no:
+        state.vin_no.set_value(data.get("vin_number", ""))
+
+    if state.engine_no:
+        state.engine_no.set_value(data.get("engine_number", ""))
+
+    if state.vehicle_regn_no:
+        state.vehicle_regn_no.set_value(data.get("registration_number", ""))
+
+    if state.regn_date:
+        state.regn_date.set_value(data.get("registration_date", ""))
+
+    # ── Variant / Car ────────────
+    _map_car_and_variant(state, data)
+
+    # ── Conditions ───────────────
+    conditions = data.get("conditions", {})
+    for key, cb in state.condition_cbs.items():
+        cb.set_value(conditions.get(key, False))
+
+    # ── Trigger recalculation ────
+    _fs_update_live(state)
+    _fs_revalidate(state)
+
+
+def populate_price_and_discount(state, booking_data: dict):
+    component_map = build_component_map_from_booking(booking_data)
+
+    # Prices
+    for name, inp in state.price_inputs.items():
+        val = component_map.get(name)
+
+        if val is None:
+            norm_name = re.sub(r"[^a-z0-9]", "", name.lower())
+            val = component_map.get(norm_name)
+
+        if val is not None:
+            inp.set_value(format_num_inr(val))
+
+    # Discounts
+    for name, inp in state.discount_inputs.items():
+        val = component_map.get(name)
+        if val is not None:
+            inp.set_value(format_num_inr(val))
+
+
 # ══════════════════════════════════════════════════════════════
 # FORM SECTION BUILDERS
 # ══════════════════════════════════════════════════════════════
-def build_form_sec_vehicle(state: FormState) -> None:
+
+
+def build_vehicle_section(state: FormState) -> None:
     car_opts = {car["id"]: car["name"] for car in state.cars}
     outlet_opts = {outlet["id"]: outlet["name"] for outlet in state.outlets}
     exec_opts = {executive["id"]: executive["name"] for executive in state.executives}
@@ -1696,9 +1946,7 @@ def build_form_sec_vehicle(state: FormState) -> None:
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
         ):
             ui.label("🚙").classes("text-[20px] select-none")
-            ui.label("Vehicle & Delivery Details").classes(
-                "text-[15px] font-bold text-gray-900"
-            )
+            ui.label("Vehicle Details").classes("text-[15px] font-bold text-gray-900")
 
         with ui.grid(columns=4).classes("w-full gap-5"):
             state.car_select = (
@@ -1756,34 +2004,43 @@ def build_form_sec_vehicle(state: FormState) -> None:
                 .props("outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
-            state.vin_no = (
-                ui.input(label="VIN Number *")
-                .classes("w-full uppercase")
-                .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
-            )
-            state.engine_no = (
-                ui.input(label="Engine Number *")
-                .classes("w-full uppercase")
-                .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
-            )
-            state.model_year = (
-                ui.input(label="Model Year *", placeholder="e.g. 2024")
-                .classes("w-full")
-                .props('outlined dense type="number"')
-                .on_value_change(lambda _: _fs_revalidate(state))
-            )
-            state.vehicle_regn_no = (
-                ui.input(label="Vehicle Regn Number")
-                .classes("w-full uppercase")
-                .props("outlined dense")
-            )
-            state.regn_date = (
-                ui.input(label="Date of Registration")
-                .classes("w-full")
-                .props('outlined dense type="date"')
-            )
+            if state.stage == "delivery":
+                state.vin_no = (
+                    ui.input(label="VIN Number *")
+                    .classes("w-full uppercase")
+                    .props("outlined dense")
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.delivery_date = (
+                    ui.input(
+                        label="Delivery Date *",
+                    )
+                    .classes("w-full")
+                    .props('type="date" outlined dense')
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.engine_no = (
+                    ui.input(label="Engine Number *")
+                    .classes("w-full uppercase")
+                    .props("outlined dense")
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.model_year = (
+                    ui.input(label="Model Year *", placeholder="e.g. 2024")
+                    .classes("w-full")
+                    .props('outlined dense type="number"')
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.vehicle_regn_no = (
+                    ui.input(label="Vehicle Regn Number")
+                    .classes("w-full uppercase")
+                    .props("outlined dense")
+                )
+                state.regn_date = (
+                    ui.input(label="Date of Registration")
+                    .classes("w-full")
+                    .props('outlined dense type="date"')
+                )
 
         if state.outlets:
             state.outlet_select.set_value(state.outlets[0]["id"])
@@ -1793,7 +2050,7 @@ def build_form_sec_vehicle(state: FormState) -> None:
             state.executive_id = state.executives[0]["id"]
 
 
-def build_form_sec_customer(state: FormState) -> None:
+def build_customer_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -1902,7 +2159,7 @@ def build_form_sec_customer(state: FormState) -> None:
             )
 
 
-def build_form_sec_conditions(state: FormState) -> None:
+def build_conditions_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -1920,7 +2177,100 @@ def build_form_sec_conditions(state: FormState) -> None:
                 )
 
 
-def build_form_sec_prices(state: FormState) -> None:
+def build_booking_checklist_section(state: FormState) -> None:
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+        ):
+            ui.label("☑️").classes("text-[20px] select-none")
+            ui.label("Booking Checklist").classes("text-[15px] font-bold text-gray-900")
+
+        with ui.row().classes("flex-wrap gap-x-8 gap-y-4"):
+            for key, label in BOOKING_CHECK_KEYS:
+                state.booking_cbs[key] = (
+                    ui.checkbox(label)
+                    .props("dense color=primary")
+                    .classes("text-gray-700 font-medium")
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+
+
+def _build_delivery_prices_section(state: FormState) -> None:
+    price_comps = sorted(
+        [c for c in state.components if c.get("type") == "price"],
+        key=lambda x: x.get("order", 99),
+    )
+
+    booking_map = {
+        k.replace("_actual", "").strip(): v
+        for k, v in (state.booking_data or {}).items()
+        if k.endswith("_actual")
+    }
+
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        ui.label("💰 Price Comparison (Booking vs Delivery)").classes(
+            "text-[15px] font-bold mb-2"
+        )
+
+        if price_comps:
+            with ui.column().classes("w-full gap-2"):
+                for comp in price_comps:
+                    name = comp["name"]
+
+                    with ui.row().classes("w-full items-center h-10 gap-2"):
+                        # ── Label
+                        ui.label(name).classes("w-52 text-sm")
+
+                        # ── Listed Price
+                        listed_label = ui.label("₹—").classes(
+                            "w-28 text-gray-500 text-sm"
+                        )
+                        state.price_listed_labels[name] = listed_label
+
+                        # ── Booking Price (READ ONLY)
+                        booking_val = booking_map.get(name)
+
+                        booking_input = (
+                            ui.input(
+                                value=format_num_inr(booking_val) if booking_val else ""
+                            )
+                            .props("readonly dense")
+                            .classes("w-36")
+                        )
+
+                        # ── Toggle (Match Booking)
+                        toggle = ui.switch("Same as Booking").props("dense color=green")
+
+                        # ── Delivery Input (editable)
+                        inp = accounting_input(
+                            "",
+                            placeholder="Delivery Price",
+                            container_classes="w-36",
+                        ).props("dense")
+
+                        state.price_inputs[name] = inp
+
+                        # ── Toggle Logic
+                        def on_toggle(_, name=name, inp=inp, toggle=toggle):
+                            if toggle.value:
+                                val = booking_map.get(name, 0)
+                                inp.set_value(format_num_inr(val))
+                                inp.set_enabled(False)
+                            else:
+                                inp.set_enabled(True)
+
+                            _fs_update_live(state)
+
+                        toggle.on("update:model-value", on_toggle)
+
+                        # Trigger calc
+                        inp.on_value_change(lambda _: _fs_update_live(state))
+
+        else:
+            ui.label("No price components found").classes("text-xs text-gray-400")
+
+
+def _build_booking_prices_section(state: FormState) -> None:
     price_comps = sorted(
         [
             price_comp
@@ -2052,7 +2402,14 @@ def build_form_sec_prices(state: FormState) -> None:
             )
 
 
-def build_form_sec_accessories(state: FormState) -> None:
+def build_prices_section(state: FormState) -> None:
+    if state.stage == "delivery" and not state.is_direct_delivery:
+        _build_delivery_prices_section(state)
+    else:
+        _build_booking_prices_section(state)
+
+
+def build_accessories_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -2129,7 +2486,7 @@ def build_form_sec_accessories(state: FormState) -> None:
             state.acc_charged = accounting_input(label_text="Actual Charged (₹)")
 
 
-def build_form_sec_delivery(state: FormState) -> None:
+def build_delivery_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -2143,7 +2500,7 @@ def build_form_sec_delivery(state: FormState) -> None:
                 state.delivery_cbs[key] = ui.checkbox(label).props("dense")
 
 
-def build_form_sec_audit(state: FormState) -> None:
+def build_audit_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -2163,7 +2520,7 @@ def build_form_sec_audit(state: FormState) -> None:
             )
 
 
-def build_form_sec_invoice(state: FormState) -> None:
+def build_invoice_section(state: FormState) -> None:
     def calculate_taxes():
         taxable = parsed_val(state.invoice_taxable_value)
         cgst = taxable * 0.09
@@ -2256,7 +2613,7 @@ def build_form_sec_invoice(state: FormState) -> None:
         calculate_total()
 
 
-def build_form_sec_payment(state: FormState) -> None:
+def build_payment_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -2290,7 +2647,7 @@ def build_form_sec_payment(state: FormState) -> None:
         toggle_fields()
 
 
-def build_form_sec_live_bar(state: FormState) -> None:
+def build_live_bar(state: FormState) -> None:
     with ui.row().classes(
         "w-full bg-[#0F1623] text-white p-3 px-6 rounded-xl items-center gap-6 shadow-lg mb-4"
     ):
@@ -2320,7 +2677,7 @@ def build_form_sec_live_bar(state: FormState) -> None:
             )
 
 
-def build_form_sec_action_bar(state: FormState) -> None:
+def build_action_bar(state: FormState) -> None:
     with ui.row().classes(
         "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
     ) as banner:
@@ -2554,6 +2911,7 @@ def _fs_validate_aadhar(state: FormState) -> None:
 
 
 def _fs_update_visibility(state: FormState) -> None:
+
     def is_checked(key: str) -> bool:
         cb = state.condition_cbs.get(key)
         return bool(cb and cb.value)
@@ -2639,9 +2997,19 @@ async def _fs_handle_submit(state: FormState) -> None:
     payload = build_payload(state)
 
     try:
-        await api_post("/transactions", payload)
-        ui.notify("✅ Transaction saved", color="green")
-        ui.navigate.to("/")
+        if state.stage == "delivery":
+            if state.txn_id:
+                await api_put(f"/transactions/{state.txn_id}", payload)
+                ui.notify("Delivery Data saved", color="green", type="positive")
+            else:
+                await api_post("/transactions", payload)
+                ui.notify(
+                    "Delivery Created Successfully", color="green", type="positive"
+                )
+        else:
+            await api_post("/transactions", payload)
+            ui.notify("Booking Created Successfully", color="green", type="positive")
+
     except Exception as e:
         state.error_msg_label.set_text(str(e))
         state.error_banner.set_visibility(True)
@@ -2785,6 +3153,18 @@ def build_payload(state: FormState) -> dict:
             "actions": val(state.audit_action),
         },
     }
+    if state.stage == "booking":
+        payload["stage"] = "booking"
+        payload["booking_checklist"] = {
+            k: v.value for k, v in state.booking_cbs.items()
+        }
+
+    elif state.stage == "delivery":
+        payload["stage"] = "delivery"
+        payload["booking_id"] = state.booking_id
+        payload["delivery_date"] = state.delivery_date
+        payload["is_direct_delivery"] = state.is_direct_delivery
+        payload["overrides"] = state.overrides
 
     return payload
 
@@ -2881,22 +3261,39 @@ async def _fs_prefill(state: FormState, txn: dict) -> None:
     _fs_revalidate(state)
 
 
+# TODO: for booking MIS form the vehicle details will not include the vin, engine details. and add fuel type to the form.
 # ══════════════════════════════════════════════════════════════
 #   PAGE 2: FORM
 # ══════════════════════════════════════════════════════════════
+@protected_page
 @ui.page("/form")
-async def form_page(transaction_id: str | None = None) -> None:
+async def form_page(
+    stage: str = "booking", mode: str = "booking", transaction_id: int | None = None
+) -> None:
     state = FormState()
 
-    # Detect edit mode from query param
+    state.stage = stage
+    state.mode = mode
+    state.txn_id = transaction_id
+    state.is_direct_delivery = mode == "direct"
+
     txn_data = None
-    if transaction_id:
+
+    if transaction_id and stage == "delivery":
+        state.booking_id = transaction_id
+        state.edit_mode = True
+
         try:
             txn_data = await api_get(f"/transactions/{transaction_id}")
-            state.txn_id = int(transaction_id)
-            state.edit_mode = True
+            state.booking_data = txn_data
         except Exception:
-            pass  # If fetch fails, fall through to blank form
+            ui.notify("Failed to load booking data", type="negative")
+
+    # Detect edit mode from query param
+    if state.booking_id:
+        ui.label(f"Using Booking ID: {state.booking_id}").classes(
+            "text-xs text-blue-600"
+        )
 
     # Breadcrumb label
     bc = f"Edit Entry #{state.txn_id}" if state.edit_mode else "New Entry"
@@ -2905,6 +3302,7 @@ async def form_page(transaction_id: str | None = None) -> None:
     # Fetch reference data
     ref = await fetch_reference_data()
     state.cars = ref["cars"]
+    state.variants = ref["variants"]
     state.components = ref["components"]
     state.outlets = ref["outlets"]
     state.executives = ref["executives"]
@@ -2927,23 +3325,43 @@ async def form_page(transaction_id: str | None = None) -> None:
                 )
 
         # ── Form sections ────────────────────────────────
-        build_form_sec_vehicle(state)
-        build_form_sec_customer(state)
-        build_form_sec_conditions(state)
-        build_form_sec_prices(state)
-        build_form_sec_accessories(state)
-        build_form_sec_delivery(state)
-        build_form_sec_invoice(state)
-        build_form_sec_payment(state)
-        build_form_sec_audit(state)
-        build_form_sec_live_bar(state)
-        build_form_sec_action_bar(state)
+        if state.stage == "booking":
+            ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
+
+            build_vehicle_section(state)
+            build_customer_section(state)
+            build_conditions_section(state)
+            build_prices_section(state)
+            build_accessories_section(state)
+            build_booking_checklist_section(state)
+
+        elif state.stage == "delivery":
+            ui.label("Delivery MIS Form").classes("text-2xl text-bold mb-5")
+
+            if state.booking_id:
+                ui.label(f"Booking ID: {state.booking_id} → Delivery Entry").classes(
+                    "text-xs text-blue-600 mb-2"
+                )
+            build_vehicle_section(state)
+            build_customer_section(state)
+            build_conditions_section(state)
+            build_prices_section(state)
+            build_accessories_section(state)
+            build_delivery_section(state)
+            build_invoice_section(state)
+            build_payment_section(state)
+            build_audit_section(state)
+
+        build_live_bar(state)
+        build_action_bar(state)
 
         # Ensure button state is correct on first render
         _fs_revalidate(state)
 
     # ── Prefill after UI is built (edit mode) ───────────
-    if state.edit_mode and txn_data:
+    if state.booking_id and state.stage == "delivery":
+        populate_from_booking(state, state.booking_data)
+    elif state.edit_mode and txn_data:
         await _fs_prefill(state, txn_data)
 
 
@@ -2952,4 +3370,11 @@ async def form_page(transaction_id: str | None = None) -> None:
 # ══════════════════════════════════════════════════════════════
 if __name__ in {"__main__", "__mp_main__"}:
     app.colors(primary="#e8402a")
-    ui.run(title="AutoAudit", favicon="🚗", host="0.0.0.0", port=10000, reload=True)
+    ui.run(
+        title="AutoAudit",
+        favicon="🚗",
+        host="0.0.0.0",
+        storage_secret="super-secret-key",
+        port=3000,
+        reload=True,
+    )

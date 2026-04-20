@@ -365,6 +365,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "pyngrok" },
     { name = "selenium" },
     { name = "webdriver-manager" },
 ]
@@ -377,6 +378,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pyngrok", specifier = ">=8.0.0" },
     { name = "selenium", specifier = ">=4.41.0" },
     { name = "webdriver-manager", specifier = ">=4.0.2" },
 ]
@@ -1278,6 +1280,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+]
+
+[[package]]
+name = "pyngrok"
+version = "8.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ec/7a/6f9b08044be356d228533f6a8454377e2d31dd1309adf13209906019762d/pyngrok-8.0.0.tar.gz", hash = "sha256:6e7aaf90b43086ad25508a1122423608003f712d9988319ddf7be50431028101", size = 42082, upload-time = "2026-04-01T15:43:43.333Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/53/ae/d8cb883f717627bd8e2fe2a65ab6544cd23789a63d61411c037a65246982/pyngrok-8.0.0-py3-none-any.whl", hash = "sha256:bdc34c7a0a7e9bad60e44b9dcc7661c055c0a79dc029c7100ed15669c626d5c1", size = 24467, upload-time = "2026-04-01T15:43:42.3Z" },
 ]
 
 [[package]]

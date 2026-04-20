@@ -12,7 +12,7 @@ from db.models import (
     User,
 )
 from services.discount.discount_service import DiscountService
-from datetime import datetime
+from datetime import datetime, date
 
 
 def normalize_conditions_delivery_checks(payload: dict) -> dict:
@@ -25,83 +25,357 @@ def normalize_conditions_delivery_checks(payload: dict) -> dict:
     return payload
 
 
-def convert_date_fields(payload: dict, fields: List[str]) -> dict:
+def convert_date_fields(payload: Dict[str, Any], fields: List[str]) -> Dict[str, Any]:
     for field in fields:
-        if isinstance(payload.get(field), str):
-            payload[field] = datetime.strptime(payload[field], "%Y-%m-%d").date()
+        value = payload.get(field)
+
+        if value is None:
+            continue
+
+        if isinstance(value, date):
+            continue
+
+        if not value:
+            payload[field] = None
+            continue
+
+        if isinstance(value, str) and value.strip():
+            payload[field] = datetime.strptime(value, "%Y-%m-%d").date()
+
     return payload
 
 
 class TransactionService:
     @staticmethod
-    def create_full_transaction(session: Session, payload: dict):
+    def create_transaction_items(
+        session: Session,
+        transaction_id: int,
+        payload: Dict[str, Any],
+    ):
+        """
+        Creates or replaces transaction items from actual_amounts.
+        """
 
-        # ─────────────────────────────
-        # STEP 0: VALIDATION
-        # ─────────────────────────────
-        required = ["variant_id", "booking_date", "outlet_id", "sales_executive_id"]
+        actual_amounts = payload.get("actual_amounts", {})
 
-        missing = [f for f in required if not payload.get(f)]
-        if missing or not isinstance(payload.get("actual_amounts"), dict):
-            raise ValueError(f"Missing fields: {', '.join(missing)}")
+        # DELETE existing items (important for override case)
+        existing_items = session.exec(
+            select(TransactionItem).where(
+                TransactionItem.transaction_id == transaction_id
+            )
+        ).all()
 
-        # Normalize (convert to bool) for conditions and delivery checks to ensure consistent data types for logic processing. The API layer can also handle this, but we ensure it here for safety.)
-        payload = normalize_conditions_delivery_checks(payload)
+        for item in existing_items:
+            session.delete(item)
 
-        # Convert dates (converts the dates from string to date objects, which is required for DB and logic processing. The API layer can also handle this, but we ensure it here for safety.)
-        payload = convert_date_fields(payload, ["booking_date", "registration_date"])
+        session.flush()
 
-        # Accessories variance
-        # TODO: Check this part.
-        acc = payload.get("accessories_details", {})
-        if acc:
-            charged = acc.get("charged_amount", 0)
-            allowed = acc.get("allowed_amount", 0)
-            acc["variance"] = charged - allowed
-            payload["accessories_details"] = acc
+        # Fetch components
+        components = session.exec(select(DiscountComponent)).all()
+        comp_map = {comp.name: comp for comp in components}
 
-        # ─────────────────────────────
-        # STEP 1: RAW SAVE
-        # Save all data as-is without any logic applied. This ensures we have a complete record of the original input for audit and debugging purposes.
-        # ─────────────────────────────
-        transaction = TransactionService.create_transaction_raw(session, payload)
+        # Create new items
+        for name, actual in actual_amounts.items():
+            comp = comp_map.get(name)
+            if not comp:
+                continue
 
-        # ─────────────────────────────
-        # STEP 2: AUDIT
-        # ─────────────────────────────
-        audit_result = DiscountService.calculate_discount(
-            session,
-            transaction.variant_id,
-            transaction.id,
-            transaction.booking_date,
-            payload.get("actual_amounts", {}),
-            transaction.conditions,
+            item = TransactionItem(
+                transaction_id=transaction_id,
+                component_id=comp.id,
+                component_name=comp.name,
+                component_type=comp.type,
+                actual_amount=float(actual),
+                allowed_amount=0,
+                difference=0,
+            )
+            session.add(item)
+
+        session.flush()
+
+    @staticmethod
+    def create_or_update_customer(session: Session, cust_data: Dict[str, Any]):
+
+        if not cust_data:
+            raise ValueError("Customer data required")
+
+        # Try find existing (based on mobile)
+        existing = session.exec(
+            select(Customer).where(
+                Customer.mobile_number == cust_data.get("mobile_number")
+            )
+        ).first()
+
+        if existing:
+            # Update fields
+            for field in [
+                "name",
+                "email",
+                "pan_number",
+                "aadhar_number",
+                "address",
+                "city",
+                "pin_code",
+            ]:
+                if cust_data.get(field):
+                    setattr(existing, field, cust_data[field])
+
+            session.add(existing)
+            session.flush()
+            return existing
+
+        # Create new
+        customer = Customer(
+            name=cust_data.get("name"),
+            mobile_number=cust_data.get("mobile_number"),
+            email=cust_data.get("email"),
+            pan_number=cust_data.get("pan_number"),
+            aadhar_number=cust_data.get("aadhar_number"),
+            address=cust_data.get("address"),
+            city=cust_data.get("city"),
+            pin_code=cust_data.get("pin_code"),
         )
 
-        # ─────────────────────────────
-        # STEP 3: APPLY AUDIT
-        # ─────────────────────────────
-        if transaction.id:
-            transaction = TransactionService.update_transaction_with_audit(
-                session, transaction.id, audit_result
+        session.add(customer)
+        session.flush()
+
+        return customer
+
+    @staticmethod
+    def update_transaction_accessories(
+        session: Session,
+        transaction: Transaction,
+        accessory_ids: List[int],
+    ):
+        """
+        Replace accessories for a transaction
+        """
+
+        # delete old links
+        existing_links = session.exec(
+            select(TransactionAccessoryLink).where(
+                TransactionAccessoryLink.transaction_id == transaction.id
+            )
+        ).all()
+
+        for link in existing_links:
+            session.delete(link)
+
+        session.flush()
+
+        if not accessory_ids:
+            return
+
+        # validate accessories
+        accessories = session.exec(
+            select(Accessory).where(Accessory.id.in_(accessory_ids))
+        ).all()
+
+        valid_ids = {a.id for a in accessories}
+
+        for acc_id in accessory_ids:
+            if acc_id not in valid_ids:
+                continue
+
+            link = TransactionAccessoryLink(
+                transaction_id=transaction.id,
+                accessory_id=acc_id,
+            )
+            session.add(link)
+
+        session.flush()
+
+    @staticmethod
+    def convert_to_delivery(
+        session: Session,
+        transaction_id: int,
+        payload: Dict[str, Any],
+    ):
+
+        transaction = session.get(Transaction, transaction_id)
+
+        if not transaction:
+            raise ValueError("Transaction not found")
+
+        if transaction.stage == "delivery":
+            raise ValueError("Already delivered")
+
+        # =========================
+        # STEP 1: Decide data source
+        # =========================
+        use_booking_data = payload.get("use_booking_data", True)
+
+        if not use_booking_data:
+            # update items (override)
+            TransactionService.create_transaction_items(
+                session, transaction.id, payload
             )
 
-        # ─────────────────────────────
-        # STEP 4: FUNDS RECONCILIATION
-        # ─────────────────────────────
+        # =========================
+        # STEP 2: Update customer (edge case)
+        # =========================
+        if "customer" in payload:
+            customer = TransactionService.create_or_update_customer(
+                session, payload["customer"]
+            )
+            transaction.customer_id = customer.id
+
+        # =========================
+        # STEP 3: Add delivery data
+        # =========================
+        transaction.delivery_checklist = payload.get("delivery_checklist", {})
+
+        # accessories
+        if "accessory_ids" in payload:
+            TransactionService.update_transaction_accessories(
+                session, transaction, payload["accessory_ids"]
+            )
+
+        # =========================
+        # STEP 4: Recalculate discount (if needed)
+        # =========================
+        if not use_booking_data:
+            audit_result = DiscountService.calculate_discount(
+                session=session,
+                transaction=transaction,
+                actual_amounts=payload.get("actual_amounts", {}),
+                conditions=payload.get("conditions", {}),
+            )
+
+            transaction.total_actual_discount = audit_result["actual_discount"]
+            transaction.total_allowed_discount = audit_result["pricelist_discount"]
+            transaction.total_excess_discount = audit_result["excess_discount"]
+            transaction.status = audit_result["status"]
+
+        else:
+            audit_result = {
+                "actual_discount": transaction.total_actual_discount,
+                "pricelist_discount": transaction.total_allowed_discount,
+                "excess_discount": transaction.total_excess_discount,
+                "status": transaction.status,
+            }
+
+        # =========================
+        # STEP 5: Reconciliation
+        # =========================
         TransactionService.apply_funds_reconciliation(
             session, transaction, payload, audit_result
         )
 
+        # =========================
+        # STEP 6: Finalize
+        # =========================
+        transaction.stage = "delivery"
+
+        session.add(transaction)
         session.commit()
         session.refresh(transaction)
 
         return {
             "id": transaction.id,
+            "stage": transaction.stage,
+            "status": transaction.status,
+            "balance": transaction.balance,
+            "payment_status": transaction.payment_status,
+            "summary": audit_result,
+        }
+
+    @staticmethod
+    def create_delivery_transaction(session: Session, payload: Dict[str, Any]):
+
+        # STEP 1: Create transaction
+        transaction = TransactionService.create_transaction_raw(session, payload)
+
+        # STEP 2: Stage + mode
+        transaction.stage = "delivery"
+        transaction.mode = "book_and_delivery"
+
+        # STEP 3: Save checklists
+        transaction.delivery_checklist = payload.get("delivery_checklist", {})
+
+        # STEP 4: Items
+        if transaction.id:
+            TransactionService.create_transaction_items(
+                session, transaction.id, payload
+            )
+
+        # STEP 5: Discount
+        audit_result = DiscountService.calculate_discount(
+            session=session,
+            transaction=transaction,
+            actual_amounts=payload.get("actual_amounts", {}),
+            conditions=payload.get("conditions", {}),
+        )
+
+        # STEP 6: Store discount
+        transaction.total_actual_discount = audit_result["total_actual_discount"]
+        transaction.total_allowed_discount = audit_result["pricelist_discount"]
+        transaction.total_excess_discount = audit_result["excess_discount"]
+        transaction.status = audit_result["status"]
+
+        # STEP 7: Reconciliation (IMPORTANT)
+        TransactionService.apply_funds_reconciliation(
+            session, transaction, payload, audit_result
+        )
+
+        session.add(transaction)
+        session.commit()
+        session.refresh(transaction)
+
+        return {
+            "id": transaction.id,
+            "stage": transaction.stage,
+            "status": transaction.status,
+            "balance": transaction.balance,
+            "payment_status": transaction.payment_status,
+            "summary": audit_result,
+        }
+
+    @staticmethod
+    def create_booking_transaction(session: Session, payload: Dict[str, Any]):
+
+        # STEP 1: Create base transaction
+        transaction = TransactionService.create_transaction_raw(session, payload)
+
+        # STEP 2: Set stage + mode
+        transaction.stage = "booking"
+        transaction.mode = "booking"
+
+        # STEP 3: Save checklist
+        transaction.booking_checklist = payload.get("booking_checklist", {})
+
+        # STEP 4: Save transaction items
+        if transaction.id:
+            TransactionService.create_transaction_items(
+                session, transaction.id, payload
+            )
+
+        # STEP 5: Calculate discount
+        audit_result = DiscountService.calculate_discount(
+            session=session,
+            transaction=transaction,
+            actual_amounts=payload.get("actual_amounts", {}),
+            conditions=payload.get("conditions", {}),
+        )
+        # STEP 6: Store discount
+        transaction.total_actual_discount = (
+            audit_result["invoice_discount"]
+            if audit_result["invoice_discount"] is not None
+            else audit_result["total_actual_discount"]
+        )
+        transaction.total_allowed_discount = audit_result["pricelist_discount"]
+        transaction.total_excess_discount = audit_result["excess_discount"]
+        transaction.status = audit_result["status"]
+
+        session.add(transaction)
+        session.commit()
+        session.refresh(transaction)
+
+        return {
+            "id": transaction.id,
+            "stage": transaction.stage,
             "status": transaction.status,
             "summary": audit_result,
-            "balance": transaction.balance_amount,
-            "payment_status": transaction.payment_status,
         }
 
     @staticmethod
@@ -117,19 +391,13 @@ class TransactionService:
         # ─────────────────────────────
         cust_data = payload.get("customer", {})
 
-        customer = Customer(
-            name=cust_data.get("name"),
-            mobile_number=cust_data.get("mobile_number"),
-            email=cust_data.get("email"),
-            pan_number=cust_data.get("pan_number"),
-            aadhar_number=cust_data.get("aadhar_number"),
-            address=cust_data.get("address"),
-            city=cust_data.get("city"),
-            pin_code=cust_data.get("pin_code"),
+        customer = customer = TransactionService.create_or_update_customer(
+            session, cust_data
         )
-        session.add(customer)
-        session.flush()  # get ID
 
+        payload = convert_date_fields(
+            payload, ["booking_date", "registration_date", "delivery_date"]
+        )
         # ─────────────────────────────
         # 2. TRANSACTION CORE
         # ─────────────────────────────
@@ -138,17 +406,17 @@ class TransactionService:
             variant_id=payload["variant_id"],
             outlet_id=payload["outlet_id"],
             sales_executive_id=payload["sales_executive_id"],
-            created_by=payload.get("user_id", ""),
+            created_by=payload.get("user_id", None),
             booking_date=payload["booking_date"],
+            delivery_date=payload.get("delivery_date", None),
             # VEHICLE
             customer_file_number=payload.get("customer_file_number"),
-            vin_number=payload.get("vin_number"),
-            engine_number=payload.get("engine_number"),
+            vin_number=payload["vin_number"],
+            engine_number=payload.get("engine_number", None),
             registration_number=payload.get("registration_number"),
             registration_date=payload.get("registration_date"),
-            # CONDITIONS / CHECKS
+            # CONDITIONS
             conditions=payload.get("conditions", {}),
-            delivery_checks=payload.get("delivery_checks", {}),
             # JSON SECTIONS
             invoice_details=payload.get("invoice_details", {}),
             payment_details=payload.get("payment_details", {}),
@@ -158,53 +426,6 @@ class TransactionService:
         )
         session.add(transaction)
         session.flush()
-        # ─────────────────────────────
-        # 2. ACCESSORIES LINKING (NEW)
-        # ─────────────────────────────
-        accessory_ids = payload.get("accessory_ids", [])
-
-        if accessory_ids:
-            # validate accessories exist
-            accessories = session.exec(
-                select(Accessory).where(Accessory.id.in_(accessory_ids))
-            ).all()
-
-            valid_ids = {a.id for a in accessories}
-
-            for acc_id in accessory_ids:
-                if acc_id not in valid_ids:
-                    continue  # or raise error if you want strict validation
-
-                link = TransactionAccessoryLink(
-                    transaction_id=transaction.id,
-                    accessory_id=acc_id,
-                )
-                session.add(link)
-        # ─────────────────────────────
-        # 3. COMPONENT ITEMS (CRITICAL)
-        # ─────────────────────────────
-        actual_amounts = payload.get("actual_amounts", {})
-
-        # Fetch all components
-        components = session.exec(select(DiscountComponent)).all()
-
-        comp_map = {comp.name: comp for comp in components}
-
-        for name, actual in actual_amounts.items():
-            comp = comp_map.get(name)
-            if not comp:
-                continue  # safety (validation already done in service)
-
-            item = TransactionItem(
-                transaction_id=transaction.id,
-                component_id=comp.id,
-                component_name=comp.name,
-                component_type=comp.type,
-                actual_amount=actual,
-                allowed_amount=0,  # filled later
-                difference=0,  # filled later
-            )
-            session.add(item)
 
         session.commit()
         session.refresh(transaction)
@@ -305,10 +526,10 @@ class TransactionService:
 
         for comp in all_components:
             item = item_map.get(comp.id)
-            prefix = ""  # Could use section prefix if desired, but user wants MIS names
+            # prefix = ""  # Could use section prefix if desired, but user wants MIS names
             data[f"{comp.name}_actual"] = item.actual_amount if item else 0.0
-            data[f"{comp.name}_allowed"] = item.allowed_amount if item else 0.0
-            data[f"{comp.name}_diff"] = item.difference if item else 0.0
+            # data[f"{comp.name}_allowed"] = item.allowed_amount if item else 0.0
+            # data[f"{comp.name}_diff"] = item.difference if item else 0.0
 
         # 6. Section 5: Conditions
         for cond, val in transaction.conditions.items():
@@ -321,7 +542,7 @@ class TransactionService:
         data.update({f"finance_{k}": v for k, v in transaction.finance_details.items()})
 
         data.update(
-            {f"checklist_{k}": v for k, v in transaction.delivery_checks.items()}
+            {f"checklist_{k}": v for k, v in transaction.delivery_checklist.items()}
         )
         data.update({f"audit_{k}": v for k, v in transaction.audit_info.items()})
         # 7.5 Accessories (NEW)
@@ -342,9 +563,9 @@ class TransactionService:
         data["accessories"] = accessories_data
         data.update(
             {
-                "net_receivable": transaction.net_receivable,
+                "net_receivable": transaction.total_receivable,
                 "total_received": transaction.total_received,
-                "balance_amount": transaction.balance_amount,
+                "balance_amount": transaction.balance,
             }
         )
 
@@ -374,10 +595,10 @@ class TransactionService:
         session: Session,
         transaction: Transaction,
         payload: Dict[str, Any],
-        # audit_result: Dict[str, Any],
+        audit_result: Dict[str, Any],
     ):
 
-        from sqlmodel import select
+        # from sqlmodel import select
         from db.models import TransactionItem
 
         items = session.exec(
@@ -399,12 +620,18 @@ class TransactionService:
         total_on_road = 0.0
 
         for item in items:
-            if item.component_name.lower().strip() in ON_ROAD_COMPONENTS:
+            if (
+                item.component_name.lower().replace("-", " ").strip()
+                in ON_ROAD_COMPONENTS
+            ):
                 total_on_road += item.actual_amount
 
         # accessory_total = sum(
-        #     acc.listed_price for acc in transaction.accessories
+        #     link.accessory.listed_price
+        #     for link in transaction.accessories
+        #     if link.accessory
         # )
+
         # total_on_road += accessory_total
 
         DISCOUNT_COMPONENTS = {
@@ -430,7 +657,7 @@ class TransactionService:
         total_received = (
             payments.get("bank", 0)
             + payments.get("cash", 0)
-            + payments("finance", 0)
+            + payments.get("finance", 0)
             + payments.get("exchange", 0)
         )
 
@@ -445,54 +672,54 @@ class TransactionService:
 
         transaction.balance = balance
         transaction.payment_status = payment_status
-
+        print(f"{balance=}\n{payment_status=}")
         session.add(transaction)
         session.flush()
 
-    @staticmethod
-    def update_transaction_with_audit(
-        session: Session, transaction_id: int, audit_result: dict
-    ):
+    # @staticmethod
+    # def update_transaction_with_audit(
+    #     session: Session, transaction_id: int, audit_result: dict
+    # ):
 
-        from db.models import Transaction, TransactionItem
-        from sqlmodel import select
+    #     from db.models import Transaction, TransactionItem
+    #     from sqlmodel import select
 
-        # ─────────────────────────────
-        # 1. FETCH TRANSACTION
-        # ─────────────────────────────
-        transaction = session.get(Transaction, transaction_id)
-        if not transaction:
-            raise ValueError("Transaction not found")
+    #     # ─────────────────────────────
+    #     # 1. FETCH TRANSACTION
+    #     # ─────────────────────────────
+    #     transaction = session.get(Transaction, transaction_id)
+    #     if not transaction:
+    #         raise ValueError("Transaction not found")
 
-        # ─────────────────────────────
-        # 2. UPDATE TOTALS
-        # ─────────────────────────────
-        transaction.total_actual_discount = audit_result["invoice_discount"]
-        transaction.total_allowed_discount = audit_result["pricelist_discount"]
-        transaction.total_excess_discount = audit_result["excess_discount"]
-        transaction.status = audit_result["status"]
-        # ─────────────────────────────
-        # 3. FETCH EXISTING ITEMS
-        # ─────────────────────────────
-        items = session.exec(
-            select(TransactionItem).where(
-                TransactionItem.transaction_id == transaction_id
-            )
-        ).all()
+    #     # ─────────────────────────────
+    #     # 2. UPDATE TOTALS
+    #     # ─────────────────────────────
+    #     transaction.total_actual_discount = audit_result["invoice_discount"]
+    #     transaction.total_allowed_discount = audit_result["pricelist_discount"]
+    #     transaction.total_excess_discount = audit_result["excess_discount"]
+    #     transaction.status = audit_result["status"]
+    #     # ─────────────────────────────
+    #     # 3. FETCH EXISTING ITEMS
+    #     # ─────────────────────────────
+    #     items = session.exec(
+    #         select(TransactionItem).where(
+    #             TransactionItem.transaction_id == transaction_id
+    #         )
+    #     ).all()
 
-        item_map = {item.component_id: item for item in items}
+    #     item_map = {item.component_id: item for item in items}
 
-        # ─────────────────────────────
-        # 4. UPDATE ITEMS FROM AUDIT
-        # ─────────────────────────────
-        transaction.total_actual_discount = audit_result["invoice_discount"]
-        transaction.total_allowed_discount = audit_result["pricelist_discount"]
-        transaction.total_excess_discount = audit_result["excess_discount"]
-        transaction.status = audit_result["status"]
+    #     # ─────────────────────────────
+    #     # 4. UPDATE ITEMS FROM AUDIT
+    #     # ─────────────────────────────
+    #     transaction.total_actual_discount = audit_result["invoice_discount"]
+    #     transaction.total_allowed_discount = audit_result["pricelist_discount"]
+    #     transaction.total_excess_discount = audit_result["excess_discount"]
+    #     transaction.status = audit_result["status"]
 
-        # ─────────────────────────────
-        # 5. SAVE
-        # ─────────────────────────────
-        session.add(transaction)
-        session.flush()
-        return transaction
+    #     # ─────────────────────────────
+    #     # 5. SAVE
+    #     # ─────────────────────────────
+    #     session.add(transaction)
+    #     session.flush()
+    #     return transaction

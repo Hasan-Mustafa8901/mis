@@ -59,6 +59,11 @@ def api_list_cars(session: Session = Depends(get_session)):
     return session.exec(select(Car)).all()
 
 
+@app.get("/variants", response_model=List[Variant])
+def api_list_all_variants(session: Session = Depends(get_session)):
+    return session.exec(select(Variant)).all()
+
+
 @app.get("/cars/{car_id}/variants", response_model=List[Variant])
 def api_list_variants(car_id: int, session: Session = Depends(get_session)):
     return session.exec(select(Variant).where(Variant.car_id == car_id)).all()
@@ -148,16 +153,16 @@ async def upload_price_list(
 
 @app.post("/transactions/calculate")
 def api_calculate_audit(
-    variant_id: int,
-    booking_date: date,
+    transaction: Transaction,
     actual_amounts: Dict[str, float],
     conditions: Dict[str, bool],
     session: Session = Depends(get_session),
 ):
     try:
         result = DiscountService.calculate_discount(
-            session, variant_id, booking_date, actual_amounts, conditions
+            session, transaction, actual_amounts, conditions
         )
+
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -165,18 +170,36 @@ def api_calculate_audit(
 
 @app.post("/transactions")
 def api_create_transaction(
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     session: Session = Depends(get_session),
 ):
-    try:
-        result = TransactionService.create_full_transaction(session, payload)
-        return result
 
-    except Exception as e:
-        import traceback
+    stage = payload.get("stage", "booking")
 
-        print(traceback.format_exc())
-        raise HTTPException(status_code=400, detail=str(e))
+    if stage == "booking":
+        return TransactionService.create_booking_transaction(session, payload)
+
+    elif stage == "delivery":
+        return TransactionService.create_delivery_transaction(session, payload)
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid mode")
+
+
+# @app.post("/transactions")
+# def api_create_transaction(
+#     payload: Dict[str, Any],
+#     session: Session = Depends(get_session),
+# ):
+#     try:
+#         result = TransactionService.create_full_transaction(session, payload)
+#         return result
+
+#     except Exception as e:
+#         import traceback
+
+#         print(traceback.format_exc())
+#         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/transactions/{transaction_id}/calculate")
@@ -206,12 +229,10 @@ def api_recalculate_transaction(
 
         # 3. Run calculate_audit
         audit_result = DiscountService.calculate_discount(
-            session,
-            tx.variant_id,
-            tx.id,
-            tx.booking_date,
-            actual_amounts,
-            tx.conditions,
+            session=session,
+            transaction=tx,
+            actual_amounts=tx.get("actual_amounts", {}),
+            conditions=tx.get("conditions", {}),
         )
 
         # 4. Update transaction again

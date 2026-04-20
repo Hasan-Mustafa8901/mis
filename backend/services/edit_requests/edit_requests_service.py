@@ -160,11 +160,9 @@ class EditRequestService:
 
         audit_result = DiscountService.calculate_discount(
             session=session,
-            variant_id=transaction.variant_id,
-            transaction_id=transaction.id,
-            booking_date=transaction.booking_date,
-            actual_amounts=transaction.actual_amounts or {},
-            conditions=transaction.conditions or {},
+            transaction=transaction,
+            actual_amounts=transaction.get("actual_amounts", {}),
+            conditions=transaction.get("conditions", {}),
         )
 
         transaction.total_actual_discount = audit_result["actual_discount"]

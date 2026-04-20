@@ -2,7 +2,6 @@ from sqlmodel import Session, select, desc, col
 from datetime import date
 from typing import Dict, Optional
 from db.models import PriceList, PriceListItem, DiscountComponent
-from rich import print
 
 import logging
 
@@ -26,9 +25,7 @@ class PriceListService:
         )
 
         all_pricelists = session.exec(statement).all()
-        print(
-            f"get_active_price_list : Found {len(all_pricelists)} price lists for date {booking_date}\n{all_pricelists=}"
-        )
+
         for active_pricelist in all_pricelists:
             if (
                 active_pricelist.valid_to is None
@@ -62,9 +59,6 @@ class PriceListService:
             PriceListItem.variant_id == variant_id,
         )
         items = session.exec(statement).all()
-        print(
-            f"get_allowed_amounts : Found {len(items)} price list items for price_list_id {price_list_id} and variant_id {variant_id}\n{items=}\n"
-        )
 
         allowed_map = {}
         for item in items:
@@ -83,6 +77,5 @@ class PriceListService:
                         f"Overwriting allowed value for component_id {item.component_id} in price list {price_list_id}"
                     )
                 allowed_map[item.component_id] = item.allowed_amount
-        print(f"get_allowed_amounts : Computed allowed amounts map: {allowed_map=}")
 
         return allowed_map
