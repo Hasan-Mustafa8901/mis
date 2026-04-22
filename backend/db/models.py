@@ -2,7 +2,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
-from services.utils import get_ist_now
+from services.utils import get_ist_now, get_ist_today
 from enum import Enum
 
 
@@ -50,6 +50,8 @@ class User(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     password_hash: str
     role: UserRole = Field(default=UserRole.AUDITOR, index=True)
+
+    outlet_id: Optional[int] = Field(default=None, foreign_key="outlet.id")
 
     is_active: bool = Field(default=True)
     is_logged_in: bool = Field(default=False)
@@ -105,6 +107,9 @@ class Outlet(SQLModel, table=True):
     name: str = Field(index=True, unique=True)
     city: Optional[str] = None
     state: Optional[str] = None
+    dealership_id: Optional[int] = Field(default=None, foreign_key="dealership.id")
+    last_serial_no: int = Field(default=0)
+    last_serial_month: int = Field(default=0)
     created_at: datetime = Field(default_factory=get_ist_now)
 
 
@@ -308,3 +313,57 @@ class EditRequest(SQLModel, table=True):
     # RELATIONSHIPS (optional but useful)
     # ─────────────────────────────
     transaction: Optional["Transaction"] = Relationship()
+
+
+# =========================
+#  COMPLAINT MANAGEMENT
+# =========================
+
+class DailyBooking(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    date: date
+    outlet_id: int = Field(foreign_key="outlet.id")
+    number_bookings: int
+
+
+class DailyDelivery(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    date: date
+    outlet_id: int = Field(foreign_key="outlet.id")
+    number_deliveries: int
+
+
+class Remark(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    remarks_complainant: Optional[str] = None
+    remarks_complainant_aa: Optional[str] = None
+    aa_complainee: Optional[str] = None
+
+
+class Complaint(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    complaint_code: str = Field(unique=True)
+
+    complainant_dealership_id: Optional[int] = Field(default=None, foreign_key="dealership.id")
+    complainant_outlet_id: Optional[int] = Field(default=None, foreign_key="outlet.id")
+    complainee_outlet_id: Optional[int] = Field(default=None, foreign_key="outlet.id")
+    complainee_dealership_id: Optional[int] = Field(default=None, foreign_key="dealership.id")
+
+    status: ComplaintStatus = Field(default=ComplaintStatus.ESCALATED)
+    raised_by: int = Field(foreign_key="user.id")
+    
+    raised_at: date = Field(default_factory=get_ist_today)
+    date_of_complaint: date
+
+    remark_complainee_aa: Optional[str] = None
+    remark_admin: Optional[str] = None
+
+    flag: Optional[ComplaintFlag] = None
+
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
+    transaction_id: Optional[int] = Field(default=None, foreign_key="transaction.id")
+    remark_id: Optional[str] = Field(default=None, foreign_key="remark.id")
+
+    customer: Optional["Customer"] = Relationship()
+    transaction: Optional["Transaction"] = Relationship()
+    remark: Optional["Remark"] = Relationship()

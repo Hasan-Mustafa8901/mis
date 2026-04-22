@@ -8,3 +8,6 @@ def normalize_component_name(name: str) -> str:
 
 def get_ist_now() -> datetime:
     return datetime.now(timezone(timedelta(hours=5, minutes=30)))
+
+def get_ist_today() -> date:
+    return get_ist_now().date()
