@@ -1871,54 +1871,25 @@ async def complaints_table_page():
 # ══════════════════════════════════════════════════════════════
 #                   PAGE: DAILY REPORTING
 # ══════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════
+#                   PAGE: DAILY REPORTING  (v2 – custom table)
+# ══════════════════════════════════════════════════════════════
 
 @ui.page("/daily-reporting")
 @protected_page
 async def daily_reporting_page() -> None:
     render_topbar("Daily Reporting")
-    
-    # Add custom AG Grid styling for borders
-    ui.add_head_html("""
-    <style>
-        .ag-theme-balham {
-            --ag-border-color: #E5E7EB;
-            --ag-side-bar-border-color: #E5E7EB;
-        }
-        .ag-theme-balham .ag-root-wrapper {
-            border: 1px solid #E5E7EB;
-            border-radius: 0.5rem;
-        }
-        .ag-theme-balham .ag-header {
-            border-bottom: 2px solid #D1D5DB;
-        }
-        .ag-theme-balham .ag-cell {
-            border-right: 1px solid #E5E7EB;
-        }
-        .ag-theme-balham .ag-row {
-            border-bottom: 1px solid #E5E7EB;
-        }
-        .ag-theme-balham .ag-pinned-left-header {
-             border-right: 1px solid #D1D5DB;
-        }
-        .ag-theme-balham .ag-pinned-left-cols-container {
-            border-right: 1px solid #D1D5DB;
-        }
-        .ag-theme-balham .ag-pinned-bottom-row {
-            font-weight: 700;
-            background-color: #F3F4F6;
-            color: #374151;
-            border-top: 2px solid #D1D5DB !important;
-        }
-    </style>
-    """)
 
-    # ── In-memory stores (session-level) ─────────────────────
-    # row_data[(table_type, date_str)] = {total_count, files_received, file_incomplete}
-    row_data: dict = {}
-    # dialog_data[(table_type, date_str, col_type)] = [{"name":str,"remarks":str}, ...]
-    dialog_data: dict = {}
+    # ── In-memory state ──────────────────────────────────────
+    row_data: dict = {}     # (tt, date) → {total_count, files_received, file_incomplete}
+    dialog_data: dict = {}  # (tt, date) → [{date, name, remarks}, …]
+    label_refs: dict = {}   # (tt, date, "pending") → ui.label
+    total_refs: dict = {}   # (tt, col) → ui.label
 
-    # ── Fetch transactions ────────────────────────────────────
+    # extra dates manually added via the date-picker
+    extra_dates: dict = {"booking": set(), "delivery": set()}
+
+    # ── Transactions ─────────────────────────────────────────
     try:
         all_transactions: list = await api_get("/transactions")
     except Exception:
@@ -1926,303 +1897,432 @@ async def daily_reporting_page() -> None:
 
     today_str = date.today().isoformat()
 
-    # ── Helpers ───────────────────────────────────────────────
-    def mis_count(table_type: str, d: str) -> int:
-        field = "booking_date" if table_type == "booking" else "delivery_date"
+    def mis_count(tt: str, d: str) -> int:
+        field = "booking_date" if tt == "booking" else "delivery_date"
         return sum(1 for t in all_transactions if (t.get(field) or "")[:10] == d)
 
-    def get_all_dates(table_type: str) -> list[str]:
-        field = "booking_date" if table_type == "booking" else "delivery_date"
-        dates = sorted(
-            {(t.get(field) or "")[:10] for t in all_transactions if (t.get(field) or "")[:10]},
-            reverse=True,
-        )
-        if today_str not in dates:
-            dates = [today_str] + dates
-        return dates
+    def get_dates(tt: str) -> list[str]:
+        field = "booking_date" if tt == "booking" else "delivery_date"
+        from_txns = {(t.get(field) or "")[:10] for t in all_transactions
+                     if (t.get(field) or "")[:10]}
+        all_d = from_txns | extra_dates[tt] | {today_str}
+        return sorted(all_d, reverse=True)
 
-    def build_row(table_type: str, d: str) -> dict:
-        stored = row_data.get((table_type, d), {})
-        tc = int(stored.get("total_count", 0))
-        fr = int(stored.get("files_received", 0))
-        fi = int(stored.get("file_incomplete", 0))
+    def get_stored(tt: str, d: str) -> dict:
+        return row_data.get((tt, d), {})
+
+    # ── Totals recompute ─────────────────────────────────────
+    def recompute_totals(tt: str, dates: list) -> None:
+        sums = {c: 0 for c in
+                ["total_count", "files_in_mis", "files_received",
+                 "files_pending", "file_incomplete"]}
+        for d in dates:
+            s = get_stored(tt, d)
+            tc = int(s.get("total_count", 0))
+            fr = int(s.get("files_received", 0))
+            fi = int(s.get("file_incomplete", 0))
+            fp = max(0, tc - fr)
+            sums["total_count"] += tc
+            sums["files_in_mis"] += mis_count(tt, d)
+            sums["files_received"] += fr
+            sums["files_pending"] += fp
+            sums["file_incomplete"] += fi
+        for col, total in sums.items():
+            lbl = total_refs.get((tt, col))
+            if lbl:
+                lbl.set_text(str(total))
+
+    def update_pending_cell(tt: str, d: str, dates: list) -> None:
+        s = get_stored(tt, d)
+        tc = int(s.get("total_count", 0))
+        fr = int(s.get("files_received", 0))
         fp = max(0, tc - fr)
-        return {
-            "date": d,
-            "total_count": tc,
-            "files_in_mis": mis_count(table_type, d),
-            "files_received": fr,
-            "files_pending": fp,
-            "file_incomplete": fi,
-        }
-
-    def totals_row(rows: list) -> dict:
-        return {
-            "date": "TOTAL",
-            "total_count": sum(r["total_count"] for r in rows),
-            "files_in_mis": sum(r["files_in_mis"] for r in rows),
-            "files_received": sum(r["files_received"] for r in rows),
-            "files_pending": sum(r["files_pending"] for r in rows),
-            "file_incomplete": sum(r["file_incomplete"] for r in rows),
-        }
-
-    def grid_col_defs() -> list:
-        return [
-            {
-                "field": "date",
-                "headerName": "Date",
-                "pinned": "left",
-                "width": 130,
-                "editable": False,
-                ":cellStyle": "params.data.date === 'TOTAL' ? {fontWeight:'700', background:'#F3F4F6', color:'#374151'} : {}",
-            },
-            {
-                "field": "total_count",
-                "headerName": "Total Count",
-                "width": 130,
-                "editable": True,
-                "type": "numericColumn",
-                ":cellStyle": "params.data.date === 'TOTAL' ? {fontWeight:'700', background:'#F3F4F6'} : {}",
-            },
-            {
-                "field": "files_in_mis",
-                "headerName": "Files Recorded in MIS",
-                "width": 170,
-                "editable": False,
-                "type": "numericColumn",
-                ":cellStyle": (
-                    "params.data.date === 'TOTAL' ? "
-                    "{fontWeight:'700', background:'#F3F4F6'} : "
-                    "{background:'#EEF2FF', color:'#4338CA', fontWeight:'500'}"
-                ),
-            },
-            {
-                "field": "files_received",
-                "headerName": "Files Received",
-                "width": 140,
-                "editable": True,
-                "type": "numericColumn",
-                ":cellStyle": (
-                    "params.data.date === 'TOTAL' ? "
-                    "{fontWeight:'700', background:'#F3F4F6'} : "
-                    "{background:'#F0FDF4', color:'#166534'}"
-                ),
-            },
-            {
-                "field": "files_pending",
-                "headerName": "Files Pending",
-                "width": 140,
-                "editable": False,
-                "type": "numericColumn",
-                ":valueGetter": "params.data.total_count - params.data.files_received",
-                ":cellStyle": (
-                    "params.data.date === 'TOTAL' ? "
-                    "{fontWeight:'700', background:'#F3F4F6'} : "
-                    "(params.data.total_count - params.data.files_received) > 0 ? "
-                    "{background:'#FEF9C3', color:'#92400E', fontWeight:'700', cursor:'pointer'} : "
-                    "{color:'#10B981', fontWeight:'600', cursor:'pointer'}"
-                ),
-            },
-            {
-                "field": "file_incomplete",
-                "headerName": "File Incomplete",
-                "width": 140,
-                "editable": True,
-                "type": "numericColumn",
-                ":cellStyle": (
-                    "params.data.date === 'TOTAL' ? "
-                    "{fontWeight:'700', background:'#F3F4F6'} : "
-                    "params.value > 0 ? "
-                    "{background:'#FEE2E2', color:'#991B1B', fontWeight:'700', cursor:'pointer'} : {}"
-                ),
-            },
-        ]
-
-    # ── Dialog setup ─────────────────────────────────────────
-    _dlg_key: dict = {"v": None}
-    _dlg_title_ref: dict = {"el": None}
-    _dlg_grid_ref: dict = {"el": None}
-
-    def _render_dialog_table(key):
-        rows = dialog_data.setdefault(key, [])
-        grid_data = [{"sno": i+1, "name": row.get("name", ""), "remarks": row.get("remarks", "")} for i, row in enumerate(rows)]
-        
-        if _dlg_grid_ref["el"]:
-            _dlg_grid_ref["el"].options["rowData"] = grid_data
-
-    with ui.dialog() as detail_dialog, ui.card().classes(
-        "w-[740px] max-w-[95vw] p-6 rounded-xl shadow-xl"
-    ):
-        with ui.row().classes("w-full items-center justify-between mb-5"):
-            title_label = ui.label("Details").classes(
-                "text-[16px] font-bold text-gray-900"
+        lbl = label_refs.get((tt, d, "pending"))
+        if lbl:
+            lbl.set_text(str(fp))
+            lbl.style(
+                f"font-family:monospace;font-size:13px;"
+                f"font-weight:{'700' if fp > 0 else '600'};"
+                f"color:{'#92400E' if fp > 0 else '#10B981'}"
             )
-            _dlg_title_ref["el"] = title_label
-            ui.button(icon="close", on_click=detail_dialog.close).props(
-                "flat round dense"
-            )
+        recompute_totals(tt, dates)
 
-        # Dialog AG Grid Table
-        def dialog_grid_col_defs():
-            return [
-                {
-                    "field": "sno",
-                    "headerName": "S.No",
-                    "width": 60,
-                    "editable": False,
-                    "type": "numericColumn",
-                },
-                {
-                    "field": "name",
-                    "headerName": "Customer Name",
-                    "width": 250,
-                    "editable": True,
-                    "flex": 1,
-                },
-                {
-                    "field": "remarks",
-                    "headerName": "Remarks",
-                    "width": 250,
-                    "editable": True,
-                    "flex": 1,
-                },
-            ]
+    # ── Dialog (Incomplete Files) ─────────────────────────────
+    _dlg: dict = {"tt": None, "d": None, "title": None, "body": None}
 
-        dialog_grid = (
-            ui.aggrid(
-                {
-                    "columnDefs": dialog_grid_col_defs(),
-                    "rowData": [],
-                    "defaultColDef": {
-                        "sortable": False,
-                        "resizable": True,
-                        "suppressMovable": True,
-                    },
-                    "domLayout": "autoHeight",
-                    "rowHeight": 36,
-                    "headerHeight": 40,
-                    "stopEditingWhenCellsLoseFocus": True,
-                },
-                theme="balham",
-                auto_size_columns=False,
-            )
-            .classes("w-full mb-4")
-            .style("font-family: Inter, sans-serif; font-size: 13px;")
+    def refresh_dlg() -> None:
+        k = (_dlg["tt"], _dlg["d"])
+        rows = dialog_data.get(k, [])
+        _dlg["body"].clear()
+
+        # inline styles so nothing depends on Tailwind compilation
+        TH = (
+            "border:1px solid #D1D5DB;padding:9px 13px;text-align:left;"
+            "font-size:11px;font-weight:700;text-transform:uppercase;"
+            "letter-spacing:.06em;color:#6B7280;background:#F9FAFB;"
+            "white-space:nowrap"
         )
-        _dlg_grid_ref["el"] = dialog_grid
+        TD = "border:1px solid #E5E7EB;padding:5px 8px;font-size:13px;vertical-align:middle"
 
-        async def on_dialog_cell_changed(e):
-            col = e.args.get("colId", "")
-            row_idx = e.args.get("rowIndex", -1)
-            val = e.args.get("newValue", "")
-            if row_idx < 0:
-                return
-            k = _dlg_key["v"]
-            if k and k in dialog_data and row_idx < len(dialog_data[k]):
-                if col == "name":
-                    dialog_data[k][row_idx]["name"] = val
-                elif col == "remarks":
-                    dialog_data[k][row_idx]["remarks"] = val
+        with _dlg["body"]:
+            with ui.element("table").style(
+                "width:100%;border-collapse:collapse;min-width:580px"
+            ):
+                # header
+                with ui.element("thead"):
+                    with ui.element("tr"):
+                        for h, w in [
+                            ("S.No", "44px"),
+                            ("Date", "140px"),
+                            ("Customer Name", ""),
+                            ("Remarks", ""),
+                            ("", "44px"),
+                        ]:
+                            with ui.element("th").style(
+                                TH + (f";width:{w}" if w else "")
+                            ):
+                                ui.label(h)
 
-        dialog_grid.on("cellValueChanged", on_dialog_cell_changed)
+                # body
+                with ui.element("tbody"):
+                    if not rows:
+                        with ui.element("tr"):
+                            with ui.element("td").props('colspan="5"').style(
+                                "border:1px solid #E5E7EB;padding:32px;"
+                                "text-align:center;color:#9CA3AF;font-size:13px"
+                            ):
+                                ui.label("No entries yet. Click '+ Add Row' to begin.")
+                    else:
+                        for i, row in enumerate(rows):
+                            row_bg = "#FFFFFF" if i % 2 == 0 else "#F9FAFB"
+                            with ui.element("tr").style(f"background:{row_bg}"):
 
-        with ui.row().classes("w-full justify-between mt-5 pt-4 border-t border-gray-100"):
-            def _add_row():
-                k = _dlg_key["v"]
-                if k is not None:
-                    dialog_data.setdefault(k, []).append({"name": "", "remarks": ""})
-                    _render_dialog_table(k)
+                                # S.No
+                                with ui.element("td").style(
+                                    TD + ";text-align:center;color:#9CA3AF;"
+                                    "font-family:monospace;width:44px"
+                                ):
+                                    ui.label(str(i + 1))
 
-            ui.button("+ Add Row", on_click=_add_row).props("outline no-caps").classes(
-                "text-[13px] text-[#E8402A] border-[#E8402A]"
+                                # Date
+                                with ui.element("td").style(TD + ";width:140px"):
+                                    d_inp = (
+                                        ui.input(value=row.get("date", ""))
+                                        .props('type="date" outlined dense')
+                                        .classes("w-full")
+                                    )
+                                    def _d(e, idx=i, k=k):
+                                        if k in dialog_data and idx < len(dialog_data[k]):
+                                            dialog_data[k][idx]["date"] = e.value
+                                    d_inp.on_value_change(_d)
+
+                                # Customer Name
+                                with ui.element("td").style(TD):
+                                    n_inp = (
+                                        ui.input(
+                                            value=row.get("name", ""),
+                                            placeholder="Customer name",
+                                        )
+                                        .props("outlined dense")
+                                        .classes("w-full")
+                                    )
+                                    def _n(e, idx=i, k=k):
+                                        if k in dialog_data and idx < len(dialog_data[k]):
+                                            dialog_data[k][idx]["name"] = e.value
+                                    n_inp.on_value_change(_n)
+
+                                # Remarks
+                                with ui.element("td").style(TD):
+                                    r_inp = (
+                                        ui.input(
+                                            value=row.get("remarks", ""),
+                                            placeholder="Remarks",
+                                        )
+                                        .props("outlined dense")
+                                        .classes("w-full")
+                                    )
+                                    def _r(e, idx=i, k=k):
+                                        if k in dialog_data and idx < len(dialog_data[k]):
+                                            dialog_data[k][idx]["remarks"] = e.value
+                                    r_inp.on_value_change(_r)
+
+                                # Delete button
+                                with ui.element("td").style(
+                                    TD + ";text-align:center;width:44px"
+                                ):
+                                    def _del(idx=i, k=k):
+                                        if k in dialog_data and idx < len(dialog_data[k]):
+                                            dialog_data[k].pop(idx)
+                                            refresh_dlg()
+                                    ui.button(icon="delete_outline", on_click=_del).props(
+                                        "flat round dense color=red"
+                                    )
+
+    # Build the dialog widget once
+    with ui.dialog() as incomplete_dlg, ui.card().classes(
+        "w-[760px] max-w-[96vw] p-6 rounded-xl shadow-2xl"
+    ):
+        with ui.row().classes("w-full items-center justify-between mb-4"):
+            title_el = ui.label("Incomplete Files").classes(
+                "text-[15px] font-bold text-gray-900"
             )
-            ui.button("Close", on_click=detail_dialog.close).props(
+            _dlg["title"] = title_el
+            ui.button(icon="close", on_click=incomplete_dlg.close).props("flat round dense")
+
+        body_el = (
+            ui.element("div")
+            .classes("w-full overflow-x-auto")
+            .style("max-height:420px;overflow-y:auto")
+        )
+        _dlg["body"] = body_el
+
+        with ui.row().classes(
+            "w-full justify-between mt-4 pt-4 border-t border-gray-100"
+        ):
+            def _add_row():
+                k = (_dlg["tt"], _dlg["d"])
+                dialog_data.setdefault(k, []).append(
+                    {"date": _dlg["d"] or "", "name": "", "remarks": ""}
+                )
+                refresh_dlg()
+
+            ui.button("+ Add Row", on_click=_add_row).props(
+                "outline no-caps"
+            ).classes("text-[13px] border-[#E8402A] text-[#E8402A]")
+
+            ui.button("Close", on_click=incomplete_dlg.close).props(
                 "unelevated no-caps"
             ).classes("bg-[#E8402A] text-white text-[13px] px-5")
 
-    def open_detail_dialog(table_type: str, d: str, col_type: str):
-        if d == "TOTAL":
-            return
-        key = (table_type, d, col_type)
-        _dlg_key["v"] = key
-        col_label = "Files Pending" if col_type == "pending" else "File Incomplete"
-        ttype_label = "Booking" if table_type == "booking" else "Delivery"
-        _dlg_title_ref["el"].set_text(
-            f"📋 {col_label} Details — {d} ({ttype_label})"
-        )
-        _render_dialog_table(key)
-        detail_dialog.open()
+    def open_incomplete_dlg(tt: str, d: str) -> None:
+        _dlg["tt"] = tt
+        _dlg["d"] = d
+        ttype = "Booking" if tt == "booking" else "Delivery"
+        _dlg["title"].set_text(f"📋 Incomplete Files — {d}  ({ttype})")
+        refresh_dlg()
+        incomplete_dlg.open()
 
-    # ── Grid builder ─────────────────────────────────────────
-    def build_grid(table_type: str, dates: list) -> "ui.aggrid":
-        rows = [build_row(table_type, d) for d in dates]
-        tot = totals_row(rows)
-        grid = (
-            ui.aggrid(
-                {
-                    "columnDefs": grid_col_defs(),
-                    "rowData": rows,
-                    "pinnedBottomRowData": [tot],
-                    "defaultColDef": {
-                        "sortable": True,
-                        "resizable": True,
-                        "suppressMovable": True,
-                    },
-                    "domLayout": "autoHeight",
-                    "rowHeight": 38,
-                    "headerHeight": 42,
-                    "suppressCellFocus": False,
-                    "stopEditingWhenCellsLoseFocus": True,
-                },
-                theme="balham",
-                auto_size_columns=False,
-            )
-            .classes("w-full")
-            .style("font-family: Inter, sans-serif; font-size: 13px;")
-        )
+    # ── Shared cell styles ───────────────────────────────────
+    TH_S = (
+        "border:1px solid #D1D5DB;padding:10px 14px;text-align:left;"
+        "font-size:11px;font-weight:700;text-transform:uppercase;"
+        "letter-spacing:.07em;color:#6B7280;background:#F9FAFB;white-space:nowrap"
+    )
+    TD_S = (
+        "border:1px solid #E5E7EB;padding:7px 12px;"
+        "font-size:13px;vertical-align:middle"
+    )
+    TF_S = (
+        "border:1px solid #D1D5DB;padding:10px 14px;"
+        "font-size:13px;font-weight:700;background:#F1F3F6;color:#111827"
+    )
 
-        async def on_cell_changed(e):
-            col = e.args.get("colId", "")
-            row_date = e.args.get("data", {}).get("date", "")
-            val = e.args.get("newValue", 0)
-            if row_date == "TOTAL" or col not in (
-                "total_count", "files_received", "file_incomplete"
+    # ── Table builder ────────────────────────────────────────
+    def build_table(tt: str, dates: list, parent) -> None:
+        """Render one reporting table (booking or delivery) into *parent*."""
+
+        with parent:
+            with ui.element("table").style(
+                "width:100%;border-collapse:collapse;border:1px solid #D1D5DB;"
+                "table-layout:auto;font-family:Inter,sans-serif"
             ):
-                return
-            try:
-                val = int(float(val))
-            except Exception:
-                val = 0
-            stored = row_data.setdefault((table_type, row_date), {})
-            stored[col] = val
-            # Recompute rows and totals (for immediate Files Pending calculation)
-            updated_rows = [build_row(table_type, d) for d in dates]
-            new_tot = totals_row(updated_rows)
-            await grid.run_grid_method("setGridOption", "rowData", updated_rows)
-            await grid.run_grid_method("setPinnedBottomRowData", [new_tot])
 
-        async def on_cell_clicked(e):
-            col = e.args.get("column", {}).get("colId", "")
-            row = e.args.get("data", {})
-            row_date = row.get("date", "")
-            if col == "files_pending":
-                open_detail_dialog(table_type, row_date, "pending")
-            elif col == "file_incomplete":
-                open_detail_dialog(table_type, row_date, "incomplete")
+                # ── THEAD ────────────────────────────────
+                with ui.element("thead"):
+                    with ui.element("tr"):
+                        for hdr in [
+                            "Date",
+                            "Total Count",
+                            "Files in MIS",
+                            "Files Received",
+                            "Files Pending",
+                            "File Incomplete",
+                        ]:
+                            with ui.element("th").style(TH_S):
+                                ui.label(hdr)
 
-        grid.on("cellValueChanged", on_cell_changed)
-        grid.on("cellClicked", on_cell_clicked)
-        return grid
+                # ── TBODY ────────────────────────────────
+                with ui.element("tbody"):
+                    for idx_d, d in enumerate(dates):
+                        s = get_stored(tt, d)
+                        tc = int(s.get("total_count", 0))
+                        fr = int(s.get("files_received", 0))
+                        fi = int(s.get("file_incomplete", 0))
+                        fp = max(0, tc - fr)
+                        mis = mis_count(tt, d)
+                        is_today = d == today_str
 
-    # ── Page layout ───────────────────────────────────────────
-    with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
-        # Sidebar
+                        # stripe + today highlight
+                        if is_today:
+                            row_bg = "background:#EFF6FF"
+                        elif idx_d % 2 == 1:
+                            row_bg = "background:#FAFAFA"
+                        else:
+                            row_bg = "background:#FFFFFF"
+
+                        with ui.element("tr").style(row_bg):
+
+                            # ── Date ──────────────────────
+                            with ui.element("td").style(
+                                TD_S + ";white-space:nowrap;min-width:110px"
+                            ):
+                                if is_today:
+                                    with ui.row().classes("items-center gap-1.5"):
+                                        ui.label(d).style(
+                                            "font-weight:700;color:#2563EB;font-size:13px"
+                                        )
+                                        ui.label("TODAY").style(
+                                            "background:#DBEAFE;color:#1D4ED8;font-size:10px;"
+                                            "padding:1px 7px;border-radius:10px;font-weight:800;"
+                                            "letter-spacing:.04em"
+                                        )
+                                else:
+                                    ui.label(d).style(
+                                        "font-weight:500;color:#374151;font-size:13px"
+                                    )
+
+                            # ── Total Count (editable) ────
+                            with ui.element("td").style(TD_S + ";min-width:110px"):
+                                tc_inp = (
+                                    ui.number(value=tc, min=0, step=1, format="%d")
+                                    .props("dense borderless")
+                                    .classes("w-full text-center")
+                                    .style("font-family:monospace;font-size:13px")
+                                )
+
+                                def _on_tc(e, _tt=tt, _d=d):
+                                    row_data.setdefault((_tt, _d), {})["total_count"] = int(
+                                        e.value or 0
+                                    )
+                                    update_pending_cell(_tt, _d, dates)
+
+                                tc_inp.on_value_change(_on_tc)
+
+                            # ── Files in MIS (read-only) ──
+                            with ui.element("td").style(
+                                TD_S + ";text-align:center;min-width:110px"
+                            ):
+                                ui.label(str(mis)).style(
+                                    "background:#EEF2FF;color:#4338CA;font-weight:600;"
+                                    "padding:3px 12px;border-radius:6px;font-size:13px;"
+                                    "font-family:monospace;display:inline-block"
+                                )
+
+                            # ── Files Received (editable) ─
+                            with ui.element("td").style(TD_S + ";min-width:110px"):
+                                fr_inp = (
+                                    ui.number(value=fr, min=0, step=1, format="%d")
+                                    .props("dense borderless")
+                                    .classes("w-full text-center")
+                                    .style("font-family:monospace;font-size:13px")
+                                )
+
+                                def _on_fr(e, _tt=tt, _d=d):
+                                    row_data.setdefault((_tt, _d), {})["files_received"] = int(
+                                        e.value or 0
+                                    )
+                                    update_pending_cell(_tt, _d, dates)
+
+                                fr_inp.on_value_change(_on_fr)
+
+                            # ── Files Pending (computed) ──
+                            with ui.element("td").style(
+                                TD_S + ";text-align:center;min-width:110px"
+                            ):
+                                p_color = "#92400E" if fp > 0 else "#10B981"
+                                p_weight = "700" if fp > 0 else "600"
+                                p_lbl = ui.label(str(fp)).style(
+                                    f"font-family:monospace;font-size:13px;"
+                                    f"font-weight:{p_weight};color:{p_color}"
+                                )
+                                label_refs[(tt, d, "pending")] = p_lbl
+
+                            # ── File Incomplete (editable + dialog) ──
+                            with ui.element("td").style(
+                                TD_S + ";min-width:130px"
+                            ):
+                                with ui.row().classes(
+                                    "items-center gap-2 justify-between"
+                                ):
+                                    fi_inp = (
+                                        ui.number(value=fi, min=0, step=1, format="%d")
+                                        .props("dense borderless")
+                                        .classes("w-16 text-center")
+                                        .style(
+                                            "font-family:monospace;font-size:13px;"
+                                            + ("color:#991B1B;font-weight:700" if fi > 0 else "")
+                                        )
+                                    )
+
+                                    def _on_fi(e, _tt=tt, _d=d):
+                                        row_data.setdefault((_tt, _d), {})[
+                                            "file_incomplete"
+                                        ] = int(e.value or 0)
+                                        recompute_totals(_tt, dates)
+
+                                    fi_inp.on_value_change(_on_fi)
+
+                                    # Info icon opens dialog
+                                    (
+                                        ui.button(
+                                            icon="assignment_late",
+                                            on_click=lambda _, _tt=tt, _d=d: open_incomplete_dlg(
+                                                _tt, _d
+                                            ),
+                                        )
+                                        .props("flat round dense")
+                                        .style("color:#E8402A;font-size:18px")
+                                        .tooltip("View / add incomplete file details")
+                                    )
+
+                # ── TFOOT (always-visible Total row) ────
+                with ui.element("tfoot"):
+                    with ui.element("tr").style(
+                        "background:#ECEEF2;border-top:2px solid #D1D5DB"
+                    ):
+                        # "TOTAL" label
+                        with ui.element("td").style(TF_S):
+                            ui.label("TOTAL").style(
+                                "font-size:12px;font-weight:800;"
+                                "letter-spacing:.06em;color:#374151"
+                            )
+
+                        # Summed columns
+                        for col in [
+                            "total_count",
+                            "files_in_mis",
+                            "files_received",
+                            "files_pending",
+                            "file_incomplete",
+                        ]:
+                            with ui.element("td").style(
+                                TF_S + ";text-align:center"
+                            ):
+                                lbl = ui.label("0").style(
+                                    "font-family:monospace;font-size:13px;"
+                                    "font-weight:700;color:#111827"
+                                )
+                                total_refs[(tt, col)] = lbl
+
+        # Compute initial totals
+        recompute_totals(tt, dates)
+
+    # ── Containers (rebuildable when date-picker adds a date) ─
+    booking_dates_state: dict = {"v": []}
+    delivery_dates_state: dict = {"v": []}
+
+    # ── Page layout ──────────────────────────────────────────
+    with ui.row().classes(
+        "w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"
+    ):
+        # ── Sidebar ──────────────────────────────────────────
         with ui.column().classes(
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 "
             "sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
             ui.label("Quick Nav").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 "
+                "px-4 mb-1.5 mt-4.5"
             )
             ui.link("📊 Dashboard", "/").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
@@ -2242,34 +2342,35 @@ async def daily_reporting_page() -> None:
             )
             sidebar()
 
-        # Main content
-        with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden gap-8"):
+        # ── Main content ──────────────────────────────────────
+        with ui.column().classes(
+            "flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden gap-6"
+        ):
 
-            # ── Header row ─────────────────────────────────────
-            with ui.row().classes("w-full items-center justify-between mb-2"):
+            # Page header + date-picker row
+            with ui.row().classes("w-full items-center justify-between mb-1"):
                 with ui.column().classes("gap-1"):
                     ui.label("Daily Reporting").classes(
                         "text-[18px] font-bold text-gray-900 leading-none"
                     )
-                    ui.label("Track booking & delivery file status by date").classes(
-                        "text-[12px] text-gray-400"
+                    ui.label(
+                        "Track booking & delivery file status by date"
+                    ).classes("text-[12px] text-gray-400")
+
+                with ui.row().classes("items-center gap-3"):
+                    ui.label("Add date:").classes("text-[12px] text-gray-500")
+                    date_picker = (
+                        ui.date_input(label="Select Date", value=today_str)
+                        .classes("w-44")
+                        .props("outlined dense")
                     )
-                # Date picker — right aligned
-                date_picker = (
-                    ui.date_input(label="Select Date", value=today_str)
-                    .classes("w-44")
-                    .props("outlined dense")
-                )
 
-            # State for filtered date
-            active_date: dict = {"v": today_str}
-            booking_dates = get_all_dates("booking")
-            delivery_dates = get_all_dates("delivery")
-
-            # ── Booking Details Table ───────────────────────────
-            with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
+            # ── Booking Card ─────────────────────────────────
+            with ui.card().classes(
+                "w-full shadow-sm rounded-xl p-0 overflow-hidden"
+            ):
                 with ui.row().classes(
-                    "w-full items-center justify-between px-5 py-3.5 "
+                    "w-full items-center justify-between px-5 py-3 "
                     "border-b border-gray-100 bg-white"
                 ):
                     with ui.row().classes("items-center gap-2"):
@@ -2279,18 +2380,23 @@ async def daily_reporting_page() -> None:
                         ui.label("Booking Details").classes(
                             "text-[13px] font-bold text-gray-800"
                         )
-                    ui.label("Click 'Files Pending' or 'File Incomplete' to add customer details").classes(
-                        "text-[11px] text-gray-400"
-                    )
+                    ui.label(
+                        "Editable: Total Count · Files Received · File Incomplete  "
+                        "— click 🚨 to manage incomplete records"
+                    ).classes("text-[11px] text-gray-400")
 
-                booking_grid_holder = ui.column().classes("w-full")
-                with booking_grid_holder:
-                    b_grid = build_grid("booking", booking_dates)
+                booking_wrap = (
+                    ui.element("div")
+                    .classes("w-full overflow-x-auto")
+                    .style("padding:0")
+                )
 
-            # ── Delivery Details Table ──────────────────────────
-            with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
+            # ── Delivery Card ─────────────────────────────────
+            with ui.card().classes(
+                "w-full shadow-sm rounded-xl p-0 overflow-hidden"
+            ):
                 with ui.row().classes(
-                    "w-full items-center justify-between px-5 py-3.5 "
+                    "w-full items-center justify-between px-5 py-3 "
                     "border-b border-gray-100 bg-white"
                 ):
                     with ui.row().classes("items-center gap-2"):
@@ -2300,38 +2406,58 @@ async def daily_reporting_page() -> None:
                         ui.label("Delivery Details").classes(
                             "text-[13px] font-bold text-gray-800"
                         )
-                    ui.label("Click 'Files Pending' or 'File Incomplete' to add customer details").classes(
-                        "text-[11px] text-gray-400"
-                    )
+                    ui.label(
+                        "Editable: Total Count · Files Received · File Incomplete  "
+                        "— click 🚨 to manage incomplete records"
+                    ).classes("text-[11px] text-gray-400")
 
-                delivery_grid_holder = ui.column().classes("w-full")
-                with delivery_grid_holder:
-                    d_grid = build_grid("delivery", delivery_dates)
+                delivery_wrap = (
+                    ui.element("div")
+                    .classes("w-full overflow-x-auto")
+                    .style("padding:0")
+                )
 
-            # ── Date picker handler ─────────────────────────────
-            async def on_date_change(e):
-                selected = e.value or today_str
-                active_date["v"] = selected
+    # ── Initial table render ──────────────────────────────────
+    b_dates = get_dates("booking")
+    d_dates = get_dates("delivery")
+    booking_dates_state["v"] = b_dates
+    delivery_dates_state["v"] = d_dates
 
-                # Add selected date if missing
-                b_dates = get_all_dates("booking")
-                if selected not in b_dates:
-                    b_dates = [selected] + b_dates
+    build_table("booking", b_dates, booking_wrap)
+    build_table("delivery", d_dates, delivery_wrap)
 
-                d_dates = get_all_dates("delivery")
-                if selected not in d_dates:
-                    d_dates = [selected] + d_dates
+    # ── Date-picker: add a date & rebuild ─────────────────────
+    async def on_date_change(e):
+        selected = (e.value or "").strip()
+        if not selected:
+            return
+        changed = False
+        if selected not in booking_dates_state["v"]:
+            extra_dates["booking"].add(selected)
+            changed = True
+        if selected not in delivery_dates_state["v"]:
+            extra_dates["delivery"].add(selected)
+            changed = True
+        if not changed:
+            return
 
-                b_rows = [build_row("booking", d) for d in b_dates]
-                d_rows = [build_row("delivery", d) for d in d_dates]
+        # Rebuild both tables (clears label_refs / total_refs first)
+        label_refs.clear()
+        total_refs.clear()
 
-                await b_grid.run_grid_method("setGridOption", "rowData", b_rows)
-                await b_grid.run_grid_method("setPinnedBottomRowData", [totals_row(b_rows)])
-                await d_grid.run_grid_method("setGridOption", "rowData", d_rows)
-                await d_grid.run_grid_method("setPinnedBottomRowData", [totals_row(d_rows)])
+        new_b = get_dates("booking")
+        new_d = get_dates("delivery")
+        booking_dates_state["v"] = new_b
+        delivery_dates_state["v"] = new_d
 
-            date_picker.on_value_change(on_date_change)
+        booking_wrap.clear()
+        delivery_wrap.clear()
+        build_table("booking", new_b, booking_wrap)
+        build_table("delivery", new_d, delivery_wrap)
 
+        ui.notify(f"Date {selected} added", type="info", position="top-right", timeout=2000)
+
+    date_picker.on_value_change(on_date_change)
 
 # ══════════════════════════════════════════════════════════════
 #                        PAGE: SETTINGS
