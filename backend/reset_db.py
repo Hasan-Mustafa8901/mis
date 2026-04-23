@@ -2,58 +2,89 @@ import os
 import sys
 import json
 
-# Add backend to sys.path
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from sqlmodel import SQLModel, Session
+
 from db.models import (
     Accessory,
     DiscountComponent,
     Outlet,
     Employee,
     Bank,
+    Dealership,
 )
 from db.session import engine
 
 
+# -------------------------
+# RESET DB
+# -------------------------
 def reset_db():
     print("Dropping all tables...")
     SQLModel.metadata.drop_all(engine)
+
     print("Creating all tables...")
     SQLModel.metadata.create_all(engine)
+
     print("Database reset complete.")
 
 
+# -------------------------
+# SEED DATA
+# -------------------------
 def seed_masters():
     with Session(engine) as session:
-        # 1. Add Outlets
-        outlet = Outlet(name="HN Showroom", city="Lucknow", state="Uttar Pradesh")
-        session.add(outlet)
+        # -------------------------
+        # 1. DEALERSHIP
+        # -------------------------
+        dealership = Dealership(name="SRM Motors", code="SRM")
+        session.add(dealership)
         session.commit()
-        session.refresh(outlet)
-        outlet = Outlet(name="RR Showroom", city="Lucknow", state="Uttar Pradesh")
-        session.add(outlet)
-        session.commit()
-        session.refresh(outlet)
+        session.refresh(dealership)
 
-        # 2. Add Employees
-        if outlet.id:
+        # -------------------------
+        # 2. OUTLETS
+        # -------------------------
+        outlet1 = Outlet(
+            name="Kanpur Road Showroom",
+            code="SRM-KNP",
+            dealership_id=dealership.id,
+        )
+
+        outlet2 = Outlet(
+            name="RR Showroom",
+            code="SRM-VKN",
+            dealership_id=dealership.id,
+        )
+
+        session.add(outlet1)
+        session.add(outlet2)
+        session.commit()
+
+        # -------------------------
+        # 4. EMPLOYEES
+        # -------------------------
+        if outlet1.id:
             exec_ = Employee(
                 name="John Doe",
-                employee_code="E001",
-                outlet_id=outlet.id,
+                outlet_id=outlet1.id,
                 designation="Sales Executive",
             )
+
             tl = Employee(
                 name="Jane Smith",
-                employee_code="E002",
-                outlet_id=outlet.id,
+                outlet_id=outlet1.id,
                 designation="Team Leader",
             )
+
             session.add(exec_)
             session.add(tl)
 
-        # 3. Add Banks
+        # -------------------------
+        # 5. BANKS
+        # -------------------------
         banks = [
             "HDFC Bank",
             "ICICI Bank",
@@ -61,21 +92,22 @@ def seed_masters():
             "Axis Bank",
             "Kotak Mahindra Bank",
         ]
+
         for bank_name in banks:
             session.add(Bank(name=bank_name))
 
-        # 4. Add Discount Components (Initial set based on column_config.json)
+        # -------------------------
+        # 6. DISCOUNT COMPONENTS
+        # -------------------------
         components = [
-            # Price Components
             ("Ex Showroom Price", "price", "price_charged", 1),
             ("Insurance (With Depreciation Cover)", "price", "price_charged", 2),
             ("Registration", "price", "price_charged", 3),
-            ("Genuine Acc Kit", "price", "price_charged", 4),
+            ("Accessories", "price", "price_charged", 4),
             ("TCS", "price", "price_charged", 5),
             ("FasTag", "price", "price_charged", 6),
-            ("Ext Warr", "price", "price_charged", 7),
+            ("Extended Warranty", "price", "price_charged", 7),
             ("Shield Of Trust", "price", "price_charged", 8),
-            # Discount Components
             ("Cash Discount All Customers", "discount", "discount_allowed", 1),
             ("Additional Discount From Dealer", "discount", "discount_allowed", 2),
             ("Extra Kitty on TR Cases", "discount", "discount_allowed", 3),
@@ -100,19 +132,37 @@ def seed_masters():
                 8,
             ),
         ]
+
         for name, type_, section, order in components:
             session.add(
-                DiscountComponent(name=name, type=type_, section=section, order=order)
+                DiscountComponent(
+                    name=name,
+                    type=type_,
+                    section=section,
+                    order=order,
+                )
             )
-        with open(r"config/column_config.json", encoding="utf-8") as f:
+
+        # -------------------------
+        # 7. ACCESSORIES
+        # -------------------------
+        with open("config/column_config.json", encoding="utf-8") as f:
             config = json.load(f)
-            for a in config.get("accessories", []):
-                session.add(Accessory(**a))
 
+        for a in config.get("accessories", []):
+            session.add(Accessory(**a))
+
+        # -------------------------
+        # FINAL COMMIT
+        # -------------------------
         session.commit()
-        print("Master data seeded.")
+
+        print("Master data seeded successfully.")
 
 
+# -------------------------
+# RUN
+# -------------------------
 if __name__ == "__main__":
     reset_db()
     seed_masters()

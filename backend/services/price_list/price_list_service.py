@@ -36,6 +36,9 @@ class PriceListService:
 
     @staticmethod
     def get_all_components(session: Session) -> list[DiscountComponent]:
+        """
+        Retrieves all discount components ordered by their display order.
+        """
         return list(
             session.exec(
                 select(DiscountComponent).order_by(col(DiscountComponent.order))

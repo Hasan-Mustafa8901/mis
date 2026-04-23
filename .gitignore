@@ -8,3 +8,4 @@ tests
 .venv
 old_code
 .nicegui/
+*.pdf

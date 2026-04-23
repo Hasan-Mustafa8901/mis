@@ -44,12 +44,54 @@ FLAG_DURATIONS = {
 }
 
 
+class Dealership(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    name: str
+    code: str
+
+    outlets: List["Outlet"] = Relationship(back_populates="dealership")
+
+    created_at: datetime = Field(default_factory=get_ist_now)
+
+
+class Outlet(SQLModel, table=True):
+    id: int = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    code: str = Field(index=True, unique=True)
+
+    dealership_id: int = Field(foreign_key="dealership.id")
+
+    address: Optional[str] = None
+
+    # ✅ CORRECT RELATIONSHIPS
+    dealership: Optional["Dealership"] = Relationship(back_populates="outlets")
+    employees: List["Employee"] = Relationship(back_populates="outlet")
+    users: List["User"] = Relationship(back_populates="outlet")
+
+    created_at: datetime = Field(default_factory=get_ist_now)
+
+
+# This table is for client employees data only.
+class Employee(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    outlet_id: int = Field(foreign_key="outlet.id")
+    designation: Optional[str] = None  # e.g., "Sales Executive", "Team Leader"
+    created_at: datetime = Field(default_factory=get_ist_now)
+
+    outlet: Optional["Outlet"] = Relationship(back_populates="employees")
+
+
 ## User Table
 class User(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
     password_hash: str
+    outlet_id: Optional[int] = Field(foreign_key="outlet.id")
     role: UserRole = Field(default=UserRole.AUDITOR, index=True)
+
+    transactions: list["Transaction"] = Relationship(back_populates="user")
+    outlet: Optional["Outlet"] = Relationship(back_populates="users")
 
     is_active: bool = Field(default=True)
     is_logged_in: bool = Field(default=False)
@@ -100,23 +142,6 @@ class Variant(SQLModel, table=True):
     price_list_items: List["PriceListItem"] = Relationship(back_populates="variant")
 
 
-class Outlet(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)
-    city: Optional[str] = None
-    state: Optional[str] = None
-    created_at: datetime = Field(default_factory=get_ist_now)
-
-
-# This table is for client employees data only.
-class Employee(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    outlet_id: int = Field(foreign_key="outlet.id")
-    designation: Optional[str] = None  # e.g., "Sales Executive", "Team Leader"
-    created_at: datetime = Field(default_factory=get_ist_now)
-
-
 class Bank(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
@@ -155,7 +180,7 @@ class PriceListItem(SQLModel, table=True):
     component_id: int = Field(foreign_key="discountcomponent.id")
 
     allowed_amount: float = 0.0
-    conditions: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    conditions: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
     price_list: Optional[PriceList] = Relationship(back_populates="items")
     variant: Optional[Variant] = Relationship(back_populates="price_list_items")
@@ -180,7 +205,7 @@ class Accessory(SQLModel, table=True):
 class TransactionAccessoryLink(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    transaction_id: int = Field(foreign_key="transaction.id")
+    transaction_id: int = Field(foreign_key="transaction.id", ondelete="CASCADE")
     accessory_id: int = Field(foreign_key="accessory.id")
 
     transaction: Optional["Transaction"] = Relationship(back_populates="accessories")
@@ -202,61 +227,81 @@ class Transaction(SQLModel, table=True):
 
     # Core Transaction Info
     booking_date: date
+    booking_amt: float = 0.0
+    booking_receipt_num: Optional[str] = None
+    booking_file_incomplete: bool = Field(default=False)
+    delivery_file_incomplete: bool = Field(default=False)
+    booking_file_incomplete_remarks: Optional[str] = None
+    delivery_file_incomplete_remarks: Optional[str] = None
     delivery_date: Optional[date] = None
     invoice_number: Optional[str] = Field(default=None, index=True)
     customer_file_number: Optional[str] = None
 
     stage: str = Field(default="booking")  # booking | delivery
     mode: str = Field(default="booking")  # booking | book_and_delivery
-    delivery_checklist: Dict[str, bool] = Field(default={}, sa_column=Column(JSON))
-    booking_checklist: Dict[str, bool] = Field(default={}, sa_column=Column(JSON))
+    delivery_checklist: Dict[str, bool] = Field(
+        default_factory=dict, sa_column=Column(JSON)
+    )
+    booking_checklist: Dict[str, bool] = Field(
+        default_factory=dict, sa_column=Column(JSON)
+    )
 
     # Vehicle Instance Details
-    vin_number: str
-    engine_number: str
+    vin_number: Optional[str] = Field(default=None, nullable=True)
+    engine_number: Optional[str] = Field(default=None, nullable=True)
     color: Optional[str] = None
     registration_number: Optional[str] = None
     registration_date: Optional[date] = None
 
     # MIS Logic Inputs
     team_leader: Optional[str] = None
-    conditions: Dict[str, bool] = Field(default={}, sa_column=Column(JSON))
+    conditions: Dict[str, bool] = Field(default_factory=dict, sa_column=Column(JSON))
 
     # Additional MIS Sections
-    exchange_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    finance_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    audit_info: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    invoice_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
-    payment_details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    exchange_details: Dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON)
+    )
+    finance_details: Dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON)
+    )
+    audit_info: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    invoice_details: Dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON)
+    )
+    payment_details: Dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSON)
+    )
 
-    # Audit Results
-    # other_discount: float = 0.0
-    total_allowed_discount: float = 0.0
-    total_actual_discount: float = 0.0
-    total_excess_discount: float = 0.0
+    # Values at the time of booking
+    booking_price_offered: float = 0.0  # Total price that the customer is being offered with all the components that they are buying.
+    booking_discount_offered: float = 0.0  # Total Discount at the time of booking, Total Discount - Listed Discount = Excess Discount
+
     status: str = "No Excess Discount"  # "UnderLimit", "Excess"
-    total_price_charged: float = 0.0
-    total_discount: float = 0.0
 
     total_receivable: float = 0.0
     total_received: float = 0.0
-    balance: float = 0.0
     payment_status: Optional[str] = None
 
     created_by: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=get_ist_now)
+    updated_at: Optional[datetime] = None
 
     # Relationships
+    user: Optional["User"] = Relationship(back_populates="transactions")
     customer: Customer = Relationship(back_populates="transactions")
-    items: List["TransactionItem"] = Relationship(back_populates="transaction")
+    items: List["TransactionItem"] = Relationship(
+        back_populates="transaction",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
     accessories: List["TransactionAccessoryLink"] = Relationship(
-        back_populates="transaction"
+        back_populates="transaction",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
 
 
 class TransactionItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    transaction_id: int = Field(foreign_key="transaction.id")
+    transaction_id: int = Field(foreign_key="transaction.id", ondelete="CASCADE")
     component_id: int = Field(foreign_key="discountcomponent.id")
 
     component_name: str  # Snapshot for history
@@ -308,3 +353,6 @@ class EditRequest(SQLModel, table=True):
     # RELATIONSHIPS (optional but useful)
     # ─────────────────────────────
     transaction: Optional["Transaction"] = Relationship()
+
+
+# Smart System

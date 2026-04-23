@@ -176,6 +176,10 @@ def api_create_transaction(
 
     stage = payload.get("stage", "booking")
 
+    print("Payload: \n", payload)
+    print("Stage: ", stage)
+    print("\n\n")
+
     if stage == "booking":
         return TransactionService.create_booking_transaction(session, payload)
 

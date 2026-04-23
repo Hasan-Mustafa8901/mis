@@ -31,6 +31,10 @@ CONDITION_KEYS = [
     ("upgrade", "Upgrade"),
     ("self_insurance", "Self Insurance"),
     ("tr_case", "TR Case"),
+    ("acc_kit", "Genuine Acc Kit"),
+    ("fastag", "FasTag"),
+    ("ext_warr", "Extended Warranty"),
+    ("shield", "Shield Of Trust"),
 ]
 
 DELIVERY_CHECK_KEYS = [
@@ -337,7 +341,7 @@ def sidebar():
 # ══════════════════════════════════════════════════════════════
 # MIS TABLE RENDERING & HELPER METHODS
 # ══════════════════════════════════════════════════════════════
-def build_ordered_columns(row: dict):
+def build_ordered_columns(row: dict, stage: str = "combined"):
     """
     Build ordered columns for the MIS table.
     """
@@ -357,6 +361,8 @@ def build_ordered_columns(row: dict):
         "variant_name",
         "booking_date",
     ]
+    if stage == "delivery":
+        ordered.append("delivery_date")
 
     # 2. Price components
     ordered += pick("Ex ") + pick("Insurance") + pick("Registration")
@@ -414,13 +420,9 @@ def clear_label(column_name: str):
     )
 
 
-def render_table(transactions):
+def render_table(transactions, stage: str = "delivery"):
     """
     Renders the MIS transaction table using AG Grid (ui.aggrid).
-    NiceGUI aggrid notes:
-    - JS expressions in column defs must use the ':field' colon-prefix syntax
-    - rowData is passed directly; no 'function' dict wrappers needed
-    - cellClicked event args['data'] holds the row dict
     """
     if not transactions:
         with ui.card().classes("w-full").style("padding:48px;text-align:center"):
@@ -433,7 +435,7 @@ def render_table(transactions):
             )
         return
 
-    ordered_keys = build_ordered_columns(transactions[0])
+    ordered_keys = build_ordered_columns(transactions[0], stage=stage)
 
     NUMERIC_KEYS = {
         k
@@ -455,16 +457,23 @@ def render_table(transactions):
             )
         )
     }
-    pin_cols = {"id", "customer_name", "mobile_number", "variant_name", "booking_date"}
+    pin_cols = {
+        "id",
+        "customer_name",
+        "mobile_number",
+        "variant_name",
+        "booking_date",
+        "delivery_date",
+    }
 
     # Define custom widths for specific columns (optional)
-    # Any column not defined here will fall back to `minWidth` from defaultColDef.
     CUSTOM_WIDTHS = {
         "id": 10,
         "customer_name": 100,
         "mobile_number": 100,
         "variant_name": 100,
         "booking_date": 100,
+        "delivery_date": 100,
     }
 
     col_defs = []
@@ -534,7 +543,7 @@ def render_table(transactions):
         row = e.args.get("data", {})
         txn_id = row.get("id")
         if txn_id:
-            ui.navigate.to(f"/form?transaction_id={txn_id}&stage=delivery")
+            ui.navigate.to(f"/form?transaction_id={txn_id}&stage={stage}")
 
     grid.on("cellClicked", on_cell_clicked)
 
@@ -782,7 +791,10 @@ async def dashboard_page() -> None:
             ui.link("📊 Dashboard", "/").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
             )
-            ui.link("📋 MIS Table", "/mis-table").classes(
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
 
@@ -803,7 +815,7 @@ async def dashboard_page() -> None:
                         else "bg-gray-100 text-gray-500"
                     )
 
-                    with ui.link(target=f"/mis-table?month={ym}").classes(
+                    with ui.link(target=f"/delivery-mis?month={ym}").classes(
                         "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline w-full"
                     ):
                         ui.label(lbl)
@@ -863,7 +875,8 @@ async def dashboard_page() -> None:
                         ui.label("New Entry").classes("text-weight-bold pl-2")
 
             # ── Dynamic content container (plain div, no extra padding) ──
-            content_area = ui.element("div").classes("w-full")
+            booking_content_area = ui.element("div").classes("w-full")
+            delivery_content_area = ui.element("div").classes("w-full")
 
             def compute_analytics(txns: list) -> dict:
                 """Compute all dashboard metrics from a transaction list."""
@@ -992,17 +1005,35 @@ async def dashboard_page() -> None:
                     month_map_local=t_month_map,
                 )
 
-            def render_dashboard(txns: list) -> None:
-                """Build the full dashboard UI for a given transaction list."""
-                a = compute_analytics(txns)
-                content_area.clear()
+            def render_dashboard(all_txns: list) -> None:
+                """Build the full dashboard UI splitting by booking vs delivery."""
+                booking_txns = [t for t in all_txns if not t.get("delivery_date")]
+                delivery_txns = [t for t in all_txns if t.get("delivery_date")]
 
-                with content_area:
+                booking_analytics = compute_analytics(booking_txns)
+                delivery_analytics = compute_analytics(delivery_txns)
+                booking_content_area.clear()
+                delivery_content_area.clear()
+
+                with booking_content_area:
                     # ════════════════════════════════════════
                     # ROW 1 — KPI CARDS  (pure CSS grid)
                     # ════════════════════════════════════════
-                    excess_color = "#EF4444" if a["total_excess"] > 0 else "#10B981"
+                    excess_color = (
+                        "#EF4444"
+                        if booking_analytics["total_excess"] > 0
+                        else "#10B981"
+                    )
                     # ── KPI CARDS ──────────────────────────────────
+                    with ui.row().classes("w-full items-center gap-2 mb-3 mt-6"):
+                        ui.label("Bookings").classes(
+                            "text-[11px] font-bold tracking-[0.8px] uppercase text-gray-500 whitespace-nowrap"
+                        )
+                        ui.separator().classes("flex-1")
+                        ui.link("View All Bookings", "/booking-mis").classes(
+                            "text-[10px] text-primary font-bold uppercase no-underline hover:underline"
+                        )
+
                     with ui.grid(columns=4).classes("w-full gap-4 mb-5"):
                         # KPI Card: Total Transactions
                         with ui.card().classes(
@@ -1011,17 +1042,19 @@ async def dashboard_page() -> None:
                             ui.label("🚗").classes(
                                 "absolute right-4 top-4 text-[30px] opacity-25 select-none"
                             )
-                            ui.label("Total Deliveries").classes(
+                            ui.label("Total Bookings").classes(
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
-                            ui.label(str(a["total_entries"])).classes(
+                            ui.label(str(booking_analytics["total_entries"])).classes(
                                 "text-[24px] font-bold text-gray-900 leading-none mb-1.5 mono"
                             )
                             with ui.row().classes("gap-1"):
-                                ui.label(f"{a['ok_cases']} OK").classes(
+                                ui.label(f"{booking_analytics['ok_cases']} OK").classes(
                                     "bg-indigo-50 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded"
                                 )
-                                ui.label(f"{a['excess_cases']} Excess").classes(
+                                ui.label(
+                                    f"{booking_analytics['excess_cases']} Excess"
+                                ).classes(
                                     "bg-red-50 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded"
                                 )
                         # KPI Card: Total Allowed Discount
@@ -1034,11 +1067,13 @@ async def dashboard_page() -> None:
                             ui.label("Total Discount Given").classes(
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
-                            ui.label(f"₹{a['total_actual_discount']:,.0f}").classes(
+                            ui.label(
+                                f"₹{booking_analytics['total_actual_discount']:,.0f}"
+                            ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{a['avg_actual_discount']:,.0f} / transaction"
+                                f"Avg ₹{booking_analytics['avg_actual_discount']:,.0f} / transaction"
                             ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
@@ -1050,11 +1085,13 @@ async def dashboard_page() -> None:
                             ui.label("Total Allowable Discount").classes(
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
-                            ui.label(f"₹{a['total_discount']:,.0f}").classes(
+                            ui.label(
+                                f"₹{booking_analytics['total_discount']:,.0f}"
+                            ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{a['avg_discount']:,.0f} / transaction"
+                                f"Avg ₹{booking_analytics['avg_discount']:,.0f} / transaction"
                             ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
@@ -1067,20 +1104,128 @@ async def dashboard_page() -> None:
                             ui.label("Total Excess Discount").classes(
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
-                            ui.label(f"₹{a['total_excess']:,.0f}").classes(
+                            ui.label(
+                                f"₹{booking_analytics['total_excess']:,.0f}"
+                            ).classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
                             )
                             ui.label(
                                 "⚠ Requires attention"
-                                if a["total_excess"] > 0
+                                if booking_analytics["total_excess"] > 0
                                 else "✓ All within limits"
                             ).classes(
-                                f"text-[11px] font-medium {'text-red-500' if a['total_excess'] > 0 else 'text-green-500'}"
+                                f"text-[11px] font-medium {'text-red-500' if booking_analytics['total_excess'] > 0 else 'text-green-500'}"
+                            )
+                            ui.label(
+                                f"{booking_analytics['ok_cases']} of {booking_analytics['total_entries']} transactions OK"
+                            ).classes("text-[14px] text-gray-600")
+
+                with delivery_content_area:
+                    # ════════════════════════════════════════
+                    # ROW 1 — KPI CARDS  (pure CSS grid)
+                    # ════════════════════════════════════════
+                    excess_color = (
+                        "#EF4444"
+                        if delivery_analytics["total_excess"] > 0
+                        else "#10B981"
+                    )
+                    # ── KPI CARDS ──────────────────────────────────
+                    with ui.row().classes("w-full items-center gap-2 mb-3 mt-6"):
+                        ui.label("Deliveries").classes(
+                            "text-[11px] font-bold tracking-[0.8px] uppercase text-gray-500 whitespace-nowrap"
+                        )
+                        ui.separator().classes("flex-1")
+                        ui.link("View All Deliveries", "/delivery-mis").classes(
+                            "text-[10px] text-primary font-bold uppercase no-underline hover:underline"
+                        )
+                    with ui.grid(columns=4).classes("w-full gap-4 mb-5"):
+                        # KPI Card: Total Transactions
+                        with ui.card().classes(
+                            "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#6366F1] shadow-sm rounded-xl"
+                        ):
+                            ui.label("🚗").classes(
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
+                            )
+                            ui.label("Total Deliveries").classes(
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                            )
+                            ui.label(str(delivery_analytics["total_entries"])).classes(
+                                "text-[24px] font-bold text-gray-900 leading-none mb-1.5 mono"
+                            )
+                            with ui.row().classes("gap-1"):
+                                ui.label(
+                                    f"{delivery_analytics['ok_cases']} OK"
+                                ).classes(
+                                    "bg-indigo-50 text-indigo-700 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                )
+                                ui.label(
+                                    f"{delivery_analytics['excess_cases']} Excess"
+                                ).classes(
+                                    "bg-red-50 text-red-700 text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                )
+                        # KPI Card: Total Allowed Discount
+                        with ui.card().classes(
+                            "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#10B981] shadow-sm rounded-xl"
+                        ):
+                            ui.label("💸").classes(
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
+                            )
+                            ui.label("Total Discount Given").classes(
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                            )
+                            ui.label(
+                                f"₹{delivery_analytics['total_actual_discount']:,.0f}"
+                            ).classes(
+                                "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
+                            )
+                            ui.label(
+                                f"Avg ₹{delivery_analytics['avg_actual_discount']:,.0f} / transaction"
+                            ).classes("text-[14px] text-gray-600")
+                        # KPI Card: Total Allowed Discount
+                        with ui.card().classes(
+                            "relative overflow-hidden p-4.5 px-5 bg-white border-t-4 border-[#10B981] shadow-sm rounded-xl"
+                        ):
+                            ui.label("💸").classes(
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
+                            )
+                            ui.label("Total Allowable Discount").classes(
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                            )
+                            ui.label(
+                                f"₹{delivery_analytics['total_discount']:,.0f}"
+                            ).classes(
+                                "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
+                            )
+                            ui.label(
+                                f"Avg ₹{delivery_analytics['avg_discount']:,.0f} / transaction"
+                            ).classes("text-[14px] text-gray-600")
+
+                        # KPI Card: Total Excess Discount
+                        with ui.card().classes(
+                            f"relative overflow-hidden p-4.5 px-5 bg-white border-t-4 shadow-sm rounded-xl border-[{excess_color}]"
+                        ):
+                            ui.label("⚠️").classes(
+                                "absolute right-4 top-4 text-[30px] opacity-25 select-none"
+                            )
+                            ui.label("Total Excess Discount").classes(
+                                "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
+                            )
+                            ui.label(
+                                f"₹{delivery_analytics['total_excess']:,.0f}"
+                            ).classes(
+                                f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
+                            )
+                            ui.label(
+                                "⚠ Requires attention"
+                                if delivery_analytics["total_excess"] > 0
+                                else "✓ All within limits"
+                            ).classes(
+                                f"text-[11px] font-medium {'text-red-500' if delivery_analytics['total_excess'] > 0 else 'text-green-500'}"
                             )
 
                             # KPI Card: Compliance Rate
                             ui.label(
-                                f"{a['ok_cases']} of {a['total_entries']} transactions OK"
+                                f"{delivery_analytics['ok_cases']} of {delivery_analytics['total_entries']} transactions OK"
                             ).classes("text-[14px] text-gray-600")
 
                     # ── SALES ANALYTICS ────────────────────────────────
@@ -1103,7 +1248,7 @@ async def dashboard_page() -> None:
                                     "text-[10px] text-gray-400 font-normal"
                                 )
                             render_bar_chart(
-                                a["top_model_sales"],
+                                delivery_analytics["top_model_sales"],
                                 color="#6366F1",
                                 value_fmt="N",
                                 empty_msg="No model data",
@@ -1122,7 +1267,7 @@ async def dashboard_page() -> None:
                                     "text-[10px] text-gray-400 font-normal"
                                 )
                             render_bar_chart(
-                                a["top_model_disc"],
+                                delivery_analytics["top_model_disc"],
                                 color="#10B981",
                                 value_fmt="K",
                                 empty_msg="No model data",
@@ -1130,8 +1275,8 @@ async def dashboard_page() -> None:
                             )
 
                     # Sales conditions (full-width, split 2-col)
-                    if a["sorted_conds"]:
-                        items_list = list(a["sorted_conds"])
+                    if delivery_analytics["sorted_conds"]:
+                        items_list = list(delivery_analytics["sorted_conds"])
                         half = (len(items_list) + 1) // 2
                         left_items = items_list[:half]
                         right_items = items_list[half:]
@@ -1179,7 +1324,7 @@ async def dashboard_page() -> None:
                                     "text-[10px] text-gray-400 font-normal"
                                 )
                             render_bar_chart(
-                                a["outlets_sorted_sales"],
+                                delivery_analytics["outlets_sorted_sales"],
                                 color="#0EA5E9",
                                 value_fmt="N",
                                 empty_msg="No outlet data",
@@ -1197,7 +1342,7 @@ async def dashboard_page() -> None:
                                     "text-[10px] text-gray-400 font-normal"
                                 )
                             render_bar_chart(
-                                a["outlets_sorted_disc"],
+                                delivery_analytics["outlets_sorted_disc"],
                                 color="#F59E0B",
                                 value_fmt="K",
                                 empty_msg="No outlet data",
@@ -1205,9 +1350,10 @@ async def dashboard_page() -> None:
                             )
 
                     # Outlet excess mini-table
-                    if a["outlet_excess"]:
+                    if delivery_analytics["outlet_excess"]:
                         sorted_oe = sorted(
-                            a["outlet_excess"].items(), key=lambda x: -x[1]
+                            delivery_analytics["outlet_excess"].items(),
+                            key=lambda x: -x[1],
                         )
                         with ui.card().classes("w-full shadow-sm rounded-xl p-5 mb-4"):
                             with ui.row().classes(
@@ -1237,8 +1383,12 @@ async def dashboard_page() -> None:
                                 )
 
                             for o_name, o_exc in sorted_oe[:8]:
-                                sales_n = a["outlet_sales"].get(o_name, 0)
-                                disc_n = a["outlet_discount"].get(o_name, 0)
+                                sales_n = delivery_analytics["outlet_sales"].get(
+                                    o_name, 0
+                                )
+                                disc_n = delivery_analytics["outlet_discount"].get(
+                                    o_name, 0
+                                )
                                 exc_rt = round(o_exc / disc_n * 100, 1) if disc_n else 0
                                 rate_color = (
                                     "text-red-600" if exc_rt > 20 else "text-gray-400"
@@ -1278,7 +1428,7 @@ async def dashboard_page() -> None:
                                     "text-[10px] text-gray-400 font-normal"
                                 )
                             render_bar_chart(
-                                a["top_model_excess"],
+                                delivery_analytics["top_model_excess"],
                                 color="#F97316",
                                 value_fmt="K",
                                 empty_msg="No excess discounts",
@@ -1296,7 +1446,7 @@ async def dashboard_page() -> None:
                                     "text-[10px] text-gray-400 font-normal"
                                 )
                             render_bar_chart(
-                                a["top_variants"],
+                                delivery_analytics["top_variants"],
                                 color="#EF4444",
                                 value_fmt="K",
                                 empty_msg="No excess discounts",
@@ -1322,8 +1472,8 @@ async def dashboard_page() -> None:
                                     "text-[10px] text-gray-400 font-normal"
                                 )
 
-                            if a["top_excess_txns"]:
-                                for t in a["top_excess_txns"]:
+                            if delivery_analytics["top_excess_txns"]:
+                                for t in delivery_analytics["top_excess_txns"]:
                                     name = (
                                         t.get("customer_name")
                                         or t.get("customer")
@@ -1390,9 +1540,11 @@ async def dashboard_page() -> None:
                                     "text-[9px] font-bold tracking-[0.8px] uppercase text-gray-400 text-right"
                                 )
 
-                            if a["sorted_months_local"]:
-                                for ym in a["sorted_months_local"][:10]:
-                                    txns_m = a["month_map_local"][ym]
+                            if delivery_analytics["sorted_months_local"]:
+                                for ym in delivery_analytics["sorted_months_local"][
+                                    :10
+                                ]:
+                                    txns_m = delivery_analytics["month_map_local"][ym]
                                     cnt_m = len(txns_m)
                                     disc_m = sum(
                                         t.get("total_allowed_discount", 0) or 0
@@ -1417,7 +1569,7 @@ async def dashboard_page() -> None:
                                         .on(
                                             "click",
                                             lambda _, y=ym: ui.navigate.to(
-                                                f"/mis-table?month={y}"
+                                                f"/delivery-mis?month={y}"
                                             ),
                                         )
                                     ):
@@ -1461,18 +1613,26 @@ async def dashboard_page() -> None:
 # ══════════════════════════════════════════════════════════════
 #                   PAGE: MIS TABLE
 # ══════════════════════════════════════════════════════════════
-@ui.page("/mis-table")
-@protected_page
-async def mis_table_page(month: str | None = None) -> None:
-
-    render_topbar("MIS Table")
+# ══════════════════════════════════════════════════════════════
+#                   PAGE: MIS TABLES (Booking & Delivery)
+# ══════════════════════════════════════════════════════════════
+async def mis_table_page_base(stage: str, month: str | None = None) -> None:
+    """Generic MIS table page logic used by both Booking and Delivery routes."""
+    label = "Booking MIS" if stage == "booking" else "Delivery MIS"
+    render_topbar(label)
 
     try:
-        transactions: list = await api_get("/transactions")
+        all_transactions: list = await api_get("/transactions")
     except Exception:
-        transactions = []
+        all_transactions = []
 
-    # Get months from ALL transactions for sidebar grouping
+    # Split logic
+    if stage == "booking":
+        transactions = [t for t in all_transactions if not t.get("delivery_date")]
+    else:
+        transactions = [t for t in all_transactions if t.get("delivery_date")]
+
+    # Get months for sidebar grouping (from the filtered set)
     month_map = defaultdict(list)
     for t in transactions:
         bd = t.get("booking_date", "")
@@ -1480,14 +1640,14 @@ async def mis_table_page(month: str | None = None) -> None:
             month_map[bd[:7]].append(t)
     sorted_months = sorted(month_map.keys(), reverse=True)
 
-    def month_label(ym: str) -> str:
+    def month_label_local(ym: str) -> str:
         try:
             y, m = ym.split("-")
             return f"{calendar.month_abbr[int(m)]} '{y[2:]}"
         except Exception:
             return ym
 
-    # Filter main list if needed
+    # Filter by specific month if passed in URL
     if month:
         transactions = [
             t
@@ -1509,8 +1669,17 @@ async def mis_table_page(month: str | None = None) -> None:
             ui.link("📊 Dashboard", "/").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
-            ui.link("📋 MIS Table", "/mis-table").classes(
-                "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
+
+            # Booking link
+            is_booking = stage == "booking"
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                f"flex px-4 py-2 text-[12.5px] {'font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A]' if is_booking else 'font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50'} no-underline"
+            )
+
+            # Delivery link
+            is_delivery = stage == "delivery"
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+                f"flex px-4 py-2 text-[12.5px] {'font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A]' if is_delivery else 'font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50'} no-underline"
             )
 
             ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
@@ -1518,15 +1687,16 @@ async def mis_table_page(month: str | None = None) -> None:
                 "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-400 px-4 mb-1.5 mt-4.5"
             )
 
-            ui.link("All Months", "/mis-table").classes(
+            route_path = f"/{stage}-mis"
+            ui.link("All Months", route_path).classes(
                 f"flex px-4 py-1.5 text-[12.5px] font-medium {'text-[#E8402A]' if not month else 'text-gray-600'} hover:bg-gray-50 no-underline"
             )
             for ym in sorted_months:
                 is_curr = month == ym
-                with ui.link(target=f"/mis-table?month={ym}").classes(
+                with ui.link(target=f"{route_path}?month={ym}").classes(
                     f"flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium {'text-[#E8402A] bg-[#FEF2F0]' if is_curr else 'text-gray-600'} hover:bg-gray-50 no-underline w-full"
                 ):
-                    ui.label(month_label(ym))
+                    ui.label(month_label_local(ym))
                     ui.label(str(len(month_map[ym]))).classes(
                         "text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
                     )
@@ -1535,7 +1705,7 @@ async def mis_table_page(month: str | None = None) -> None:
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
             with ui.row().classes("w-full items-center justify-between mb-5"):
                 with ui.column().classes("gap-1"):
-                    title = f"MIS Table{' — ' + month_label(month) if month else ' — All Months'}"
+                    title = f"{label}{' — ' + month_label_local(month) if month else ' — All Months'}"
                     ui.label(title).classes(
                         "text-[18px] font-bold text-gray-900 leading-none"
                     )
@@ -1545,6 +1715,7 @@ async def mis_table_page(month: str | None = None) -> None:
                     ui.label(f"{total_entries} records{exc_txt}").classes(
                         "text-[12px] text-gray-400"
                     )
+
                 with (
                     ui.button(on_click=open_new_entry_dialog)
                     .classes(
@@ -1556,7 +1727,19 @@ async def mis_table_page(month: str | None = None) -> None:
                     ui.label("New Entry").classes("text-weight-bold pl-2")
 
             with ui.card().classes("w-full p-0 shadow-sm rounded-xl mb-8"):
-                render_table(transactions)
+                render_table(transactions, stage=stage)
+
+
+@ui.page("/booking-mis")
+@protected_page
+async def booking_mis_page(month: str | None = None) -> None:
+    await mis_table_page_base(stage="booking", month=month)
+
+
+@ui.page("/delivery-mis")
+@protected_page
+async def delivery_mis_page(month: str | None = None) -> None:
+    await mis_table_page_base(stage="delivery", month=month)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1630,6 +1813,8 @@ class FormState:
         self.mode: str = "booking"  # booking | book-and-delivery
         self.booking_date: ui.input | None = None
         self.delivery_date: ui.input | None = None
+        self.booking_amt: ui.input | None = None
+        self.booking_receipt_num: ui.input | None = None
         self.booking_data: dict = {}
 
         # Reference data
@@ -1685,7 +1870,10 @@ class FormState:
 
         # Component toggles
         self.price_match_toggles: dict[str, ui.switch] = {}
+        self.price_diff_labels: dict[str, ui.label] = {}
         self.discount_match_toggles: dict[str, ui.switch] = {}
+        self.lbl_total_diff_price: ui.label | None = None
+        self.lbl_excess_discount: ui.label | None = None
 
         self.listed_prices: dict[str, int] = {}
         self.price_listed_labels: dict[str, ui.label] = {}
@@ -1693,6 +1881,7 @@ class FormState:
 
         # Component inputs
         self.price_inputs: dict[str, ui.input] = {}
+        self.price_rows: dict[str, ui.row] = {}
         self.discount_inputs: dict[str, ui.input] = {}
         self.discount_rows: dict[str, ui.row] = {}
 
@@ -1728,6 +1917,8 @@ class FormState:
         self.lbl_allowed: ui.label | None = None
         self.lbl_discount: ui.label | None = None
         self.lbl_excess: ui.label | None = None
+        self.lbl_total_listed_price: ui.label | None = None
+        self.lbl_total_offered_price: ui.label | None = None
         self.stage_toggle = None
         self.delivery_mode = None
         self.booking_select = None
@@ -1738,7 +1929,16 @@ class FormState:
 
     @property
     def live_discount(self) -> int:
-        return sum(int(parsed_val(inp)) for inp in self.discount_inputs.values())
+        """Sum of allowed discounts for all currently visible discount rows."""
+        total = 0
+        if not hasattr(self, "listed_prices") or not self.listed_prices:
+            return 0
+        for name, row in self.discount_rows.items():
+            if row.visible:
+                val = self.listed_prices.get(name)
+                if val is not None:
+                    total += int(val)
+        return total
 
     def is_valid(self) -> tuple[bool, str]:
         def _val(f):
@@ -1771,11 +1971,6 @@ class FormState:
         if not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan_val):
             return False, "Valid PAN required."
 
-        # aadhar_raw = _val(self.cust_aadhar)
-        # aadhar_clean = re.sub(r"\D", "", aadhar_raw)
-        # if aadhar_clean and len(aadhar_clean) != 12:
-        #     return False, "Valid 12-digit Aadhar required."
-
         # TR Case condition
         if self.condition_cbs.get("tr_case") and self.condition_cbs["tr_case"].value:
             if not _val(self.cust_other_id):
@@ -1783,12 +1978,12 @@ class FormState:
 
         if not _val(self.cust_file_no):
             return False, "Customer File Number is required."
+        if self.stage == "delivery":
+            if not _val(self.vin_no):
+                return False, "VIN Number is required."
 
-        if not _val(self.vin_no):
-            return False, "VIN Number is required."
-
-        if not _val(self.engine_no):
-            return False, "Engine Number is required."
+            if not _val(self.engine_no):
+                return False, "Engine Number is required."
 
         year_val = _val(self.model_year)
         if not year_val or not year_val.isdigit():
@@ -1855,6 +2050,14 @@ def populate_from_booking(state: FormState, data: dict):
 
     if not data:
         return
+
+    # ── Booking ──────────────────
+    if state.booking_date:
+        state.booking_date.set_value(data.get("booking_date", ""))
+    if state.booking_amt:
+        state.booking_amt.set_value(data.get("booking_amt", ""))
+    if state.booking_receipt_num:
+        state.booking_receipt_num.set_value(data.get("booking_receipt_num", ""))
 
     # ── Customer ─────────────────
     if state.cust_name:
@@ -1924,16 +2127,11 @@ def populate_price_and_discount(state, booking_data: dict):
         if val is not None:
             inp.set_value(format_num_inr(val))
 
-    # Discounts
-    for name, inp in state.discount_inputs.items():
-        val = component_map.get(name)
-        if val is not None:
-            inp.set_value(format_num_inr(val))
-
 
 # ══════════════════════════════════════════════════════════════
 # FORM SECTION BUILDERS
 # ══════════════════════════════════════════════════════════════
+FORM_COLUMNS = 3
 
 
 def build_vehicle_section(state: FormState) -> None:
@@ -1941,14 +2139,14 @@ def build_vehicle_section(state: FormState) -> None:
     outlet_opts = {outlet["id"]: outlet["name"] for outlet in state.outlets}
     exec_opts = {executive["id"]: executive["name"] for executive in state.executives}
 
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6 w-full"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
         ):
             ui.label("🚙").classes("text-[20px] select-none")
             ui.label("Vehicle Details").classes("text-[15px] font-bold text-gray-900")
 
-        with ui.grid(columns=4).classes("w-full gap-5"):
+        with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-5"):
             state.car_select = (
                 ui.select(
                     options=car_opts,
@@ -1970,16 +2168,7 @@ def build_vehicle_section(state: FormState) -> None:
                 .props("outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
-            state.booking_date = (
-                ui.input(
-                    label="Booking Date *",
-                    value=str(date.today()),
-                    on_change=lambda _: _fs_try_price_preload(state),
-                )
-                .classes("w-full")
-                .props('type="date" outlined dense')
-                .on_value_change(lambda _: _fs_revalidate(state))
-            )
+
             state.outlet_select = (
                 ui.select(
                     options=outlet_opts,
@@ -2004,6 +2193,12 @@ def build_vehicle_section(state: FormState) -> None:
                 .props("outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
+            state.model_year = (
+                ui.input(label="Model Year *", placeholder="e.g. 2024")
+                .classes("w-full")
+                .props('outlined dense type="number"')
+                .on_value_change(lambda _: _fs_revalidate(state))
+            )
             if state.stage == "delivery":
                 state.vin_no = (
                     ui.input(label="VIN Number *")
@@ -2017,18 +2212,19 @@ def build_vehicle_section(state: FormState) -> None:
                     )
                     .classes("w-full")
                     .props('type="date" outlined dense')
-                    .on_value_change(lambda _: _fs_revalidate(state))
+                    .on_value_change(
+                        lambda _: (
+                            _fs_revalidate(state),
+                            ui.timer(
+                                0, lambda: _fs_try_price_preload(state), once=True
+                            ),
+                        )
+                    )
                 )
                 state.engine_no = (
                     ui.input(label="Engine Number *")
                     .classes("w-full uppercase")
                     .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
-                )
-                state.model_year = (
-                    ui.input(label="Model Year *", placeholder="e.g. 2024")
-                    .classes("w-full")
-                    .props('outlined dense type="number"')
                     .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.vehicle_regn_no = (
@@ -2059,7 +2255,7 @@ def build_customer_section(state: FormState) -> None:
             ui.label("Customer Details").classes("text-[15px] font-bold text-gray-900")
 
         # ── Basic Info ─────────────────────────────
-        with ui.grid(columns=4).classes("w-full gap-5"):
+        with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-5"):
             state.cust_name = (
                 ui.input(label="Name *", placeholder="Full name")
                 .classes("w-full")
@@ -2167,7 +2363,7 @@ def build_conditions_section(state: FormState) -> None:
             ui.label("☑️").classes("text-[20px] select-none")
             ui.label("Sale Conditions").classes("text-[15px] font-bold text-gray-900")
 
-        with ui.row().classes("flex-wrap gap-x-8 gap-y-4"):
+        with ui.grid(columns=FORM_COLUMNS + 2).classes("w-full"):
             for key, label in CONDITION_KEYS:
                 state.condition_cbs[key] = (
                     ui.checkbox(label)
@@ -2184,8 +2380,7 @@ def build_booking_checklist_section(state: FormState) -> None:
         ):
             ui.label("☑️").classes("text-[20px] select-none")
             ui.label("Booking Checklist").classes("text-[15px] font-bold text-gray-900")
-
-        with ui.row().classes("flex-wrap gap-x-8 gap-y-4"):
+        with ui.grid(columns=FORM_COLUMNS + 2).classes("w-full"):
             for key, label in BOOKING_CHECK_KEYS:
                 state.booking_cbs[key] = (
                     ui.checkbox(label)
@@ -2193,6 +2388,38 @@ def build_booking_checklist_section(state: FormState) -> None:
                     .classes("text-gray-700 font-medium")
                     .on_value_change(lambda _: _fs_revalidate(state))
                 )
+
+
+def build_booking_section(state: FormState):
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+        ):
+            ui.label("📖").classes("text-[20px] select-none")
+            ui.label("Booking Details").classes("text-[15px] font-bold text-gray-900")
+
+        # ── Basic Info ─────────────────────────────
+        with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-5"):
+            state.booking_date = (
+                ui.input(
+                    label="Booking Date *",
+                    value=str(date.today()),
+                    on_change=lambda _: _fs_try_price_preload(state),
+                )
+                .classes("w-full")
+                .props('type="date" outlined dense')
+                .on_value_change(lambda _: _fs_revalidate(state))
+            )
+            state.booking_amt = (
+                ui.input(label="Booking Amount*", placeholder="Full name")
+                .classes("w-full")
+                .props("outlined dense")
+            )
+            state.booking_receipt_num = (
+                ui.input(label="Booking Receipt Number*", placeholder="Full name")
+                .classes("w-full")
+                .props("outlined dense")
+            )
 
 
 def _build_delivery_prices_section(state: FormState) -> None:
@@ -2270,6 +2497,150 @@ def _build_delivery_prices_section(state: FormState) -> None:
             ui.label("No price components found").classes("text-xs text-gray-400")
 
 
+def _build_direct_delivery_prices_section(state: FormState) -> None:
+    """
+    Price & Discount section for Direct Delivery.
+    Shows manual inputs for both prices and discounts.
+    """
+    price_comps = sorted(
+        [
+            price_comp
+            for price_comp in state.components
+            if price_comp.get("type") == "price"
+        ],
+        key=lambda x: x.get("order", 99),
+    )
+    discount_comps = sorted(
+        [
+            discount_comp
+            for discount_comp in state.components
+            if discount_comp.get("type") == "discount"
+        ],
+        key=lambda x: x.get("order", 99),
+    )
+
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes(
+            "w-full items-center gap-2 pb-2 border-b border-gray-100"
+        ):
+            ui.label("💰").classes("text-lg select-none")
+            ui.label("Price & Discounts (Direct Delivery)").classes(
+                "text-[15px] font-bold text-gray-900"
+            )
+
+        # ── PRICE SECTION ──
+        ui.label("Price Charged as per Books of Accounts").classes(
+            "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mt-4"
+        )
+        ui.separator().classes("mt-0")
+        if price_comps:
+            with ui.grid(columns=1).classes("w-full align-center"):
+                for comp in price_comps:
+                    name = comp["name"]
+                    with ui.row().classes("w-full items-center h-10") as row_element:
+                        state.price_rows[name] = row_element
+                        ui.label(name).classes("w-60 text-sm")
+                        listed_label = ui.label("₹—").classes(
+                            "w-32 text-gray-500 text-sm"
+                        )
+                        state.price_listed_labels[name] = listed_label
+
+                        toggle = ui.switch("Match Listed Price").props(
+                            'dense icon="check" color="green"'
+                        )
+                        inp = accounting_input(
+                            "",
+                            placeholder="Enter Charged Price",
+                            container_classes="w-60",
+                        ).props("dense")
+
+                        state.price_inputs[name] = inp
+                        state.price_match_toggles[name] = toggle
+
+                        diff_label = ui.label("₹0").classes(
+                            "w-32 text-gray-500 text-sm ml-2"
+                        )
+                        state.price_diff_labels[name] = diff_label
+
+                        def on_toggle(_, name=name, inp=inp, toggle=toggle):
+                            if toggle.value:
+                                val = state.listed_prices.get(name, 0)
+                                inp.set_value(format_num_inr(val))
+                                inp.set_enabled(False)
+                            else:
+                                inp.set_enabled(True)
+                                inp.set_value(None)
+                            _fs_update_live(state)
+
+                        toggle.on("update:model-value", on_toggle)
+                        inp.on_value_change(lambda _: _fs_update_live(state))
+
+        # ── DISCOUNT SECTION ──
+        ui.label("Discounts Allowed as per Books of Accounts").classes(
+            "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mt-6"
+        )
+        ui.separator().classes("mt-0")
+        if discount_comps:
+            with ui.grid(columns=1).classes("w-full align-center"):
+                for comp in discount_comps:
+                    name = comp["name"]
+
+                    # Default visible rows
+                    is_default = name in [
+                        "Cash Discount All Customers",
+                        "Additional Discount From Dealer",
+                        "Maximum benefit due to price increase",
+                    ]
+
+                    with ui.row().classes("w-full items-center h-10") as row_element:
+                        state.discount_rows[name] = row_element
+                        row_element.set_visibility(is_default)
+
+                        ui.label(name).classes("w-60 text-sm")
+                        listed_label = ui.label("₹—").classes(
+                            "w-32 text-gray-500 text-sm"
+                        )
+                        state.discount_listed_labels[name] = listed_label
+
+                        toggle = ui.switch("Match Listed Discount").props(
+                            'dense icon="check" color="green"'
+                        )
+                        inp = accounting_input(
+                            "",
+                            placeholder="Enter Discount",
+                            container_classes="w-60",
+                        ).props("dense")
+
+                        state.discount_inputs[name] = inp
+                        state.discount_match_toggles[name] = toggle
+
+                        def on_toggle_disc(_, name=name, inp=inp, toggle=toggle):
+                            if toggle.value:
+                                val = state.listed_prices.get(name, 0)
+                                inp.set_value(format_num_inr(val))
+                                inp.set_enabled(False)
+                            else:
+                                inp.set_enabled(True)
+                                inp.set_value(None)
+                            _fs_update_live(state)
+
+                        toggle.on("update:model-value", on_toggle_disc)
+                        inp.on_value_change(lambda _: _fs_update_live(state))
+
+        # ── SUMMARY LABELS ──
+        with ui.grid(columns=1).classes("w-full align-center mt-4 pt-4 border-t"):
+            with ui.row().classes("w-full items-center h-10"):
+                ui.label("Totals").classes(
+                    "text-lg font-bold tracking-[0.9px] uppercase"
+                )
+                state.lbl_total_listed_price = ui.label("₹—").classes("w-32 text-lg")
+                state.lbl_total_offered_price = ui.label("₹—").classes("w-32 text-lg")
+                state.lbl_total_diff_price = ui.label("₹—").classes("w-32 text-lg ml-2")
+                state.lbl_excess_discount = ui.label("₹0").classes(
+                    "ml-auto text-lg font-bold"
+                )
+
+
 def _build_booking_prices_section(state: FormState) -> None:
     price_comps = sorted(
         [
@@ -2304,7 +2675,8 @@ def _build_booking_prices_section(state: FormState) -> None:
                 for comp in price_comps:
                     name = comp["name"]
 
-                    with ui.row().classes("w-full items-center h-10"):
+                    with ui.row().classes("w-full items-center h-10") as row_element:
+                        state.price_rows[name] = row_element
                         # Label
                         ui.label(name).classes("w-60 text-sm")
 
@@ -2333,6 +2705,11 @@ def _build_booking_prices_section(state: FormState) -> None:
                         state.price_inputs[name] = inp
                         state.price_match_toggles[name] = toggle
 
+                        diff_label = ui.label("₹0").classes(
+                            "w-32 text-gray-500 text-sm ml-2"
+                        )
+                        state.price_diff_labels[name] = diff_label
+
                         def on_toggle(_, name=name, inp=inp, toggle=toggle):
                             if toggle.value:
                                 val = state.listed_prices.get(name, 0)
@@ -2350,11 +2727,31 @@ def _build_booking_prices_section(state: FormState) -> None:
             ui.label("No price components — check /components endpoint.").classes(
                 "text-xs text-gray-400"
             )
+        with ui.grid(columns=1).classes("w-full align-center"):
+            with ui.row().classes("w-full items-center h-10"):
+                ui.label("Total On-Road Price").classes(
+                    "text-lg font-bold tracking-[0.9px] uppercase mb-1 mt-1 pt-1"
+                )
+                total_listed_price = ui.label("₹—").classes("w-32 text-lg")
+                total_offered_price = ui.label("₹—").classes("w-32 text-lg")
+                total_diff_price = ui.label("₹—").classes("w-32 text-lg ml-2")
+                state.lbl_total_listed_price = total_listed_price
+                state.lbl_total_offered_price = total_offered_price
+                state.lbl_total_diff_price = total_diff_price
 
         ui.label("Discounts Offered as per Books of Accounts").classes(
             "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mb-1 mt-1 pt-1"
         )
         ui.separator().classes("mt-0 my-2")
+        with ui.row().classes("w-full items-center pt-2 border-t border-gray-100"):
+            ui.label("Total Discount as per booking file").classes(
+                "text-sm font-bold tracking-[0.9px]"
+            )
+            state.total_discount_input = accounting_input(
+                label_text="",
+                placeholder="₹0",
+                container_classes="w-60",
+            )
         if discount_comps:
             with ui.grid(columns=1).classes("w-full align-center"):
                 for comp in discount_comps:
@@ -2367,34 +2764,33 @@ def _build_booking_prices_section(state: FormState) -> None:
                             "w-32 text-gray-500 text-sm"
                         )
                         state.discount_listed_labels[name] = listed_label
-
-                        toggle = (
-                            ui.switch("Standard Discount")
-                            # .classes("m-10")
-                            .props('dense icon="check" color="green"')
-                        )
-
-                        inp = (
-                            accounting_input(
-                                "", placeholder="₹", container_classes="w-60"
-                            )
-                        ).props("dense")
-                        inp.on_value_change(lambda _: _fs_update_live(state))
-
-                        state.discount_inputs[name] = inp
-                        state.discount_match_toggles[name] = toggle
                         state.discount_rows[name] = row_element
 
-                        def on_toggle(_, name=name, inp=inp, toggle=toggle):
-                            if toggle.value:
-                                val = state.listed_prices.get(name, 0)
-                                inp.set_value(format_num_inr(val))
-                                inp.set_enabled(False)  # disable input
-                            else:
-                                inp.set_enabled(True)  # re-enable input
-                                inp.set_value(None)  # optional: clear
+                # ── Excess Discount Row ─────────────────────────────
+                with ui.row().classes(
+                    "w-full items-center h-12 mt-2 pt-2 border-t border-gray-100"
+                ):
+                    ui.label("Adjustments").classes(
+                        "w-60 text-lg font-bold tracking-[0.9px] uppercase"
+                    )
+                    with ui.button_group().classes("ml-auto"):
+                        ui.button().props("dense color=primary icon=add")
+                        ui.button().props("dense color=primary icon=remove")
 
-                        toggle.on("update:model-value", on_toggle)
+                    state.addjustment_input = accounting_input(
+                        label_text="",
+                        placeholder="₹0",
+                        container_classes="w-60",
+                    )
+                    ui.label("Excess Discount").classes(
+                        "w-60 text-lg font-bold tracking-[0.9px] uppercase"
+                    )
+                    # Placeholder for the spacing matching the listed_label above
+                    ui.label("").classes("w-32")
+
+                    state.lbl_excess_discount = ui.label("₹0").classes(
+                        "text-lg font-bold ml-2"
+                    )
 
         else:
             ui.label("No discount components — check /components endpoint.").classes(
@@ -2403,8 +2799,11 @@ def _build_booking_prices_section(state: FormState) -> None:
 
 
 def build_prices_section(state: FormState) -> None:
-    if state.stage == "delivery" and not state.is_direct_delivery:
-        _build_delivery_prices_section(state)
+    if state.stage == "delivery":
+        if state.is_direct_delivery:
+            _build_direct_delivery_prices_section(state)
+        else:
+            _build_delivery_prices_section(state)
     else:
         _build_booking_prices_section(state)
 
@@ -2621,7 +3020,7 @@ def build_payment_section(state: FormState) -> None:
             ui.label("💳").classes("text-[20px] select-none")
             ui.label("Payment Received").classes("text-[15px] font-bold text-gray-900")
 
-        with ui.grid(columns=4).classes("w-full gap-2 items-start"):
+        with ui.grid(columns=FORM_COLUMNS + 1).classes("w-full gap-2 items-start"):
             state.payment_cash = accounting_input("Cash Payment")
             state.payment_bank = accounting_input("Bank Payment")
             state.payment_finance = accounting_input("Finance")
@@ -2743,7 +3142,14 @@ async def _fs_on_variant_change(variant_id, state: FormState) -> None:
 
 async def _fs_try_price_preload(state: FormState) -> None:
     """Call GET /price-list/preview when both variant + date are known."""
-    if not state.variant_id or not (state.booking_date and state.booking_date.value):
+    # Extract booking date from available sources
+    booking_date = None
+    if state.booking_date and state.booking_date.value:
+        booking_date = state.booking_date.value
+    elif state.delivery_date and state.delivery_date.value:
+        booking_date = state.delivery_date.value
+
+    if not state.variant_id or not booking_date:
         return
 
     try:
@@ -2825,7 +3231,17 @@ def _fs_update_live(state: FormState) -> None:
             state.invoice_ex_showroom.set_value(format_num_inr(price_val))
 
     # 2. Sync Total Discount from Components -> Invoice Discount field
-    total_comp_discount = state.live_discount
+    total_comp_discount = 0
+    if state.stage == "delivery" and state.is_direct_delivery:
+        # Sum manual inputs
+        for name, inp in state.discount_inputs.items():
+            row = state.discount_rows.get(name)
+            if row and row.visible:
+                total_comp_discount += int(parsed_val(inp))
+    else:
+        # Use automated property
+        total_comp_discount = state.live_discount
+
     if (
         state.invoice_discount
         and parsed_val(state.invoice_discount) != total_comp_discount
@@ -2833,35 +3249,115 @@ def _fs_update_live(state: FormState) -> None:
         state.invoice_discount.set_value(format_num_inr(total_comp_discount))
 
     # 3. Read current values for labels
-    allowed_discount = 0
-    if hasattr(state, "listed_prices") and state.listed_prices:
-        for name, inp in state.discount_inputs.items():
-            row = state.discount_rows.get(name)
-            if row is None or row.visible:
-                val = state.listed_prices.get(name)
-                if val is not None:
-                    allowed_discount += int(val)
+    allowed_discount = state.live_discount
 
-    inv_discount = (
-        int(parsed_val(state.invoice_discount)) if state.invoice_discount else 0
-    )
+    # Discount Given (Actual)
+    discount_given = total_comp_discount
 
     # 4. Update Labels
     if hasattr(state, "lbl_allowed") and state.lbl_allowed:
         state.lbl_allowed.set_text(f"₹{allowed_discount:,.0f}")
 
     if state.lbl_discount:
-        state.lbl_discount.set_text(f"₹{inv_discount:,.0f}")
+        state.lbl_discount.set_text(f"₹{discount_given:,.0f}")
 
     # Excess Discount = Actual Discount - Allowed Discount
-    excess = inv_discount - allowed_discount
+    excess = discount_given - allowed_discount
     if state.lbl_excess:
         state.lbl_excess.set_text(f"₹{excess:,.0f}")
         # Color coding: Green if actual <= allowed (good), Red if actual > allowed (bad)
         if excess <= 0:
             state.lbl_excess.style("color:#6EE7B7")  # Soft green
         else:
-            state.lbl_excess.style("color:#FCA5A5")  # Soft red
+            state.lbl_excess.style("color:#F87171")  # Soft red
+
+    # 5. Update Total Price Labels (Sum of Prices section)
+    total_listed = 0
+    total_offered = 0
+    for name, inp in state.price_inputs.items():
+        # Skip if row is hidden
+        row = state.price_rows.get(name)
+        if row is not None and not row.visible:
+            diff_label = state.price_diff_labels.get(name)
+            if diff_label:
+                diff_label.set_text("")
+            continue
+
+        toggle = state.price_match_toggles.get(name)
+        is_toggled = toggle.value if toggle else False
+        is_entered = bool(inp.value and str(inp.value).strip())
+
+        # Sum listed price ONLY IF toggled or entered
+        if is_toggled or is_entered:
+            listed_price = int(state.listed_prices.get(name) or 0)
+            total_listed += listed_price
+        else:
+            listed_price = 0
+
+        # Sum offered price (from input)
+        offered_price = 0
+        try:
+            offered_price = int(float(str(parsed_val(inp)).replace(",", "") or 0))
+        except:
+            pass
+        total_offered += offered_price
+
+        # Update Difference Label
+        diff_label = state.price_diff_labels.get(name)
+        if diff_label:
+            if not is_toggled and not is_entered:
+                diff_label.set_text("")
+                diff_label.style("color: #9CA3AF")
+            else:
+                diff = listed_price - offered_price
+                if diff > 0:
+                    diff_label.set_text(f"₹{diff:,.2f}")
+                    diff_label.style("color: #D41717")
+                elif diff < 0:
+                    diff_label.set_text("₹ 0")
+                    diff_label.style("color: #1CC722")
+                else:
+                    diff_label.set_text("₹0")
+                    diff_label.style("color: #9CA3AF")
+
+    total_diff = total_listed - total_offered
+
+    if state.lbl_total_listed_price:
+        state.lbl_total_listed_price.set_text(f"₹{total_listed:,.2f}")
+    if state.lbl_total_offered_price:
+        state.lbl_total_offered_price.set_text(f"₹{total_offered:,.2f}")
+    if state.lbl_total_diff_price:
+        if total_diff > 0:
+            state.lbl_total_diff_price.set_text(f"₹{abs(total_diff):,.2f}")
+            state.lbl_total_diff_price.style("color: #D41717")
+        elif total_diff < 0:
+            state.lbl_total_diff_price.set_text(f"-₹{total_diff:,.2f}")
+            state.lbl_total_diff_price.style("color: #1CC722")
+        else:
+            state.lbl_total_diff_price.set_text("₹0")
+            state.lbl_total_diff_price.style("color: #9CA3AF")
+
+    # ── Excess Discount Calculation ─────────────────
+    # Formula: max(0, total_diff - allowed_discount)
+    if hasattr(state, "lbl_excess_discount") and state.lbl_excess_discount:
+        # Recalculate allowed discount directly to be safe
+        current_allowed = 0
+        if hasattr(state, "listed_prices") and state.listed_prices:
+            for name, row in state.discount_rows.items():
+                if row.visible:
+                    val = state.listed_prices.get(name)
+                    if val is not None:
+                        current_allowed += int(val)
+
+        excess_val = total_diff - current_allowed
+        if excess_val < 0:
+            excess_val = 0
+
+        state.lbl_excess_discount.set_text(f"₹{excess_val:,.2f}")
+        if excess_val > 0:
+            state.lbl_excess_discount.style("color: #D41717")  # Red
+        else:
+            state.lbl_excess_discount.style("color: #9CA3AF")  # Gray
 
 
 def _fs_validate_mobile(state: FormState) -> None:
@@ -2919,7 +3415,7 @@ def _fs_update_visibility(state: FormState) -> None:
     def norm(s: str) -> str:
         return re.sub(r"[^a-zA-Z0-9]", "", s).lower()
 
-    visibility_rules = {
+    discount_visibility_rules = {
         norm("Extra Kitty On TR cases"): is_checked("tr_case"),
         norm("Additional For POI /Corporate Customers"): is_checked("corporate")
         or is_checked("govt_employee"),
@@ -2928,25 +3424,26 @@ def _fs_update_visibility(state: FormState) -> None:
         norm("Additional For Upward Sales Customers"): is_checked("upgrade"),
     }
 
-    modified = False
+    price_visibility_rules = {
+        norm("Accessories"): is_checked("acc_kit"),
+        norm("FasTag"): is_checked("fastag"),
+        norm("Extended Warranty"): is_checked("ext_warr"),
+        norm("Shield Of Trust"): is_checked("shield"),
+        norm("Insurance (With Depreciation Cover)"): not is_checked("self_insurance"),
+        norm("Insurance"): not is_checked("self_insurance"),
+    }
+
     for name, row in state.discount_rows.items():
         n_name = norm(name)
-        if n_name in visibility_rules:
-            visible = visibility_rules[n_name]
-            row.set_visibility(visible)
-            if not visible:
-                inp = state.discount_inputs.get(name)
-                toggle = state.discount_match_toggles.get(name)
+        if n_name in discount_visibility_rules:
+            row.set_visibility(discount_visibility_rules[n_name])
 
-                if toggle and toggle.value:
-                    toggle.set_value(False)
+    for name, row in state.price_rows.items():
+        n_name = norm(name)
+        if n_name in price_visibility_rules:
+            row.set_visibility(price_visibility_rules[n_name])
 
-                if inp and inp.value:
-                    inp.set_value(None)
-                    modified = True
-
-    if modified:
-        _fs_update_live(state)
+    _fs_update_live(state)
 
 
 def _fs_revalidate(state: FormState) -> None:
@@ -3042,11 +3539,21 @@ def build_payload(state: FormState) -> dict:
 
     # Price components
     for name, inp in state.price_inputs.items():
-        actual_amounts[name] = intval(inp)
+        row = state.price_rows.get(name)
+        if row is not None and not row.visible:
+            actual_amounts[name] = 0
+        else:
+            actual_amounts[name] = intval(inp)
 
     # Discount components
-    for name, inp in state.discount_inputs.items():
-        actual_amounts[name] = intval(inp)
+    for name, row in state.discount_rows.items():
+        if row.visible:
+            if state.stage == "delivery" and state.is_direct_delivery:
+                actual_amounts[name] = intval(state.discount_inputs.get(name))
+            else:
+                actual_amounts[name] = state.listed_prices.get(name, 0)
+        else:
+            actual_amounts[name] = 0
 
     # ─────────────────────────────
     # CONDITIONS
@@ -3116,6 +3623,8 @@ def build_payload(state: FormState) -> dict:
         # ── REQUIRED ──
         "variant_id": state.variant_id,
         "booking_date": val(state.booking_date),
+        "booking_amt": val(state.booking_amt),
+        "booking_receipt_num": val(state.booking_receipt_num),
         "outlet_id": state.outlet_id,
         "sales_executive_id": state.executive_id,
         # ── CUSTOMER ──
@@ -3162,7 +3671,7 @@ def build_payload(state: FormState) -> dict:
     elif state.stage == "delivery":
         payload["stage"] = "delivery"
         payload["booking_id"] = state.booking_id
-        payload["delivery_date"] = state.delivery_date
+        payload["delivery_date"] = val(state.delivery_date)
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
 
@@ -3225,17 +3734,19 @@ async def _fs_prefill(state: FormState, txn: dict) -> None:
     for key, cb in state.condition_cbs.items():
         cb.set_value(bool(conds.get(key, False)))
 
-    # Actual amounts → fill price + discount inputs
+    # Actual amounts → fill price
     amounts = txn.get("actual_amounts", {})
-    for name, inp in state.all_component_inputs.items():
+    for name, inp in state.price_inputs.items():
         if name in amounts:
             inp.set_value(amounts[name])
+            if amounts[name] > 0 and name in state.price_match_toggles:
+                state.price_match_toggles[name].set_value(True)
 
     # Accessories
     acc_details = txn.get("accessories_details", {})
     if state.acc_select:
         # Reconstruct selected IDs from transaction (backend 'accessories' key holds list of objects)
-        selected_ids = [a["id"] for a in txn.get("accessories", [])]
+        selected_ids = [acc["id"] for acc in txn.get("accessories", [])]
         state.acc_select.set_value(selected_ids)
 
     if state.acc_charged:
@@ -3291,9 +3802,7 @@ async def form_page(
 
     # Detect edit mode from query param
     if state.booking_id:
-        ui.label(f"Using Booking ID: {state.booking_id}").classes(
-            "text-xs text-blue-600"
-        )
+        pass
 
     # Breadcrumb label
     bc = f"Edit Entry #{state.txn_id}" if state.edit_mode else "New Entry"
@@ -3308,7 +3817,7 @@ async def form_page(
     state.executives = ref["executives"]
     state.accessory_map = {acc["id"]: acc for acc in ref["accessories"]}
 
-    with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
+    with ui.element("div").classes("max-w-[1200px] mx-auto p-6"):
         # ── Edit mode indicator ──────────────────────────
         if state.edit_mode:
             variant_label = (
@@ -3316,7 +3825,7 @@ async def form_page(
             )
             with ui.row().classes("items-center gap-3 mb-4"):
                 ui.label(
-                    f"✏️ Editing Transaction #{state.txn_id} {(' — ' + variant_label) if variant_label else ''}"
+                    f"✏️ Editing Booking #{state.txn_id} {(' — ' + variant_label) if variant_label else ''}"
                 ).classes(
                     "bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1 rounded-md text-[12px] font-medium"
                 )
@@ -3326,9 +3835,12 @@ async def form_page(
 
         # ── Form sections ────────────────────────────────
         if state.stage == "booking":
-            ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
 
+                ui.checkbox("Is File Incomplete?").classes("text-bold ml-auto")
             build_vehicle_section(state)
+            build_booking_section(state)
             build_customer_section(state)
             build_conditions_section(state)
             build_prices_section(state)
@@ -3339,10 +3851,10 @@ async def form_page(
             ui.label("Delivery MIS Form").classes("text-2xl text-bold mb-5")
 
             if state.booking_id:
-                ui.label(f"Booking ID: {state.booking_id} → Delivery Entry").classes(
-                    "text-xs text-blue-600 mb-2"
-                )
+                ...
+
             build_vehicle_section(state)
+            build_booking_section(state)
             build_customer_section(state)
             build_conditions_section(state)
             build_prices_section(state)

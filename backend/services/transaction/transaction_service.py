@@ -234,6 +234,8 @@ class TransactionService:
         # =========================
         # STEP 4: Recalculate discount (if needed)
         # =========================
+        transaction.stage = "delivery"  # Set stage BEFORE calculation
+
         if not use_booking_data:
             audit_result = DiscountService.calculate_discount(
                 session=session,
@@ -242,7 +244,7 @@ class TransactionService:
                 conditions=payload.get("conditions", {}),
             )
 
-            transaction.total_actual_discount = audit_result["actual_discount"]
+            transaction.total_actual_discount = audit_result["total_actual_discount"]
             transaction.total_allowed_discount = audit_result["pricelist_discount"]
             transaction.total_excess_discount = audit_result["excess_discount"]
             transaction.status = audit_result["status"]
@@ -265,7 +267,7 @@ class TransactionService:
         # =========================
         # STEP 6: Finalize
         # =========================
-        transaction.stage = "delivery"
+        # transaction.stage = "delivery" (already set above)
 
         session.add(transaction)
         session.commit()
@@ -359,9 +361,9 @@ class TransactionService:
         )
         # STEP 6: Store discount
         transaction.total_actual_discount = (
-            audit_result["invoice_discount"]
-            if audit_result["invoice_discount"] is not None
-            else audit_result["total_actual_discount"]
+            audit_result["total_actual_discount"]
+            if audit_result["total_actual_discount"] is not None
+            else 0
         )
         transaction.total_allowed_discount = audit_result["pricelist_discount"]
         transaction.total_excess_discount = audit_result["excess_discount"]
@@ -407,6 +409,7 @@ class TransactionService:
             outlet_id=payload["outlet_id"],
             sales_executive_id=payload["sales_executive_id"],
             created_by=payload.get("user_id", None),
+            stage=payload.get("stage", "booking"),
             booking_date=payload["booking_date"],
             delivery_date=payload.get("delivery_date", None),
             # VEHICLE

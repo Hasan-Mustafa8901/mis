@@ -22,47 +22,41 @@ class BookingDiscountStrategy(DiscountStrategy):
         price_list = PriceListService.get_active_price_list(
             session, transaction.booking_date
         )
-        print(__class__, "Price List", price_list.name)
 
         allowed_map = PriceListService.get_allowed_amounts(
             session, price_list.id, transaction.variant_id, conditions
         )
-        print(__class__, "Allowed Map", allowed_map)
 
         components = PriceListService.get_all_components(session)
-        print(__class__, "Len(comp):", len(components))
 
         # actual discount
-        actual_discount = sum(
-            value
-            for name, value in actual_amounts.items()
-            if "discount" in name.lower()
-        )
+        price_offered = transaction.booking_price_offered
 
         # pricelist discount
-        pricelist_discount = sum(
+        price_pricelist = sum(
+            allowed_map.get(comp.id, 0)
+            for comp in components
+            if "price" in comp.name.lower()
+        )
+        discount_pricelist = sum(
             allowed_map.get(comp.id, 0)
             for comp in components
             if "discount" in comp.name.lower()
         )
+        print(f"Price Offered: {price_offered}")
+        print(f"Price Pricelist: {price_pricelist}")
+        print(f"Discount Pricelist: {discount_pricelist}")
 
-        excess = actual_discount - pricelist_discount
+        total_discount = price_pricelist - price_offered
 
-        for name, value in actual_amounts.items():
-            if value is None:
-                continue
-
-            if "discount" in name.lower():
-                actual_discount += float(value)
+        excess = total_discount - discount_pricelist
 
         audit_result = {
-            "total_actual_discount": actual_discount or 0.0,
-            "pricelist_discount": pricelist_discount or 0.0,
-            "invoice_discount": None,
+            "total_discount": total_discount,
             "excess_discount": excess or 0.0,
             "status": "Excess" if excess > 0 else "No Excess Discount",
         }
-        print(__class__, "Summary:", audit_result)
+        print(__class__, "BookingDiscount Summary:", audit_result)
         return audit_result
 
 
@@ -120,5 +114,5 @@ class DeliveryDiscountStrategy(DiscountStrategy):
             "excess_discount": excess,
             "status": "Excess" if excess > 0 else "Excess Discount",
         }
-        print(f"{__class__} :\n{audit_result}")
+        print(f"{__class__} DeliveryDiscount Summary:\n{audit_result}")
         return audit_result
