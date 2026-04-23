@@ -8,3 +8,6 @@ tests
 .venv
 old_code
 .nicegui/
+scratch_complaint_page.py
+scratch_complaint_page2.py
+scratch_complaint_ui.py

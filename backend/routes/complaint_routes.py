@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from typing import Optional, Dict, Any
 from datetime import date
@@ -67,3 +68,87 @@ def api_save_complaint(payload: Dict[str, Any], session: Session = Depends(get_s
     if not success:
         raise HTTPException(status_code=400, detail=res)
     return {"message": "Complaint saved successfully", "code": res}
+
+class FlashReportPayload(BaseModel):
+    complaint_no: str
+    date_of_complaint: str
+    date_of_resolution: str
+    dealer: str
+    showroom: str
+    point_of_complaint: str
+    booking_date: str
+    complainant_name: str
+    customer_name: str
+    designation_complainant: str
+    complainant_aa: str
+    complainant_aa_designation: str
+    car_name: str
+    price_offered: str
+    reviewer: str
+    reviewer_designation: str
+    audit_procedure: str
+    audit_findings: str
+    audit_evidence: str
+    conclusion: str
+
+@router.post("/report/flash")
+def generate_flash_report(payload: FlashReportPayload):
+    from services.complaints.report.complaint_flash_report import ComplaintFlashReport
+    from io import BytesIO
+    try:
+        pdf = ComplaintFlashReport()
+        pdf.build(payload.model_dump())
+        buffer = BytesIO()
+        pdf.output(buffer)
+        buffer.seek(0)
+        return StreamingResponse(
+            buffer, 
+            media_type="application/pdf", 
+            headers={"Content-Disposition": "attachment; filename=flash_report.pdf"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+class ExcelReportPayload(BaseModel):
+    data: list[Dict[str, Any]]
+    start_date: str
+    end_date: str
+
+@router.post("/report/bookings")
+def generate_bookings_report(payload: ExcelReportPayload):
+    from services.complaints.report.bookings_report import booking_report_generator
+    import pandas as pd
+    from datetime import datetime
+    
+    df = pd.DataFrame(payload.data)
+    start = datetime.strptime(payload.start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(payload.end_date, "%Y-%m-%d").date()
+    try:
+        buffer, filename = booking_report_generator(df, start, end)
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/report/deliveries")
+def generate_deliveries_report(payload: ExcelReportPayload):
+    from services.complaints.report.bookings_report import delivery_report_generator
+    import pandas as pd
+    from datetime import datetime
+    
+    df = pd.DataFrame(payload.data)
+    start = datetime.strptime(payload.start_date, "%Y-%m-%d").date()
+    end = datetime.strptime(payload.end_date, "%Y-%m-%d").date()
+    try:
+        buffer, filename = delivery_report_generator(df, start, end)
+        return StreamingResponse(
+            buffer,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

@@ -149,6 +149,7 @@ async def fetch_reference_data() -> dict:
         ("outlets", "/outlets", [{"id": 1, "name": "Main Outlet"}]),
         ("executives", "/sales-executives", [{"id": 1, "name": "Default SE"}]),
         ("accessories", "/accessories", []),
+        ("dealerships", "/complaints/dealerships", []),
     ]:
         try:
             result[key] = await api_get(path)
@@ -782,7 +783,16 @@ async def dashboard_page() -> None:
             ui.link("📊 Dashboard", "/").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
             )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
             ui.link("📋 MIS Table", "/mis-table").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📑 Complaints Table", "/complaints-table").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📝 Complaint Form", "/complaint-form").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
 
@@ -822,6 +832,11 @@ async def dashboard_page() -> None:
             ):
                 ui.icon("add").classes("text-primary text-lg text-weight-bold")
                 ui.label("New Entry").classes("text-weight-bold pl-2")
+            with ui.link(target="/complaint-form").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("insert_drive_file").classes("text-primary text-lg text-weight-bold")
+                ui.label("Complaint Form").classes("text-weight-bold pl-2")
             with ui.link(target="settings").classes(
                 "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             ):
@@ -1509,8 +1524,14 @@ async def mis_table_page(month: str | None = None) -> None:
             ui.link("📊 Dashboard", "/").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
             ui.link("📋 MIS Table", "/mis-table").classes(
                 "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
+            )
+            ui.link("📑 Complaints Table", "/complaints-table").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
 
             ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
@@ -1560,7 +1581,760 @@ async def mis_table_page(month: str | None = None) -> None:
 
 
 # ══════════════════════════════════════════════════════════════
-#                        PAGE 1: SETTINGS
+#                    COMPLAINTS TABLE RENDERER
+# ══════════════════════════════════════════════════════════════
+def render_complaints_table(complaints):
+    """
+    Renders the Complaints table using AG Grid.
+    """
+    if not complaints:
+        with ui.card().classes("w-full").style("padding:48px;text-align:center"):
+            ui.label("📭").style("font-size:36px")
+            ui.label("No complaints yet").style(
+                "font-size:14px;font-weight:500;color:#6B7280;margin-top:8px"
+            )
+            return
+
+    # Define columns for complaints table
+    col_defs = [
+        {
+            "field": "complaint_code",
+            "headerName": "Complaint Code",
+            "pinned": "left",
+            "width": 120,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "date_of_complaint",
+            "headerName": "Complaint Date",
+            "width": 120,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "car_model",
+            "headerName": "Car Model",
+            "width": 130,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "car_variant",
+            "headerName": "Variant",
+            "width": 160,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "complainant_dealer_name",
+            "headerName": "Complainant Dealer",
+            "width": 150,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "complainant_showroom_name",
+            "headerName": "Complainant Showroom",
+            "width": 150,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "complainee_dealer_name",
+            "headerName": "Complainee Dealer",
+            "width": 150,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "complainee_showroom_name",
+            "headerName": "Complainee Showroom",
+            "width": 150,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "customer_name",
+            "headerName": "Customer",
+            "width": 140,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "customer_mobile",
+            "headerName": "Customer Number",
+            "width": 130,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "customer_address",
+            "headerName": "Address",
+            "width": 150,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "customer_city",
+            "headerName": "City",
+            "width": 100,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "customer_pin",
+            "headerName": "PIN",
+            "width": 80,
+            "filter": "agTextColumnFilter",
+        },
+        # --- Vehicle Details ---
+        {
+            "field": "car_color",
+            "headerName": "Car Colour",
+            "width": 120,
+            "filter": "agTextColumnFilter",
+        },
+        # --- Quotation Details ---
+        {
+            "field": "quotation_number",
+            "headerName": "Quotation No",
+            "width": 130,
+        },
+        {
+            "field": "total_offered_price",
+            "headerName": "Total Offered",
+            "width": 120,
+            "valueFormatter": "Math.floor(value).toLocaleString()",
+        },
+        {
+            "field": "net_offered_price",
+            "headerName": "Net Offered",
+            "width": 120,
+            "valueFormatter": "Math.floor(value).toLocaleString()",
+        },
+        # --- Booking Details ---
+        {
+            "field": "booking_file_number",
+            "headerName": "Booking File No",
+            "width": 140,
+        },
+        {
+            "field": "booking_amount",
+            "headerName": "Booking Amt",
+            "width": 120,
+            "valueFormatter": "Math.floor(value).toLocaleString()",
+        },
+        # --- Remarks & Status ---
+        {
+            "field": "status",
+            "headerName": "Status",
+            "width": 120,
+            "filter": "agTextColumnFilter",
+            ":cellStyle": (
+                "params.value === 'ESCALATED'"
+                " ? {background:'#FEE2E2', color:'#991B1B', fontWeight:'600', borderRadius:'4px'}"
+                " : {background:'#D1FAE5', color:'#065F46', fontWeight:'600', borderRadius:'4px'}"
+            ),
+        },
+        # --- Price Info ---
+        {
+            "field": "ex_showroom_price",
+            "headerName": "Ex-Showroom",
+            "width": 120,
+            "valueFormatter": "Math.floor(value).toLocaleString()",
+        },
+        {
+            "field": "insurance",
+            "headerName": "Insurance",
+            "width": 120,
+            "valueFormatter": "Math.floor(value).toLocaleString()",
+        },
+        {
+            "field": "discount",
+            "headerName": "Discount",
+            "width": 100,
+        },
+        # --- Remarks ---
+        {
+            "field": "remarks_complainant",
+            "headerName": "Complainant Remarks",
+            "width": 200,
+        },
+        {
+            "field": "remark_complainee_aa",
+            "headerName": "AA/Complainee Remarks",
+            "width": 200,
+        },
+        {
+            "field": "remark_admin",
+            "headerName": "Admin Remarks",
+            "width": 200,
+        },
+        {
+            "field": "flag",
+            "headerName": "Flag",
+            "width": 80,
+            "filter": "agTextColumnFilter",
+        },
+    ]
+
+    grid = (
+        ui.aggrid(
+            {
+                "columnDefs": col_defs,
+                "rowData": complaints,
+                "defaultColDef": {
+                    "flex": 0,
+                    "minWidth": 70,
+                    "sortable": True,
+                    "filter": True,
+                    "floatingFilter": True,
+                    "resizable": True,
+                },
+                "domLayout": "normal",
+                "suppressColumnVirtualization": False,
+                "animateRows": True,
+                "pagination": True,
+                "paginationPageSize": 25,
+                "rowSelection": "single",
+                "rowHeight": 30,
+                "suppressCellFocus": True,
+            },
+            theme="balham",
+            auto_size_columns=False,
+        )
+        .classes("w-full h-100")
+        .style("font-family:Inter,sans-serif;font-size:13px;")
+    )
+
+    async def on_cell_clicked(e):
+        row = e.args.get("data", {})
+        complaint_code = row.get("complaint_code")
+        if complaint_code:
+            ui.navigate.to(f"/complaint-form?complaint_code={complaint_code}")
+
+    grid.on("cellClicked", on_cell_clicked)
+
+
+# ══════════════════════════════════════════════════════════════
+#                    PAGE: COMPLAINTS TABLE
+# ══════════════════════════════════════════════════════════════
+@ui.page("/complaints-table")
+@protected_page
+async def complaints_table_page():
+
+    render_topbar("Complaints Table")
+
+    try:
+        response: dict = await api_get("/complaints/")
+        complaints = response.get("data", [])
+        total_entries = response.get("total", 0)
+    except Exception:
+        complaints = []
+        total_entries = 0
+
+    with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
+        # ── SIDEBAR ─────────────────────────────────────────
+        with ui.column().classes(
+            "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
+        ):
+            ui.label("Quick Nav").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-400 px-4 mb-1.5 mt-4.5"
+            )
+            ui.link("📊 Dashboard", "/").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
+            ui.link("📋 MIS Table", "/mis-table").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
+            ui.link("📑 Complaints Table", "/complaints-table").classes(
+                "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
+            )
+
+        # ── MAIN CONTENT ─────────────────────────────────────
+        with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
+            with ui.row().classes("w-full items-center justify-between mb-5"):
+                with ui.column().classes("gap-1"):
+                    ui.label("Complaints Table").classes(
+                        "text-[18px] font-bold text-gray-900 leading-none"
+                    )
+                    ui.label(f"{total_entries} complaints").classes(
+                        "text-[12px] text-gray-400"
+                    )
+                with (
+                    ui.button(on_click=lambda: ui.navigate.to("/complaint-form"))
+                    .classes(
+                        "bg-[#E8402A] text-white font-semibold text-[13px] px-4.5 py-2 rounded-[7px] shadow-sm"
+                    )
+                    .props("no-caps unelevated")
+                ):
+                    ui.icon("add").classes("text-white text-lg text-weight-bold")
+                    ui.label("New Complaint").classes("text-weight-bold pl-2")
+
+            with ui.card().classes("w-full p-0 shadow-sm rounded-xl mb-8"):
+                render_complaints_table(complaints)
+
+
+
+# ══════════════════════════════════════════════════════════════
+#                   PAGE: DAILY REPORTING
+# ══════════════════════════════════════════════════════════════
+
+@ui.page("/daily-reporting")
+@protected_page
+async def daily_reporting_page() -> None:
+    render_topbar("Daily Reporting")
+    
+    # Add custom AG Grid styling for borders
+    ui.add_head_html("""
+    <style>
+        .ag-theme-balham {
+            --ag-border-color: #E5E7EB;
+            --ag-side-bar-border-color: #E5E7EB;
+        }
+        .ag-theme-balham .ag-root-wrapper {
+            border: 1px solid #E5E7EB;
+            border-radius: 0.5rem;
+        }
+        .ag-theme-balham .ag-header {
+            border-bottom: 2px solid #D1D5DB;
+        }
+        .ag-theme-balham .ag-cell {
+            border-right: 1px solid #E5E7EB;
+        }
+        .ag-theme-balham .ag-row {
+            border-bottom: 1px solid #E5E7EB;
+        }
+        .ag-theme-balham .ag-pinned-left-header {
+             border-right: 1px solid #D1D5DB;
+        }
+        .ag-theme-balham .ag-pinned-left-cols-container {
+            border-right: 1px solid #D1D5DB;
+        }
+        .ag-theme-balham .ag-pinned-bottom-row {
+            font-weight: 700;
+            background-color: #F3F4F6;
+            color: #374151;
+            border-top: 2px solid #D1D5DB !important;
+        }
+    </style>
+    """)
+
+    # ── In-memory stores (session-level) ─────────────────────
+    # row_data[(table_type, date_str)] = {total_count, files_received, file_incomplete}
+    row_data: dict = {}
+    # dialog_data[(table_type, date_str, col_type)] = [{"name":str,"remarks":str}, ...]
+    dialog_data: dict = {}
+
+    # ── Fetch transactions ────────────────────────────────────
+    try:
+        all_transactions: list = await api_get("/transactions")
+    except Exception:
+        all_transactions = []
+
+    today_str = date.today().isoformat()
+
+    # ── Helpers ───────────────────────────────────────────────
+    def mis_count(table_type: str, d: str) -> int:
+        field = "booking_date" if table_type == "booking" else "delivery_date"
+        return sum(1 for t in all_transactions if (t.get(field) or "")[:10] == d)
+
+    def get_all_dates(table_type: str) -> list[str]:
+        field = "booking_date" if table_type == "booking" else "delivery_date"
+        dates = sorted(
+            {(t.get(field) or "")[:10] for t in all_transactions if (t.get(field) or "")[:10]},
+            reverse=True,
+        )
+        if today_str not in dates:
+            dates = [today_str] + dates
+        return dates
+
+    def build_row(table_type: str, d: str) -> dict:
+        stored = row_data.get((table_type, d), {})
+        tc = int(stored.get("total_count", 0))
+        fr = int(stored.get("files_received", 0))
+        fi = int(stored.get("file_incomplete", 0))
+        fp = max(0, tc - fr)
+        return {
+            "date": d,
+            "total_count": tc,
+            "files_in_mis": mis_count(table_type, d),
+            "files_received": fr,
+            "files_pending": fp,
+            "file_incomplete": fi,
+        }
+
+    def totals_row(rows: list) -> dict:
+        return {
+            "date": "TOTAL",
+            "total_count": sum(r["total_count"] for r in rows),
+            "files_in_mis": sum(r["files_in_mis"] for r in rows),
+            "files_received": sum(r["files_received"] for r in rows),
+            "files_pending": sum(r["files_pending"] for r in rows),
+            "file_incomplete": sum(r["file_incomplete"] for r in rows),
+        }
+
+    def grid_col_defs() -> list:
+        return [
+            {
+                "field": "date",
+                "headerName": "Date",
+                "pinned": "left",
+                "width": 130,
+                "editable": False,
+                ":cellStyle": "params.data.date === 'TOTAL' ? {fontWeight:'700', background:'#F3F4F6', color:'#374151'} : {}",
+            },
+            {
+                "field": "total_count",
+                "headerName": "Total Count",
+                "width": 130,
+                "editable": True,
+                "type": "numericColumn",
+                ":cellStyle": "params.data.date === 'TOTAL' ? {fontWeight:'700', background:'#F3F4F6'} : {}",
+            },
+            {
+                "field": "files_in_mis",
+                "headerName": "Files Recorded in MIS",
+                "width": 170,
+                "editable": False,
+                "type": "numericColumn",
+                ":cellStyle": (
+                    "params.data.date === 'TOTAL' ? "
+                    "{fontWeight:'700', background:'#F3F4F6'} : "
+                    "{background:'#EEF2FF', color:'#4338CA', fontWeight:'500'}"
+                ),
+            },
+            {
+                "field": "files_received",
+                "headerName": "Files Received",
+                "width": 140,
+                "editable": True,
+                "type": "numericColumn",
+                ":cellStyle": (
+                    "params.data.date === 'TOTAL' ? "
+                    "{fontWeight:'700', background:'#F3F4F6'} : "
+                    "{background:'#F0FDF4', color:'#166534'}"
+                ),
+            },
+            {
+                "field": "files_pending",
+                "headerName": "Files Pending",
+                "width": 140,
+                "editable": False,
+                "type": "numericColumn",
+                ":valueGetter": "params.data.total_count - params.data.files_received",
+                ":cellStyle": (
+                    "params.data.date === 'TOTAL' ? "
+                    "{fontWeight:'700', background:'#F3F4F6'} : "
+                    "(params.data.total_count - params.data.files_received) > 0 ? "
+                    "{background:'#FEF9C3', color:'#92400E', fontWeight:'700', cursor:'pointer'} : "
+                    "{color:'#10B981', fontWeight:'600', cursor:'pointer'}"
+                ),
+            },
+            {
+                "field": "file_incomplete",
+                "headerName": "File Incomplete",
+                "width": 140,
+                "editable": True,
+                "type": "numericColumn",
+                ":cellStyle": (
+                    "params.data.date === 'TOTAL' ? "
+                    "{fontWeight:'700', background:'#F3F4F6'} : "
+                    "params.value > 0 ? "
+                    "{background:'#FEE2E2', color:'#991B1B', fontWeight:'700', cursor:'pointer'} : {}"
+                ),
+            },
+        ]
+
+    # ── Dialog setup ─────────────────────────────────────────
+    _dlg_key: dict = {"v": None}
+    _dlg_title_ref: dict = {"el": None}
+    _dlg_grid_ref: dict = {"el": None}
+
+    def _render_dialog_table(key):
+        rows = dialog_data.setdefault(key, [])
+        grid_data = [{"sno": i+1, "name": row.get("name", ""), "remarks": row.get("remarks", "")} for i, row in enumerate(rows)]
+        
+        if _dlg_grid_ref["el"]:
+            _dlg_grid_ref["el"].options["rowData"] = grid_data
+
+    with ui.dialog() as detail_dialog, ui.card().classes(
+        "w-[740px] max-w-[95vw] p-6 rounded-xl shadow-xl"
+    ):
+        with ui.row().classes("w-full items-center justify-between mb-5"):
+            title_label = ui.label("Details").classes(
+                "text-[16px] font-bold text-gray-900"
+            )
+            _dlg_title_ref["el"] = title_label
+            ui.button(icon="close", on_click=detail_dialog.close).props(
+                "flat round dense"
+            )
+
+        # Dialog AG Grid Table
+        def dialog_grid_col_defs():
+            return [
+                {
+                    "field": "sno",
+                    "headerName": "S.No",
+                    "width": 60,
+                    "editable": False,
+                    "type": "numericColumn",
+                },
+                {
+                    "field": "name",
+                    "headerName": "Customer Name",
+                    "width": 250,
+                    "editable": True,
+                    "flex": 1,
+                },
+                {
+                    "field": "remarks",
+                    "headerName": "Remarks",
+                    "width": 250,
+                    "editable": True,
+                    "flex": 1,
+                },
+            ]
+
+        dialog_grid = (
+            ui.aggrid(
+                {
+                    "columnDefs": dialog_grid_col_defs(),
+                    "rowData": [],
+                    "defaultColDef": {
+                        "sortable": False,
+                        "resizable": True,
+                        "suppressMovable": True,
+                    },
+                    "domLayout": "autoHeight",
+                    "rowHeight": 36,
+                    "headerHeight": 40,
+                    "stopEditingWhenCellsLoseFocus": True,
+                },
+                theme="balham",
+                auto_size_columns=False,
+            )
+            .classes("w-full mb-4")
+            .style("font-family: Inter, sans-serif; font-size: 13px;")
+        )
+        _dlg_grid_ref["el"] = dialog_grid
+
+        async def on_dialog_cell_changed(e):
+            col = e.args.get("colId", "")
+            row_idx = e.args.get("rowIndex", -1)
+            val = e.args.get("newValue", "")
+            if row_idx < 0:
+                return
+            k = _dlg_key["v"]
+            if k and k in dialog_data and row_idx < len(dialog_data[k]):
+                if col == "name":
+                    dialog_data[k][row_idx]["name"] = val
+                elif col == "remarks":
+                    dialog_data[k][row_idx]["remarks"] = val
+
+        dialog_grid.on("cellValueChanged", on_dialog_cell_changed)
+
+        with ui.row().classes("w-full justify-between mt-5 pt-4 border-t border-gray-100"):
+            def _add_row():
+                k = _dlg_key["v"]
+                if k is not None:
+                    dialog_data.setdefault(k, []).append({"name": "", "remarks": ""})
+                    _render_dialog_table(k)
+
+            ui.button("+ Add Row", on_click=_add_row).props("outline no-caps").classes(
+                "text-[13px] text-[#E8402A] border-[#E8402A]"
+            )
+            ui.button("Close", on_click=detail_dialog.close).props(
+                "unelevated no-caps"
+            ).classes("bg-[#E8402A] text-white text-[13px] px-5")
+
+    def open_detail_dialog(table_type: str, d: str, col_type: str):
+        if d == "TOTAL":
+            return
+        key = (table_type, d, col_type)
+        _dlg_key["v"] = key
+        col_label = "Files Pending" if col_type == "pending" else "File Incomplete"
+        ttype_label = "Booking" if table_type == "booking" else "Delivery"
+        _dlg_title_ref["el"].set_text(
+            f"📋 {col_label} Details — {d} ({ttype_label})"
+        )
+        _render_dialog_table(key)
+        detail_dialog.open()
+
+    # ── Grid builder ─────────────────────────────────────────
+    def build_grid(table_type: str, dates: list) -> "ui.aggrid":
+        rows = [build_row(table_type, d) for d in dates]
+        tot = totals_row(rows)
+        grid = (
+            ui.aggrid(
+                {
+                    "columnDefs": grid_col_defs(),
+                    "rowData": rows,
+                    "pinnedBottomRowData": [tot],
+                    "defaultColDef": {
+                        "sortable": True,
+                        "resizable": True,
+                        "suppressMovable": True,
+                    },
+                    "domLayout": "autoHeight",
+                    "rowHeight": 38,
+                    "headerHeight": 42,
+                    "suppressCellFocus": False,
+                    "stopEditingWhenCellsLoseFocus": True,
+                },
+                theme="balham",
+                auto_size_columns=False,
+            )
+            .classes("w-full")
+            .style("font-family: Inter, sans-serif; font-size: 13px;")
+        )
+
+        async def on_cell_changed(e):
+            col = e.args.get("colId", "")
+            row_date = e.args.get("data", {}).get("date", "")
+            val = e.args.get("newValue", 0)
+            if row_date == "TOTAL" or col not in (
+                "total_count", "files_received", "file_incomplete"
+            ):
+                return
+            try:
+                val = int(float(val))
+            except Exception:
+                val = 0
+            stored = row_data.setdefault((table_type, row_date), {})
+            stored[col] = val
+            # Recompute rows and totals (for immediate Files Pending calculation)
+            updated_rows = [build_row(table_type, d) for d in dates]
+            new_tot = totals_row(updated_rows)
+            await grid.run_grid_method("setGridOption", "rowData", updated_rows)
+            await grid.run_grid_method("setPinnedBottomRowData", [new_tot])
+
+        async def on_cell_clicked(e):
+            col = e.args.get("column", {}).get("colId", "")
+            row = e.args.get("data", {})
+            row_date = row.get("date", "")
+            if col == "files_pending":
+                open_detail_dialog(table_type, row_date, "pending")
+            elif col == "file_incomplete":
+                open_detail_dialog(table_type, row_date, "incomplete")
+
+        grid.on("cellValueChanged", on_cell_changed)
+        grid.on("cellClicked", on_cell_clicked)
+        return grid
+
+    # ── Page layout ───────────────────────────────────────────
+    with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
+        # Sidebar
+        with ui.column().classes(
+            "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 "
+            "sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
+        ):
+            ui.label("Quick Nav").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+            ui.link("📊 Dashboard", "/").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
+                "border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] "
+                "bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
+            )
+            ui.link("📋 MIS Table", "/mis-table").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
+                "border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
+            ui.link("📑 Complaints Table", "/complaints-table").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
+                "border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
+            sidebar()
+
+        # Main content
+        with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden gap-8"):
+
+            # ── Header row ─────────────────────────────────────
+            with ui.row().classes("w-full items-center justify-between mb-2"):
+                with ui.column().classes("gap-1"):
+                    ui.label("Daily Reporting").classes(
+                        "text-[18px] font-bold text-gray-900 leading-none"
+                    )
+                    ui.label("Track booking & delivery file status by date").classes(
+                        "text-[12px] text-gray-400"
+                    )
+                # Date picker — right aligned
+                date_picker = (
+                    ui.date_input(label="Select Date", value=today_str)
+                    .classes("w-44")
+                    .props("outlined dense")
+                )
+
+            # State for filtered date
+            active_date: dict = {"v": today_str}
+            booking_dates = get_all_dates("booking")
+            delivery_dates = get_all_dates("delivery")
+
+            # ── Booking Details Table ───────────────────────────
+            with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
+                with ui.row().classes(
+                    "w-full items-center justify-between px-5 py-3.5 "
+                    "border-b border-gray-100 bg-white"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.element("div").classes(
+                            "w-2.5 h-2.5 rounded-full bg-[#6366F1]"
+                        )
+                        ui.label("Booking Details").classes(
+                            "text-[13px] font-bold text-gray-800"
+                        )
+                    ui.label("Click 'Files Pending' or 'File Incomplete' to add customer details").classes(
+                        "text-[11px] text-gray-400"
+                    )
+
+                booking_grid_holder = ui.column().classes("w-full")
+                with booking_grid_holder:
+                    b_grid = build_grid("booking", booking_dates)
+
+            # ── Delivery Details Table ──────────────────────────
+            with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
+                with ui.row().classes(
+                    "w-full items-center justify-between px-5 py-3.5 "
+                    "border-b border-gray-100 bg-white"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.element("div").classes(
+                            "w-2.5 h-2.5 rounded-full bg-[#10B981]"
+                        )
+                        ui.label("Delivery Details").classes(
+                            "text-[13px] font-bold text-gray-800"
+                        )
+                    ui.label("Click 'Files Pending' or 'File Incomplete' to add customer details").classes(
+                        "text-[11px] text-gray-400"
+                    )
+
+                delivery_grid_holder = ui.column().classes("w-full")
+                with delivery_grid_holder:
+                    d_grid = build_grid("delivery", delivery_dates)
+
+            # ── Date picker handler ─────────────────────────────
+            async def on_date_change(e):
+                selected = e.value or today_str
+                active_date["v"] = selected
+
+                # Add selected date if missing
+                b_dates = get_all_dates("booking")
+                if selected not in b_dates:
+                    b_dates = [selected] + b_dates
+
+                d_dates = get_all_dates("delivery")
+                if selected not in d_dates:
+                    d_dates = [selected] + d_dates
+
+                b_rows = [build_row("booking", d) for d in b_dates]
+                d_rows = [build_row("delivery", d) for d in d_dates]
+
+                await b_grid.run_grid_method("setGridOption", "rowData", b_rows)
+                await b_grid.run_grid_method("setPinnedBottomRowData", [totals_row(b_rows)])
+                await d_grid.run_grid_method("setGridOption", "rowData", d_rows)
+                await d_grid.run_grid_method("setPinnedBottomRowData", [totals_row(d_rows)])
+
+            date_picker.on_value_change(on_date_change)
+
+
+# ══════════════════════════════════════════════════════════════
+#                        PAGE: SETTINGS
 # ══════════════════════════════════════════════════════════════
 
 
@@ -1656,6 +2430,7 @@ class FormState:
         self.model_year: ui.input | None = None
         self.vehicle_regn_no: ui.input | None = None
         self.regn_date: ui.input | None = None
+        self.car_color: ui.input | None = None
 
         # UI element refs — customer
         self.cust_name: ui.input | None = None
@@ -1732,6 +2507,35 @@ class FormState:
         self.delivery_mode = None
         self.booking_select = None
 
+        # Complaint Form Specifics
+        self.complaint_dealerships: list = []
+        self.complainant_outlets: list = []
+        self.complainee_outlets: list = []
+        
+        self.complainant_dealership: ui.select | None = None
+        self.complainant_showroom: ui.select | None = None
+        self.complainee_dealership: ui.select | None = None
+        self.complainee_showroom: ui.select | None = None
+        
+        self.comp_quotation_no: ui.input | None = None
+        self.comp_quotation_date: ui.input | None = None
+        self.comp_total_offered: ui.input | None = None
+        self.comp_net_offered: ui.input | None = None
+        self.comp_tcs: ui.input | None = None
+        
+        self.comp_booking_file_no: ui.input | None = None
+        self.comp_receipt_no: ui.input | None = None
+        self.comp_booking_amt: ui.input | None = None
+        self.comp_mode_of_payment: ui.input | None = None
+        self.comp_instrument_date: ui.input | None = None
+        self.comp_instrument_no: ui.input | None = None
+        self.comp_bank_name: ui.input | None = None
+        
+        self.complainant_remarks: ui.textarea | None = None
+        self.complainee_aa_name: ui.input | None = None
+        self.complainant_aa_remarks: ui.textarea | None = None
+        self.complaint_date: ui.input | None = None
+
     @property
     def all_component_inputs(self) -> dict[str, ui.input]:
         return {**self.price_inputs, **self.discount_inputs}
@@ -1768,31 +2572,24 @@ class FormState:
         #     return False, "Valid 6-digit PIN code required."
 
         pan_val = _val_upper(self.cust_pan)
-        if not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan_val):
+        if pan_val and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan_val):
             return False, "Valid PAN required."
-
-        # aadhar_raw = _val(self.cust_aadhar)
-        # aadhar_clean = re.sub(r"\D", "", aadhar_raw)
-        # if aadhar_clean and len(aadhar_clean) != 12:
-        #     return False, "Valid 12-digit Aadhar required."
 
         # TR Case condition
         if self.condition_cbs.get("tr_case") and self.condition_cbs["tr_case"].value:
             if not _val(self.cust_other_id):
                 return False, "Other ID Proof required for TR Case."
 
-        if not _val(self.cust_file_no):
-            return False, "Customer File Number is required."
-
-        if not _val(self.vin_no):
-            return False, "VIN Number is required."
-
-        if not _val(self.engine_no):
-            return False, "Engine Number is required."
-
-        year_val = _val(self.model_year)
-        if not year_val or not year_val.isdigit():
-            return False, "Valid Model Year is required."
+        if self.stage != "complaint":
+            if not _val(self.cust_file_no):
+                return False, "Customer File Number is required."
+            if not _val(self.vin_no):
+                return False, "VIN Number is required."
+            if not _val(self.engine_no):
+                return False, "Engine Number is required."
+            year_val = _val(self.model_year)
+            if not year_val or not year_val.isdigit():
+                return False, "Valid Model Year is required."
 
         return True, ""
 
@@ -1931,6 +2728,77 @@ def populate_price_and_discount(state, booking_data: dict):
             inp.set_value(format_num_inr(val))
 
 
+def populate_from_complaint(state: FormState, complaint: dict):
+    if not complaint:
+        return
+
+    # --- Customer details ---
+    if state.cust_name:
+        state.cust_name.set_value(complaint.get("customer_name", ""))
+    if state.cust_mobile:
+        state.cust_mobile.set_value(complaint.get("customer_mobile", ""))
+    if state.cust_email:
+        state.cust_email.set_value(complaint.get("email", ""))
+    if state.cust_address:
+        state.cust_address.set_value(complaint.get("customer_address", ""))
+    if state.cust_city:
+        state.cust_city.set_value(complaint.get("customer_city", ""))
+    if state.cust_pincode:
+        state.cust_pincode.set_value(complaint.get("customer_pin", ""))
+    if state.cust_pan:
+        state.cust_pan.set_value(complaint.get("pan_number", ""))
+    if state.cust_aadhar:
+        state.cust_aadhar.set_value(complaint.get("aadhar_number", ""))
+
+    # --- Vehicle details ---
+    if state.vin_no:
+        state.vin_no.set_value(complaint.get("vin_number", ""))
+    if state.engine_no:
+        state.engine_no.set_value(complaint.get("engine_number", ""))
+    if state.vehicle_regn_no:
+        state.vehicle_regn_no.set_value(complaint.get("registration_number", ""))
+    if state.regn_date:
+        state.regn_date.set_value(complaint.get("registration_date", ""))
+    if state.car_color:
+        state.car_color.set_value(complaint.get("car_color", ""))
+
+    # --- Dealerships & Showrooms ---
+    def get_item(items, id):
+        for item in items:
+            if item.get("id") == id:
+                return item
+        return None
+
+    if state.complainant_dealership:
+        item = get_item(state.complaint_dealerships, complaint.get("complainant_dealership_id"))
+        if item: state.complainant_dealership.set_value(item.get("name"))
+
+    if state.complainant_showroom:
+        if complaint.get("complainant_showroom_name"):
+            state.complainant_showroom.set_value(complaint["complainant_showroom_name"])
+
+    if state.complainee_dealership:
+        item = get_item(state.complaint_dealerships, complaint.get("complainee_dealership_id"))
+        if item: state.complainee_dealership.set_value(item.get("name"))
+
+    if state.complainee_showroom:
+        if complaint.get("complainee_showroom_name"):
+            state.complainee_showroom.set_value(complaint["complainee_showroom_name"])
+
+    # --- Remarks ---
+    if state.complaint_date:
+        state.complaint_date.set_value(complaint.get("date_of_complaint", ""))
+    if state.complainant_remarks:
+        state.complainant_remarks.set_value(complaint.get("remarks_complainant", ""))
+    if state.complainee_aa_name:
+        state.complainee_aa_name.set_value(complaint.get("remark_complainee_aa", ""))
+    if state.complainant_aa_remarks:
+        state.complainant_aa_remarks.set_value(complaint.get("remark_admin", ""))
+
+    if state.status:
+        state.status.set_value(complaint.get("status", ""))
+
+
 # ══════════════════════════════════════════════════════════════
 # FORM SECTION BUILDERS
 # ══════════════════════════════════════════════════════════════
@@ -1972,14 +2840,15 @@ def build_vehicle_section(state: FormState) -> None:
             )
             state.booking_date = (
                 ui.input(
-                    label="Booking Date *",
+                    label="Booking Date" if state.stage == "complaint" else "Booking Date *",
                     value=str(date.today()),
                     on_change=lambda _: _fs_try_price_preload(state),
                 )
                 .classes("w-full")
                 .props('type="date" outlined dense')
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
+            if state.stage != "complaint":
+                state.booking_date.on_value_change(lambda _: _fs_revalidate(state))
             state.outlet_select = (
                 ui.select(
                     options=outlet_opts,
@@ -2004,42 +2873,47 @@ def build_vehicle_section(state: FormState) -> None:
                 .props("outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
-            if state.stage == "delivery":
-                state.vin_no = (
-                    ui.input(label="VIN Number *")
-                    .classes("w-full uppercase")
-                    .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
-                )
-                state.delivery_date = (
-                    ui.input(
-                        label="Delivery Date *",
+            if state.stage in ["delivery", "complaint"]:
+                if state.stage == "delivery":
+                    state.vin_no = (
+                        ui.input(label="VIN Number *")
+                        .classes("w-full uppercase")
+                        .props("outlined dense")
+                        .on_value_change(lambda _: _fs_revalidate(state))
                     )
+                    state.delivery_date = (
+                        ui.input(label="Delivery Date *")
+                        .classes("w-full")
+                        .props('type="date" outlined dense')
+                        .on_value_change(lambda _: _fs_revalidate(state))
+                    )
+                    state.engine_no = (
+                        ui.input(label="Engine Number *")
+                        .classes("w-full uppercase")
+                        .props("outlined dense")
+                        .on_value_change(lambda _: _fs_revalidate(state))
+                    )
+                    state.model_year = (
+                        ui.input(label="Model Year *", placeholder="e.g. 2024")
+                        .classes("w-full")
+                        .props('outlined dense type="number"')
+                        .on_value_change(lambda _: _fs_revalidate(state))
+                    )
+                    state.vehicle_regn_no = (
+                        ui.input(label="Vehicle Regn Number")
+                        .classes("w-full uppercase")
+                        .props("outlined dense")
+                    )
+                    state.regn_date = (
+                        ui.input(label="Date of Registration")
+                        .classes("w-full")
+                        .props('outlined dense type="date"')
+                    )
+                # Car Colour shown for both delivery and complaint
+                state.car_color = (
+                    ui.input(label="Car Colour")
                     .classes("w-full")
-                    .props('type="date" outlined dense')
-                    .on_value_change(lambda _: _fs_revalidate(state))
-                )
-                state.engine_no = (
-                    ui.input(label="Engine Number *")
-                    .classes("w-full uppercase")
                     .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
-                )
-                state.model_year = (
-                    ui.input(label="Model Year *", placeholder="e.g. 2024")
-                    .classes("w-full")
-                    .props('outlined dense type="number"')
-                    .on_value_change(lambda _: _fs_revalidate(state))
-                )
-                state.vehicle_regn_no = (
-                    ui.input(label="Vehicle Regn Number")
-                    .classes("w-full uppercase")
-                    .props("outlined dense")
-                )
-                state.regn_date = (
-                    ui.input(label="Date of Registration")
-                    .classes("w-full")
-                    .props('outlined dense type="date"')
                 )
 
         if state.outlets:
@@ -2645,6 +3519,136 @@ def build_payment_section(state: FormState) -> None:
                 )
 
         toggle_fields()
+
+
+def build_complaint_dealership_section(state: FormState) -> None:
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+            ui.label("🏢").classes("text-[20px] select-none")
+            ui.label("Dealership Details").classes("text-[15px] font-bold text-gray-900")
+
+        with ui.grid(columns=2).classes("w-full gap-5"):
+            # Create all selectors first
+            state.complainant_dealership = ui.select(
+                {d["name"]: d["name"] for d in state.complaint_dealerships},
+                label="Complainant Dealership *"
+            ).classes("w-full").props("outlined dense")
+            state.complainant_showroom = ui.select({}, label="Showroom *").classes("w-full").props("outlined dense")
+
+            # Complainee dealership with "X" option
+            complainee_options = {"X": "X"}
+            for d in state.complaint_dealerships:
+                complainee_options[d["name"]] = d["name"]
+            state.complainee_dealership = ui.select(
+                complainee_options,
+                label="Complainee Dealership *"
+            ).classes("w-full").props("outlined dense")
+            
+            # Complainee showroom with "X" option
+            state.complainee_showroom = ui.select(
+                {"X": "X"},
+                label="Showroom *"
+            ).classes("w-full").props("outlined dense")
+
+            # Now attach event handlers
+            def on_complainant_dealership_change(e):
+                dlr = e.value
+                # Update complainee dealership options to exclude the selected complainant dealership
+                if dlr:
+                    filtered_dealerships = {"X": "X"}
+                    for d in state.complaint_dealerships:
+                        if d["name"] != dlr:
+                            filtered_dealerships[d["name"]] = d["name"]
+                    state.complainee_dealership.options = filtered_dealerships
+                    state.complainee_dealership.update()
+                    
+                    # Fetch complainant showrooms
+                    import asyncio
+                    async def fetch_outlets():
+                        try:
+                            outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+                            if outs:
+                                # outs is a list of strings, not objects
+                                state.complainant_showroom.options = {o: o for o in outs}
+                                state.complainant_showroom.update()
+                        except Exception as ex:
+                            print(f"Error fetching outlets: {ex}")
+                    asyncio.create_task(fetch_outlets())
+                else:
+                    # If no complainant dealership is selected, show all dealerships with X
+                    complainee_options = {"X": "X"}
+                    for d in state.complaint_dealerships:
+                        complainee_options[d["name"]] = d["name"]
+                    state.complainee_dealership.options = complainee_options
+                    state.complainee_dealership.update()
+                    state.complainant_showroom.options = {}
+                    state.complainant_showroom.update()
+
+            def on_complainee_dealership_change(e):
+                dlr = e.value
+                if dlr == "X":
+                    # When X is selected, show only X in showroom dropdown
+                    state.complainee_showroom.options = {"X": "X"}
+                    state.complainee_showroom.update()
+                elif dlr:
+                    import asyncio
+                    async def fetch_outlets():
+                        try:
+                            outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+                            if outs:
+                                # outs is a list of strings, not objects
+                                showroom_options = {"X": "X"}
+                                for o in outs:
+                                    showroom_options[o] = o
+                                state.complainee_showroom.options = showroom_options
+                                state.complainee_showroom.update()
+                        except Exception as ex:
+                            print(f"Error fetching outlets: {ex}")
+                    asyncio.create_task(fetch_outlets())
+                else:
+                    state.complainee_showroom.options = {"X": "X"}
+                    state.complainee_showroom.update()
+            
+            # Attach the handlers to the selectors
+            state.complainant_dealership.on_value_change(on_complainant_dealership_change)
+            state.complainee_dealership.on_value_change(on_complainee_dealership_change)
+
+def build_complaint_quotation_section(state: FormState) -> None:
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+            ui.label("📋").classes("text-[20px] select-none")
+            ui.label("Complaint Quotation Details").classes("text-[15px] font-bold text-gray-900")
+        with ui.grid(columns=3).classes("w-full gap-5"):
+            state.comp_quotation_no = ui.input(label="Quotation Number").classes("w-full").props("outlined dense")
+            state.comp_quotation_date = ui.input(label="Quotation Date").classes("w-full").props('outlined dense type="date"')
+            state.comp_tcs = accounting_input(label_text="TCS")
+            state.comp_total_offered = accounting_input(label_text="Total Offered Price")
+            state.comp_net_offered = accounting_input(label_text="Net Offered Price")
+
+def build_complaint_booking_section(state: FormState) -> None:
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+            ui.label("📝").classes("text-[20px] select-none")
+            ui.label("Complaint Booking Details").classes("text-[15px] font-bold text-gray-900")
+        with ui.grid(columns=3).classes("w-full gap-5"):
+            state.comp_booking_file_no = ui.input(label="Booking File Number").classes("w-full").props("outlined dense")
+            state.comp_receipt_no = ui.input(label="Receipt Number").classes("w-full").props("outlined dense")
+            state.comp_booking_amt = accounting_input(label_text="Booking Amount")
+            state.comp_mode_of_payment = ui.input(label="Mode of Payment").classes("w-full").props("outlined dense")
+            state.comp_instrument_date = ui.input(label="Instrument Date").classes("w-full").props('outlined dense type="date"')
+            state.comp_instrument_no = ui.input(label="Instrument Number").classes("w-full").props("outlined dense")
+            state.comp_bank_name = ui.input(label="Bank Name").classes("w-full").props("outlined dense")
+
+def build_complaint_remarks_section(state: FormState) -> None:
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+            ui.label("💬").classes("text-[20px] select-none")
+            ui.label("Remarks").classes("text-[15px] font-bold text-gray-900")
+        with ui.grid(columns=2).classes("w-full gap-5"):
+            state.complaint_date = ui.input(label="Date of Complaint Raised").classes("w-full").props('outlined dense type="date"')
+            state.complainee_aa_name = ui.input(label="AA Name at Complainee").classes("w-full").props("outlined dense")
+            state.complainant_remarks = ui.textarea(label="Remarks by Complainant *").classes("w-full").props("outlined dense rows=3")
+            state.complainant_aa_remarks = ui.textarea(label="Remarks by AA at Complainant").classes("w-full").props("outlined dense rows=3")
 
 
 def build_live_bar(state: FormState) -> None:
@@ -3368,6 +4372,167 @@ async def form_page(
 # ══════════════════════════════════════════════════════════════
 # RUN
 # ══════════════════════════════════════════════════════════════
+
+def build_complaint_payload(state: FormState) -> dict:
+    def val(x):
+        return x.value if x else None
+
+    def intval(x):
+        if not x: return 0
+        v = x.value
+        if not v: return 0
+        try:
+            v_str = str(v).replace(",", "").strip()
+            import re
+            if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
+                return int(float(eval(v_str)))
+            return int(float(v_str))
+        except Exception:
+            return 0
+
+    return {
+        "stage": "complaint",
+        "variant_id": state.variant_id,
+        "employee_id": get_token() if get_token() else "unknown",
+        
+        "dealer_showroom_details": {
+            "complainant_dealership": val(state.complainant_dealership),
+            "complainant_showroom": val(state.complainant_showroom),
+            "complainee_dealership": val(state.complainee_dealership),
+            "complainee_showroom": val(state.complainee_showroom),
+        },
+        
+        "customer_details": {
+            "customer_name": val(state.cust_name),
+            "contact_number": val(state.cust_mobile),
+            "email": val(state.cust_email),
+            "address": val(state.cust_address),
+            "city": val(state.cust_city),
+            "pin": val(state.cust_pincode),
+            "pan": val(state.cust_pan),
+            "aadhar": val(state.cust_relative),
+        },
+        
+        "vehicle_details": {
+            "vin_number": val(state.vin_no),
+            "engine_number": val(state.engine_no),
+            "registration_number": val(state.vehicle_regn_no),
+            "registration_date": val(state.regn_date),
+            "car_color": val(state.car_color),
+        },
+        
+        "quotation_details": {
+            "quotation_number": val(state.comp_quotation_no),
+            "quotation_date": val(state.comp_quotation_date),
+            "tcs_amount": intval(state.comp_tcs),
+            "total_offered_price": intval(state.comp_total_offered),
+            "net_offered_price": intval(state.comp_net_offered),
+        },
+
+        "booking_details": {
+            "booking_file_number": val(state.comp_booking_file_no),
+            "receipt_number": val(state.comp_receipt_no),
+            "booking_amount": intval(state.comp_booking_amt),
+            "mode_of_payment": val(state.comp_mode_of_payment),
+            "instrument_date": val(state.comp_instrument_date),
+            "instrument_number": val(state.comp_instrument_no),
+            "bank_name": val(state.comp_bank_name),
+        },
+
+        "remarks_page": {
+            "complaint_raised_date": val(state.complaint_date),
+            "aa_name": val(state.complainee_aa_name),
+            "remarks_by_complainant": val(state.complainant_remarks),
+            "remarks_by_aa": val(state.complainant_aa_remarks),
+        },
+        
+        # Price information
+        "price_info": {
+            "ex_showroom_price": intval(state.price_inputs.get("Ex Showroom Price") or state.price_inputs.get("Ex-Showroom Price")),
+            "insurance": intval(state.price_inputs.get("Insurance")),
+            "registration_road_tax": intval(state.price_inputs.get("Registration / Road Tax")),
+            "discount": state.live_discount,
+            "accessories_charged": intval(state.acc_charged),
+        }
+    }
+
+@protected_page
+@ui.page("/complaint-form")
+async def complaint_form_page(transaction_id: int | None = None, complaint_code: str | None = None) -> None:
+    state = FormState()
+    state.stage = "complaint"
+    state.txn_id = transaction_id
+    state.edit_mode = bool(transaction_id or complaint_code)
+    
+    title = "New Complaint"
+    if transaction_id:
+        title = f"Edit Complaint #{transaction_id}"
+    elif complaint_code:
+        title = f"Edit Complaint {complaint_code}"
+    
+    render_topbar(title)
+    
+    ref = await fetch_reference_data()
+    state.cars = ref.get("cars", [])
+    state.variants = ref.get("variants", [])
+    state.components = ref.get("components", [])
+    state.outlets = ref.get("outlets", [])
+    state.executives = ref.get("executives", [])
+    state.accessory_map = {acc["id"]: acc for acc in ref.get("accessories", [])}
+    state.complaint_dealerships = ref.get("dealerships", [])
+    
+    # Load existing complaint data if complaint_code is provided
+    if complaint_code:
+        try:
+            # Since no single-item GET exists, we fetch all and filter
+            res = await api_get("/complaints/")
+            all_complaints = res.get("data", [])
+            target = next((c for c in all_complaints if c.get("complaint_code") == complaint_code), None)
+            if target:
+                populate_from_complaint(state, target)
+        except Exception as e:
+            ui.notify(f"Failed to load complaint: {str(e)}", type="negative")
+
+    with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
+        ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
+        
+        build_complaint_dealership_section(state)
+        build_customer_section(state)
+        build_vehicle_section(state)
+        build_prices_section(state)
+        build_complaint_quotation_section(state)
+        build_complaint_booking_section(state)
+        build_complaint_remarks_section(state)
+        
+        with ui.row().classes("w-full justify-end mt-4"):
+            state.error_banner = ui.element("div").classes("bg-red-50 text-red-600 px-4 py-2 rounded-md hidden flex items-center")
+            state.error_msg_label = ui.label("").classes("ml-2")
+            state.error_banner.set_visibility(False)
+            with state.error_banner:
+                ui.label("??").classes("text-lg")
+                state.error_msg_label
+                
+            async def handle_complaint_submit():
+                valid, msg = state.is_valid()
+                if not valid:
+                    state.error_msg_label.set_text(msg)
+                    state.error_banner.set_visibility(True)
+                    return
+                    
+                payload = build_complaint_payload(state)
+                try:
+                    await api_post("/complaints/save-complaint", payload)
+                    ui.notify("Complaint Submitted Successfully", color="green", type="positive")
+                    ui.navigate.to("/")
+                except Exception as e:
+                    state.error_msg_label.set_text(str(e))
+                    state.error_banner.set_visibility(True)
+            
+            ui.button("Cancel", on_click=lambda: ui.navigate.to("/")).props("flat color=gray")
+            state.submit_btn = ui.button("Submit Complaint", on_click=handle_complaint_submit).props("color=primary")
+
+
+
 if __name__ in {"__main__", "__mp_main__"}:
     app.colors(primary="#e8402a")
     ui.run(

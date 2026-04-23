@@ -4,7 +4,7 @@ import os
 
 load_dotenv()
 
-engine = create_engine(os.getenv("DATABASE_URL"), echo=False)
+engine = create_engine(os.getenv("DATABASE_URL", "sqlite:///mis_db.db"), echo=False)
 
 
 def get_session():

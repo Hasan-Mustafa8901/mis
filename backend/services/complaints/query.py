@@ -1,9 +1,9 @@
 from sqlmodel import Session, select, or_, and_, func, cast
 from datetime import date, datetime
 import pandas as pd
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, joinedload
 # Avoid conflicts with python built-ins
-from db.models import Dealership, Outlet, Complaint, User, Customer, Transaction, DailyBooking, DailyDelivery, ComplaintStatus, ComplaintFlag, Remark
+from db.models import Dealership, Outlet, Complaint, User, Customer, Transaction, DailyBooking, DailyDelivery, ComplaintStatus, ComplaintFlag, Remark, Variant, Car
 from services.utils import get_ist_today, get_ist_now
 
 def get_all_dealerships(session: Session):
@@ -54,7 +54,15 @@ def generate_complaint_code(session: Session, complaint: Complaint):
     return code, serial_no
 
 def query_complaints(session: Session, filters=None, offset=0, limit=50):
-    query = select(Complaint)
+    query = select(Complaint).options(
+        joinedload(Complaint.customer),
+        joinedload(Complaint.remark),
+        joinedload(Complaint.complainant_dealership),
+        joinedload(Complaint.complainant_outlet),
+        joinedload(Complaint.complainee_dealership),
+        joinedload(Complaint.complainee_outlet),
+        joinedload(Complaint.variant).joinedload(Variant.car),
+    )
     if filters:
         if filters.get("dealer"):
             dealer_id = filters["dealer"]
@@ -78,7 +86,62 @@ def query_complaints(session: Session, filters=None, offset=0, limit=50):
 
     total = len(session.exec(query).all())
     rows = session.exec(query.order_by(Complaint.raised_at).offset(offset).limit(limit)).all()
-    return rows, total
+
+    result = []
+    for row in rows:
+        item = row.model_dump()
+        
+        # Flatten customer details
+        if row.customer:
+            item["customer_name"] = row.customer.name
+            item["customer_mobile"] = row.customer.mobile_number
+            item["customer_address"] = row.customer.address
+            item["customer_city"] = row.customer.city
+            item["customer_pin"] = row.customer.pin_code
+        else:
+            item["customer_name"] = None
+            item["customer_mobile"] = None
+            item["customer_address"] = None
+            item["customer_city"] = None
+            item["customer_pin"] = None
+            
+        # Flatten remarks
+        if row.remark:
+            item["remarks_complainant"] = row.remark.remarks_complainant
+            item["remark_complainee_aa"] = row.remark.remarks_complainant_aa
+            item["remark_admin"] = row.remark.aa_complainee
+        else:
+            item["remarks_complainant"] = None
+            item["remark_complainee_aa"] = None
+            item["remark_admin"] = None
+            
+        # Flatten dealerships and outlets
+        item["complainant_dealer_name"] = row.complainant_dealership.name if row.complainant_dealership else None
+        item["complainant_showroom_name"] = row.complainant_outlet.name if row.complainant_outlet else None
+        # For complainee: prefer FK name, fall back to plain-text override (e.g. "X")
+        item["complainee_dealer_name"] = (
+            row.complainee_dealership.name if row.complainee_dealership
+            else row.complainee_dealer_text
+        )
+        item["complainee_showroom_name"] = (
+            row.complainee_outlet.name if row.complainee_outlet
+            else row.complainee_showroom_text
+        )
+        
+        # Flatten car_color
+        item["car_color"] = row.car_color
+
+        # Flatten car model and variant
+        if row.variant:
+            item["car_model"] = row.variant.car.name if row.variant.car else None
+            item["car_variant"] = row.variant.full_variant_name
+        else:
+            item["car_model"] = None
+            item["car_variant"] = None
+
+        result.append(item)
+
+    return result, total
 
 def get_complaints_per_status(session: Session):
     today = get_ist_today()
@@ -172,10 +235,31 @@ def save_complaint(session: Session, data: dict):
         if not d.get("complainant_dealership") or not d.get("complainant_showroom"):
             return False, "Dealership Details not provided (Enter your Dealership and Showroom)"
             
+        complainee_dealer_name_raw = d.get('complainee_dealership')
+        complainee_showroom_name_raw = d.get('complainee_showroom')
+
         complainant_dealership_id = get_dealership_id_by_name(session, d.get('complainant_dealership'))
-        complainee_dealership_id = get_dealership_id_by_name(session, d.get('complainee_dealership'))
         complainant_outlet_id = get_outlet_id_by_name(session, d.get('complainant_showroom'), complainant_dealership_id)
-        complainee_outlet_id = get_outlet_id_by_name(session, d.get('complainee_showroom'), complainee_dealership_id)
+
+        # For complainee: if "X" or not a real dealership, store as plain text
+        complainee_dealership_id = None
+        complainee_outlet_id = None
+        complainee_dealer_text = None
+        complainee_showroom_text = None
+
+        if complainee_dealer_name_raw and complainee_dealer_name_raw != "X":
+            complainee_dealership_id = get_dealership_id_by_name(session, complainee_dealer_name_raw)
+            if not complainee_dealership_id:
+                complainee_dealer_text = complainee_dealer_name_raw
+        elif complainee_dealer_name_raw == "X":
+            complainee_dealer_text = "X"
+
+        if complainee_showroom_name_raw and complainee_showroom_name_raw != "X":
+            complainee_outlet_id = get_outlet_id_by_name(session, complainee_showroom_name_raw, complainee_dealership_id)
+            if not complainee_outlet_id:
+                complainee_showroom_text = complainee_showroom_name_raw
+        elif complainee_showroom_name_raw == "X":
+            complainee_showroom_text = "X"
         
         date_of_complaint_str = data.get("remarks_page", {}).get("complaint_raised_date")
         comp_date = None
@@ -190,15 +274,53 @@ def save_complaint(session: Session, data: dict):
         else:
             comp_date = get_ist_today()
         
+        v = data.get("vehicle_details", {})
+        q = data.get("quotation_details", {})
+        b = data.get("booking_details", {})
+        p = data.get("price_info", {})
+
         complaint = Complaint(
             complainant_dealership_id=complainant_dealership_id,
             complainant_outlet_id=complainant_outlet_id,
             complainee_dealership_id=complainee_dealership_id,
             complainee_outlet_id=complainee_outlet_id,
+            complainee_dealer_text=complainee_dealer_text,
+            complainee_showroom_text=complainee_showroom_text,
             customer_id=customer.id,
             remark_id=remark_id,
             raised_by=data.get("employee_id"),
-            date_of_complaint=comp_date
+            date_of_complaint=comp_date,
+            
+            # Vehicle
+            variant_id=data.get("variant_id"),
+            vin_number=v.get("vin_number"),
+            engine_number=v.get("engine_number"),
+            registration_number=v.get("registration_number"),
+            registration_date=v.get("registration_date"),
+            car_color=v.get("car_color"),
+            
+            # Quotation
+            quotation_number=q.get("quotation_number"),
+            quotation_date=q.get("quotation_date"),
+            tcs_amount=q.get("tcs_amount", 0),
+            total_offered_price=q.get("total_offered_price", 0),
+            net_offered_price=q.get("net_offered_price", 0),
+            
+            # Booking
+            booking_file_number=b.get("booking_file_number"),
+            receipt_number=b.get("receipt_number"),
+            booking_amount=b.get("booking_amount", 0),
+            mode_of_payment=b.get("mode_of_payment"),
+            instrument_date=b.get("instrument_date"),
+            instrument_number=b.get("instrument_number"),
+            bank_name=b.get("bank_name"),
+            
+            # Price Info
+            ex_showroom_price=p.get("ex_showroom_price", 0),
+            insurance=p.get("insurance", 0),
+            registration_road_tax=p.get("registration_road_tax", 0),
+            discount=p.get("discount", 0.0),
+            accessories_charged=p.get("accessories_charged", 0),
         )
         
         code, serial = generate_complaint_code(session, complaint)

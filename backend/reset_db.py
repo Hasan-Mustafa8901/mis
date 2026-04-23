@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from sqlmodel import SQLModel, Session
 from db.models import (
     Accessory,
+    Dealership,
     DiscountComponent,
     Outlet,
     Employee,
@@ -26,84 +27,97 @@ def reset_db():
 
 def seed_masters():
     with Session(engine) as session:
-        # 1. Add Outlets
-        outlet = Outlet(name="HN Showroom", city="Lucknow", state="Uttar Pradesh")
-        session.add(outlet)
-        session.commit()
-        session.refresh(outlet)
-        outlet = Outlet(name="RR Showroom", city="Lucknow", state="Uttar Pradesh")
-        session.add(outlet)
-        session.commit()
-        session.refresh(outlet)
 
-        # 2. Add Employees
-        if outlet.id:
-            exec_ = Employee(
+        # ── 1. Dealerships & Showrooms ────────────────────────────
+        # 2 dealerships × 3 showrooms = 6 outlets total
+        dealership_data = [
+            {
+                "name": "Alpha Motors",
+                "showrooms": [
+                    {"name": "Alpha Motors – Main Branch",   "city": "Lucknow",   "state": "Uttar Pradesh"},
+                    {"name": "Alpha Motors – Hazratganj",    "city": "Lucknow",   "state": "Uttar Pradesh"},
+                    {"name": "Alpha Motors – Kanpur Road",   "city": "Lucknow",   "state": "Uttar Pradesh"},
+                ],
+            },
+            {
+                "name": "Beta Auto Group",
+                "showrooms": [
+                    {"name": "Beta Auto – Gomti Nagar",      "city": "Lucknow",   "state": "Uttar Pradesh"},
+                    {"name": "Beta Auto – Aliganj",          "city": "Lucknow",   "state": "Uttar Pradesh"},
+                    {"name": "Beta Auto – Faizabad Road",    "city": "Lucknow",   "state": "Uttar Pradesh"},
+                ],
+            },
+        ]
+
+        last_outlet = None
+        for d_data in dealership_data:
+            dealership = Dealership(name=d_data["name"])
+            session.add(dealership)
+            session.commit()
+            session.refresh(dealership)
+
+            for s in d_data["showrooms"]:
+                outlet = Outlet(
+                    name=s["name"],
+                    city=s["city"],
+                    state=s["state"],
+                    dealership_id=dealership.id,
+                )
+                session.add(outlet)
+                session.commit()
+                session.refresh(outlet)
+                last_outlet = outlet
+
+        # ── 2. Sample Employees (assigned to the last seeded outlet) ──
+        if last_outlet and last_outlet.id:
+            session.add(Employee(
                 name="John Doe",
-                employee_code="E001",
-                outlet_id=outlet.id,
+                outlet_id=last_outlet.id,
                 designation="Sales Executive",
-            )
-            tl = Employee(
+            ))
+            session.add(Employee(
                 name="Jane Smith",
-                employee_code="E002",
-                outlet_id=outlet.id,
+                outlet_id=last_outlet.id,
                 designation="Team Leader",
-            )
-            session.add(exec_)
-            session.add(tl)
+            ))
 
-        # 3. Add Banks
-        banks = [
+        # ── 3. Banks ──────────────────────────────────────────────
+        for bank_name in [
             "HDFC Bank",
             "ICICI Bank",
             "State Bank of India",
             "Axis Bank",
             "Kotak Mahindra Bank",
-        ]
-        for bank_name in banks:
+        ]:
             session.add(Bank(name=bank_name))
 
-        # 4. Add Discount Components (Initial set based on column_config.json)
+        # ── 4. Discount Components ────────────────────────────────
         components = [
             # Price Components
-            ("Ex Showroom Price", "price", "price_charged", 1),
-            ("Insurance (With Depreciation Cover)", "price", "price_charged", 2),
-            ("Registration", "price", "price_charged", 3),
-            ("Genuine Acc Kit", "price", "price_charged", 4),
-            ("TCS", "price", "price_charged", 5),
-            ("FasTag", "price", "price_charged", 6),
-            ("Ext Warr", "price", "price_charged", 7),
-            ("Shield Of Trust", "price", "price_charged", 8),
+            ("Ex Showroom Price",                        "price",    "price_charged",    1),
+            ("Insurance (With Depreciation Cover)",      "price",    "price_charged",    2),
+            ("Registration",                             "price",    "price_charged",    3),
+            ("Genuine Acc Kit",                          "price",    "price_charged",    4),
+            ("TCS",                                      "price",    "price_charged",    5),
+            ("FasTag",                                   "price",    "price_charged",    6),
+            ("Ext Warr",                                 "price",    "price_charged",    7),
+            ("Shield Of Trust",                          "price",    "price_charged",    8),
             # Discount Components
-            ("Cash Discount All Customers", "discount", "discount_allowed", 1),
-            ("Additional Discount From Dealer", "discount", "discount_allowed", 2),
-            ("Extra Kitty on TR Cases", "discount", "discount_allowed", 3),
-            (
-                "Additional for POI /Corporate Customers",
-                "discount",
-                "discount_allowed",
-                4,
-            ),
-            ("Additional for Exchange Customers", "discount", "discount_allowed", 5),
-            ("Additional for Scrappage Customers", "discount", "discount_allowed", 6),
-            (
-                "Additional for Upward Sales Customers",
-                "discount",
-                "discount_allowed",
-                7,
-            ),
-            (
-                "Maximum benefit due to price increase",
-                "discount",
-                "discount_allowed",
-                8,
-            ),
+            ("Cash Discount All Customers",              "discount", "discount_allowed", 1),
+            ("Additional Discount From Dealer",          "discount", "discount_allowed", 2),
+            ("Extra Kitty on TR Cases",                  "discount", "discount_allowed", 3),
+            ("Additional for POI /Corporate Customers",  "discount", "discount_allowed", 4),
+            ("Additional for Exchange Customers",        "discount", "discount_allowed", 5),
+            ("Additional for Scrappage Customers",       "discount", "discount_allowed", 6),
+            ("Additional for Upward Sales Customers",    "discount", "discount_allowed", 7),
+            ("Maximum benefit due to price increase",    "discount", "discount_allowed", 8),
         ]
         for name, type_, section, order in components:
             session.add(
                 DiscountComponent(name=name, type=type_, section=section, order=order)
             )
+
+        # ── 5. Accessories (from config) ──────────────────────────
         with open(r"config/column_config.json", encoding="utf-8") as f:
             config = json.load(f)
             for a in config.get("accessories", []):
@@ -116,3 +130,4 @@ def seed_masters():
 if __name__ == "__main__":
     reset_db()
     seed_masters()
+
