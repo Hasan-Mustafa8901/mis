@@ -52,7 +52,8 @@ class BookingDiscountStrategy(DiscountStrategy):
         excess = total_discount - discount_pricelist
 
         audit_result = {
-            "total_discount": total_discount,
+            "total_actual_discount": total_discount,
+            "pricelist_discount": discount_pricelist,
             "excess_discount": excess or 0.0,
             "status": "Excess" if excess > 0 else "No Excess Discount",
         }

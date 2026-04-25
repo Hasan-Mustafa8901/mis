@@ -280,6 +280,10 @@ class Transaction(SQLModel, table=True):
 
     total_receivable: float = 0.0
     total_received: float = 0.0
+    total_actual_discount: float = 0.0
+    total_allowed_discount: float = 0.0
+    total_excess_discount: float = 0.0
+    balance: float = 0.0
     payment_status: Optional[str] = None
 
     created_by: Optional[int] = Field(default=None, foreign_key="user.id")

@@ -1007,8 +1007,8 @@ async def dashboard_page() -> None:
 
             def render_dashboard(all_txns: list) -> None:
                 """Build the full dashboard UI splitting by booking vs delivery."""
-                booking_txns = [t for t in all_txns if not t.get("delivery_date")]
-                delivery_txns = [t for t in all_txns if t.get("delivery_date")]
+                booking_txns = [t for t in all_txns if t.get("stage") == "booking"]
+                delivery_txns = [t for t in all_txns if t.get("stage") == "delivery"]
 
                 booking_analytics = compute_analytics(booking_txns)
                 delivery_analytics = compute_analytics(delivery_txns)

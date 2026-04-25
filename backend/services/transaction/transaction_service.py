@@ -302,6 +302,7 @@ class TransactionService:
             )
 
         # STEP 5: Discount
+        print(f"DEBUG: create_delivery_transaction - BEFORE CALC: stage={transaction.stage}")
         audit_result = DiscountService.calculate_discount(
             session=session,
             transaction=transaction,
@@ -427,11 +428,13 @@ class TransactionService:
             exchange_details=payload.get("exchange_details", {}),
             audit_info=payload.get("audit_info", {}),
         )
+        print(f"DEBUG: create_transaction_raw - BEFORE ADD: stage={transaction.stage}")
         session.add(transaction)
         session.flush()
-
+        print(f"DEBUG: create_transaction_raw - BEFORE COMMIT: stage={transaction.stage}")
         session.commit()
         session.refresh(transaction)
+        print(f"DEBUG: create_transaction_raw - AFTER REFRESH: stage={transaction.stage}")
         return transaction
 
     @staticmethod
@@ -455,6 +458,8 @@ class TransactionService:
         data = {
             "id": transaction.id,
             "status": transaction.status,
+            "stage": transaction.stage,
+            "mode": transaction.mode,
             "created_by": user.name if user else None,
             "created_at": transaction.created_at.isoformat()
             if transaction.created_at
