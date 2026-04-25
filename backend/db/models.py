@@ -2,7 +2,7 @@ from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, JSON
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
-from services.utils import get_ist_now
+from services.utils import get_ist_now, get_ist_today
 from enum import Enum
 
 
@@ -62,6 +62,8 @@ class Outlet(SQLModel, table=True):
     dealership_id: int = Field(foreign_key="dealership.id")
 
     address: Optional[str] = None
+    # last_serial_no: int = Field(default=0)
+    # last_serial_month: int = Field(default=0)
 
     # ✅ CORRECT RELATIONSHIPS
     dealership: Optional["Dealership"] = Relationship(back_populates="outlets")
@@ -140,6 +142,33 @@ class Variant(SQLModel, table=True):
 
     car: Optional[Car] = Relationship(back_populates="variants")
     price_list_items: List["PriceListItem"] = Relationship(back_populates="variant")
+
+
+## this is will create conflict in the main branch just accept the main branch version.
+class Dealership(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    created_at: datetime = Field(default_factory=get_ist_now)
+
+
+class Outlet(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True, unique=True)
+    city: Optional[str] = None
+    state: Optional[str] = None
+    dealership_id: Optional[int] = Field(default=None, foreign_key="dealership.id")
+    last_serial_no: int = Field(default=0)
+    last_serial_month: int = Field(default=0)
+    created_at: datetime = Field(default_factory=get_ist_now)
+
+
+# This table is for client employees data only.
+class Employee(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    outlet_id: int = Field(foreign_key="outlet.id")
+    designation: Optional[str] = None  # e.g., "Sales Executive", "Team Leader"
+    created_at: datetime = Field(default_factory=get_ist_now)
 
 
 class Bank(SQLModel, table=True):
@@ -359,4 +388,110 @@ class EditRequest(SQLModel, table=True):
     transaction: Optional["Transaction"] = Relationship()
 
 
-# Smart System
+# =========================
+#  COMPLAINT MANAGEMENT
+# =========================
+# Add No of files rejected, accepted, incomplete.
+
+
+class DailyBooking(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    date: date
+    outlet_id: int = Field(foreign_key="outlet.id")
+    number_bookings: int
+
+
+class DailyDelivery(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    date: date
+    outlet_id: int = Field(foreign_key="outlet.id")
+    number_deliveries: int
+
+
+class Remark(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    remarks_complainant: Optional[str] = None
+    remarks_complainant_aa: Optional[str] = None
+    aa_complainee: Optional[str] = None
+
+
+class Complaint(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    complaint_code: str = Field(unique=True)
+
+    complainant_dealership_id: Optional[int] = Field(
+        default=None, foreign_key="dealership.id"
+    )
+    complainant_outlet_id: Optional[int] = Field(default=None, foreign_key="outlet.id")
+    complainee_outlet_id: Optional[int] = Field(default=None, foreign_key="outlet.id")
+    complainee_dealership_id: Optional[int] = Field(
+        default=None, foreign_key="dealership.id"
+    )
+
+    status: ComplaintStatus = Field(default=ComplaintStatus.ESCALATED)
+    raised_by: int = Field(foreign_key="user.id")
+
+    raised_at: date = Field(default_factory=get_ist_today)
+    date_of_complaint: date
+
+    remark_complainee_aa: Optional[str] = None
+    remark_admin: Optional[str] = None
+
+    flag: Optional[ComplaintFlag] = None
+
+    customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
+    transaction_id: Optional[int] = Field(default=None, foreign_key="transaction.id")
+    remark_id: Optional[str] = Field(default=None, foreign_key="remark.id")
+    variant_id: Optional[int] = Field(default=None, foreign_key="variant.id")
+
+    # --- Vehicle Details ---
+    vin_number: Optional[str] = None
+    engine_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    registration_date: Optional[str] = None
+    car_color: Optional[str] = None
+
+    # --- Quotation Details ---
+    quotation_number: Optional[str] = None
+    quotation_date: Optional[str] = None
+    tcs_amount: Optional[int] = 0
+    total_offered_price: Optional[int] = 0
+    net_offered_price: Optional[int] = 0
+
+    # --- Booking Details ---
+    booking_file_number: Optional[str] = None
+    receipt_number: Optional[str] = None
+    booking_amount: Optional[int] = 0
+    mode_of_payment: Optional[str] = None
+    instrument_date: Optional[str] = None
+    instrument_number: Optional[str] = None
+    bank_name: Optional[str] = None
+
+    # --- Price Details ---
+    ex_showroom_price: Optional[int] = 0
+    insurance: Optional[int] = 0
+    registration_road_tax: Optional[int] = 0
+    discount: Optional[float] = 0.0
+    accessories_charged: Optional[int] = 0
+
+    # Plain-text overrides for complainee (used when "X" is selected)
+    complainee_dealer_text: Optional[str] = None
+    complainee_showroom_text: Optional[str] = None
+
+    customer: Optional["Customer"] = Relationship()
+    transaction: Optional["Transaction"] = Relationship()
+    remark: Optional["Remark"] = Relationship()
+    variant: Optional["Variant"] = Relationship()
+
+    complainant_dealership: Optional["Dealership"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainant_dealership_id]"}
+    )
+    complainant_outlet: Optional["Outlet"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainant_outlet_id]"}
+    )
+    complainee_dealership: Optional["Dealership"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainee_dealership_id]"}
+    )
+    complainee_outlet: Optional["Outlet"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainee_outlet_id]"}
+    )
