@@ -10,7 +10,7 @@ Backend: FastAPI at http://localhost:8000
 import re
 from utils import build_component_map_from_booking
 import httpx
-from datetime import date ,timedelta
+from datetime import date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
@@ -804,9 +804,6 @@ async def dashboard_page() -> None:
             ui.link("📑 Complaints Table", "/complaints-table").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("📝 Complaint Form", "/complaint-form").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
 
             # ui.separator().classes("mx-4 my-2")
             ui.label("Month-wise MIS").classes(
@@ -847,7 +844,9 @@ async def dashboard_page() -> None:
             with ui.link(target="/complaint-form").classes(
                 "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             ):
-                ui.icon("insert_drive_file").classes("text-primary text-lg text-weight-bold")
+                ui.icon("insert_drive_file").classes(
+                    "text-primary text-lg text-weight-bold"
+                )
                 ui.label("Complaint Form").classes("text-weight-bold pl-2")
             with ui.link(target="settings").classes(
                 "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
@@ -2019,8 +2018,11 @@ async def complaints_table_page():
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
-            ui.link("📋 MIS Table", "/mis-table").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📑 Complaints Table", "/complaints-table").classes(
                 "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
@@ -2050,13 +2052,13 @@ async def complaints_table_page():
                 render_complaints_table(complaints)
 
 
-
 # ══════════════════════════════════════════════════════════════
 #                   PAGE: DAILY REPORTING
 # ══════════════════════════════════════════════════════════════
 # ══════════════════════════════════════════════════════════════
 #                   PAGE: DAILY REPORTING  (v2 – custom table)
 # ══════════════════════════════════════════════════════════════
+
 
 @ui.page("/daily-reporting")
 @protected_page
@@ -2065,11 +2067,11 @@ async def daily_reporting_page() -> None:
 
     # ── In-memory state ──────────────────────────────────────
     # row_data stores user-typed values per (tt, date)
-    row_data: dict = {}     # (tt, date) → {total_count, files_received, file_incomplete, files_in_mis}
+    row_data: dict = {}  # (tt, date) → {total_count, files_received, file_incomplete, files_in_mis}
     # dialog_data stores rows for the popup tables (pending & incomplete dialogs)
     dialog_data: dict = {}  # (tt, date, col) → [{date, name, pan, remarks}, …]
-    label_refs: dict = {}   # (tt, date, col) → ui.label  for computed cells
-    total_refs: dict = {}   # (tt, col) → ui.label  for footer totals
+    label_refs: dict = {}  # (tt, date, col) → ui.label  for computed cells
+    total_refs: dict = {}  # (tt, col) → ui.label  for footer totals
 
     # ── Transactions ─────────────────────────────────────────
     try:
@@ -2085,7 +2087,11 @@ async def daily_reporting_page() -> None:
 
     def get_all_txn_dates(tt: str) -> set:
         field = "booking_date" if tt == "booking" else "delivery_date"
-        return {(t.get(field) or "")[:10] for t in all_transactions if (t.get(field) or "")[:10]}
+        return {
+            (t.get(field) or "")[:10]
+            for t in all_transactions
+            if (t.get(field) or "")[:10]
+        }
 
     def get_stored(tt: str, d: str) -> dict:
         return row_data.get((tt, d), {})
@@ -2093,29 +2099,38 @@ async def daily_reporting_page() -> None:
     # ── Computed cell values ──────────────────────────────────
     def compute_row(tt: str, d: str) -> dict:
         s = get_stored(tt, d)
-        tc  = int(s.get("total_count",     0) or 0)
-        fr  = int(s.get("files_received",  0) or 0)
-        fi  = len(dialog_data.get((tt, d, "files_incomplete"), []))
-        fm  = int(s.get("files_in_mis",    0) or 0)
-        fp  = max(0, tc - fr)           # Files Pending  = Total Count - Files Received
-        fv  = int(s.get("files_verified", 0) or 0)
-        diff = fv - fm                  # Difference     = Files Verified - Files in MIS
+        tc = int(s.get("total_count", 0) or 0)
+        fr = int(s.get("files_received", 0) or 0)
+        fi = len(dialog_data.get((tt, d, "files_incomplete"), []))
+        fm = int(s.get("files_in_mis", 0) or 0)
+        fp = max(0, tc - fr)  # Files Pending  = Total Count - Files Received
+        fv = int(s.get("files_verified", 0) or 0)
+        diff = fv - fm  # Difference     = Files Verified - Files in MIS
         return dict(tc=tc, fr=fr, fi=fi, fm=fm, fp=fp, fv=fv, diff=diff)
 
     # ── Totals recompute ─────────────────────────────────────
     def recompute_totals(tt: str, dates: list) -> None:
-        sums = {c: 0 for c in
-                ["total_count", "files_received", "files_pending",
-                 "file_incomplete", "files_verified", "files_in_mis", "difference"]}
+        sums = {
+            c: 0
+            for c in [
+                "total_count",
+                "files_received",
+                "files_pending",
+                "file_incomplete",
+                "files_verified",
+                "files_in_mis",
+                "difference",
+            ]
+        }
         for d in dates:
             r = compute_row(tt, d)
-            sums["total_count"]      += r["tc"]
-            sums["files_received"]   += r["fr"]
-            sums["files_pending"]    += r["fp"]
-            sums["file_incomplete"]  += r["fi"]
-            sums["files_verified"]   += r["fv"]
-            sums["files_in_mis"]     += r["fm"]
-            sums["difference"]       += r["diff"]
+            sums["total_count"] += r["tc"]
+            sums["files_received"] += r["fr"]
+            sums["files_pending"] += r["fp"]
+            sums["file_incomplete"] += r["fi"]
+            sums["files_verified"] += r["fv"]
+            sums["files_in_mis"] += r["fm"]
+            sums["difference"] += r["diff"]
         for col, total in sums.items():
             lbl = total_refs.get((tt, col))
             if lbl:
@@ -2130,15 +2145,19 @@ async def daily_reporting_page() -> None:
             color = "#92400E" if r["fp"] > 0 else "#10B981"
             weight = "700" if r["fp"] > 0 else "600"
             lbl_fp.set_text(str(r["fp"]))
-            lbl_fp.style(f"font-family:monospace;font-size:15px;font-weight:{weight};color:{color};text-align:center")
+            lbl_fp.style(
+                f"font-family:monospace;font-size:15px;font-weight:{weight};color:{color};text-align:center"
+            )
 
         # Files Incomplete label
         lbl_fi = label_refs.get((tt, d, "file_incomplete"))
         if lbl_fi:
-            fi_color  = "#92400E" if r["fi"] > 0 else "#10B981"
+            fi_color = "#92400E" if r["fi"] > 0 else "#10B981"
             fi_weight = "700" if r["fi"] > 0 else "600"
             lbl_fi.set_text(str(r["fi"]))
-            lbl_fi.style(f"font-family:monospace;font-size:15px;font-weight:{fi_weight};color:{fi_color};text-align:center")
+            lbl_fi.style(
+                f"font-family:monospace;font-size:15px;font-weight:{fi_weight};color:{fi_color};text-align:center"
+            )
 
         # Files Verified label
         lbl_fv = label_refs.get((tt, d, "files_verified"))
@@ -2148,14 +2167,28 @@ async def daily_reporting_page() -> None:
         # Difference label
         lbl_diff = label_refs.get((tt, d, "difference"))
         if lbl_diff:
-            color = "#EF4444" if r["diff"] < 0 else ("#10B981" if r["diff"] == 0 else "#F59E0B")
+            color = (
+                "#EF4444"
+                if r["diff"] < 0
+                else ("#10B981" if r["diff"] == 0 else "#F59E0B")
+            )
             lbl_diff.set_text(str(r["diff"]))
-            lbl_diff.style(f"font-family:monospace;font-size:15px;font-weight:700;color:{color};text-align:center")
+            lbl_diff.style(
+                f"font-family:monospace;font-size:15px;font-weight:700;color:{color};text-align:center"
+            )
 
         recompute_totals(tt, dates)
 
     # ── Generic detail dialog (Pending & Incomplete) ─────────
-    _dlg_state: dict = {"tt": None, "d": None, "col": None, "title_el": None, "body_el": None, "dates": []}
+    _dlg_state: dict = {
+        "tt": None,
+        "d": None,
+        "col": None,
+        "title_el": None,
+        "body_el": None,
+        "dates": [],
+    }
+
     def refresh_detail_dialog(rows: list = []) -> None:
         _dlg_state["body_el"].clear()
 
@@ -2176,21 +2209,27 @@ async def daily_reporting_page() -> None:
                 with ui.element("thead"):
                     with ui.element("tr"):
                         for h, w in [
-                            ("S.No",          "60px"),
-                            ("Date",          "130px"),
+                            ("S.No", "60px"),
+                            ("Date", "130px"),
                             ("Customer Name", ""),
-                            ("PAN Card",      "130px"),
-                            ("Remarks",       "180px"),
+                            ("PAN Card", "130px"),
+                            ("Remarks", "180px"),
                         ]:
-                            with ui.element("th").style(TH + (f";width:{w}" if w else "")):
+                            with ui.element("th").style(
+                                TH + (f";width:{w}" if w else "")
+                            ):
                                 ui.label(h)
 
                 with ui.element("tbody"):
                     if not rows:
                         with ui.element("tr"):
-                            with ui.element("td").props('colspan="5"').style(
-                                "border:1px solid #E5E7EB;padding:40px;"
-                                "text-align:center;color:#9CA3AF;font-size:13px"
+                            with (
+                                ui.element("td")
+                                .props('colspan="5"')
+                                .style(
+                                    "border:1px solid #E5E7EB;padding:40px;"
+                                    "text-align:center;color:#9CA3AF;font-size:13px"
+                                )
                             ):
                                 with ui.column().classes("items-center gap-2"):
                                     ui.label("📭").style("font-size:28px")
@@ -2201,7 +2240,6 @@ async def daily_reporting_page() -> None:
                         for i, row in enumerate(rows):
                             row_bg = "#FFFFFF" if i % 2 == 0 else "#F9FAFB"
                             with ui.element("tr").style(f"background:{row_bg}"):
-
                                 # S.No
                                 with ui.element("td").style(
                                     TD + ";font-family:monospace;font-weight:700;"
@@ -2233,10 +2271,16 @@ async def daily_reporting_page() -> None:
                                     ui.label(row.get("remarks", "—")).style(
                                         "font-size:13px;color:#6B7280"
                                     )
+
     # Build dialog once
-    with ui.dialog() as detail_dlg, ui.card().classes("w-[860px] max-w-[96vw] p-6 rounded-xl shadow-2xl"):
+    with (
+        ui.dialog() as detail_dlg,
+        ui.card().classes("w-[860px] max-w-[96vw] p-6 rounded-xl shadow-2xl"),
+    ):
         with ui.row().classes("w-full items-center justify-between mb-4"):
-            title_el = ui.label("Details").classes("text-[15px] font-bold text-gray-900")
+            title_el = ui.label("Details").classes(
+                "text-[15px] font-bold text-gray-900"
+            )
             _dlg_state["title_el"] = title_el
             ui.button(icon="close", on_click=detail_dlg.close).props("flat round dense")
 
@@ -2247,27 +2291,30 @@ async def daily_reporting_page() -> None:
         )
         _dlg_state["body_el"] = body_el
 
-        with ui.row().classes("w-full justify-between items-center mt-4 pt-4 border-t border-gray-100"):
+        with ui.row().classes(
+            "w-full justify-between items-center mt-4 pt-4 border-t border-gray-100"
+        ):
             dlg_count_label = ui.label("0 records").classes(
                 "text-[12px] font-semibold text-gray-400"
             )
             _dlg_state["count_label"] = dlg_count_label
 
             with ui.row().classes("gap-2"):
+
                 async def _refresh_dlg():
                     await _fetch_and_show_dialog()
 
-                ui.button("↻ Refresh", on_click=_refresh_dlg).props("outline no-caps").classes(
-                    "text-[13px] border-gray-300 text-gray-600"
-                )
-                ui.button("Close", on_click=detail_dlg.close).props("unelevated no-caps").classes(
-                    "bg-[#E8402A] text-white text-[13px] px-5"
-                )
+                ui.button("↻ Refresh", on_click=_refresh_dlg).props(
+                    "outline no-caps"
+                ).classes("text-[13px] border-gray-300 text-gray-600")
+                ui.button("Close", on_click=detail_dlg.close).props(
+                    "unelevated no-caps"
+                ).classes("bg-[#E8402A] text-white text-[13px] px-5")
 
     async def _fetch_and_show_dialog() -> None:
         """Fetch records from backend and populate the dialog."""
-        tt  = _dlg_state["tt"]
-        d   = _dlg_state["d"]
+        tt = _dlg_state["tt"]
+        d = _dlg_state["d"]
         col = _dlg_state["col"]
 
         # Show loading state immediately
@@ -2300,17 +2347,17 @@ async def daily_reporting_page() -> None:
         # Update the cell count label and recompute totals for incomplete column
         if col == "files_incomplete":
             k = (tt, d, "files_incomplete")
-            dialog_data[k] = rows          # store so compute_row can read len()
+            dialog_data[k] = rows  # store so compute_row can read len()
             refresh_computed_row(tt, d, _dlg_state["dates"])
 
         refresh_detail_dialog(rows)
 
     def open_detail_dialog(tt: str, d: str, col: str, dates: list = []) -> None:
-        _dlg_state["tt"]    = tt
-        _dlg_state["d"]     = d
-        _dlg_state["col"]   = col
+        _dlg_state["tt"] = tt
+        _dlg_state["d"] = d
+        _dlg_state["col"] = col
         _dlg_state["dates"] = dates
-        ttype    = "Booking"  if tt  == "booking"          else "Delivery"
+        ttype = "Booking" if tt == "booking" else "Delivery"
         col_label = "Files Pending" if col == "files_pending" else "Files Incomplete"
         _dlg_state["title_el"].set_text(f"📋 {col_label} — {d}  ({ttype})")
         detail_dlg.open()
@@ -2343,14 +2390,14 @@ async def daily_reporting_page() -> None:
                 with ui.element("thead"):
                     with ui.element("tr"):
                         headers = [
-                            ("Date",             "140px"),
-                            ("Total Count",      "130px"),
-                            ("Files Received",   "130px"),
-                            ("Files Pending",    "130px"),
+                            ("Date", "140px"),
+                            ("Total Count", "130px"),
+                            ("Files Received", "130px"),
+                            ("Files Pending", "130px"),
                             ("Files Incomplete", "130px"),
-                            ("Files Verified",   "130px"),
-                            ("Files in MIS",     "130px"),
-                            ("Difference",       "120px"),
+                            ("Files Verified", "130px"),
+                            ("Files in MIS", "130px"),
+                            ("Difference", "120px"),
                         ]
                         for hdr, w in headers:
                             with ui.element("th").style(TH_S + f";width:{w}"):
@@ -2370,19 +2417,24 @@ async def daily_reporting_page() -> None:
                             row_bg = "background:#FFFFFF"
 
                         with ui.element("tr").style(row_bg):
-
                             # ── Date ───────────────────────────────
                             with ui.element("td").style(TD_S + ";white-space:nowrap"):
                                 if is_today:
-                                    with ui.row().classes("items-center justify-center gap-1.5"):
-                                        ui.label(d).style("font-weight:700;color:#2563EB;font-size:14px")
+                                    with ui.row().classes(
+                                        "items-center justify-center gap-1.5"
+                                    ):
+                                        ui.label(d).style(
+                                            "font-weight:700;color:#2563EB;font-size:14px"
+                                        )
                                         ui.label("TODAY").style(
                                             "background:#DBEAFE;color:#1D4ED8;font-size:10px;"
                                             "padding:1px 7px;border-radius:10px;font-weight:800;"
                                             "letter-spacing:.04em"
                                         )
                                 else:
-                                    ui.label(d).style("font-weight:500;color:#374151;font-size:14px")
+                                    ui.label(d).style(
+                                        "font-weight:500;color:#374151;font-size:14px"
+                                    )
 
                             # ── Total Count (editable text input) ──
                             with ui.element("td").style(TD_S):
@@ -2391,16 +2443,24 @@ async def daily_reporting_page() -> None:
                                         value=str(r["tc"]) if r["tc"] else "",
                                         placeholder="0",
                                         on_change=lambda e, _tt=tt, _d=d: (
-                                            row_data.setdefault((_tt, _d), {}).__setitem__(
+                                            row_data.setdefault(
+                                                (_tt, _d), {}
+                                            ).__setitem__(
                                                 "total_count",
-                                                int(e.value) if (e.value or "").isdigit() else 0
+                                                int(e.value)
+                                                if (e.value or "").isdigit()
+                                                else 0,
                                             ),
                                             refresh_computed_row(_tt, _d, dates),
-                                        )
+                                        ),
                                     )
-                                    .props('type="number" min="0" step="1" outlined dense')
+                                    .props(
+                                        'type="number" min="0" step="1" outlined dense'
+                                    )
                                     .classes("w-full text-center")
-                                    .style("font-family:monospace;font-size:15px;font-weight:600;text-align:center")
+                                    .style(
+                                        "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                                    )
                                 )
 
                             # ── Files Received (editable text input) ──
@@ -2410,25 +2470,42 @@ async def daily_reporting_page() -> None:
                                         value=str(r["fr"]) if r["fr"] else "",
                                         placeholder="0",
                                         on_change=lambda e, _tt=tt, _d=d: (
-                                            row_data.setdefault((_tt, _d), {}).__setitem__(
+                                            row_data.setdefault(
+                                                (_tt, _d), {}
+                                            ).__setitem__(
                                                 "files_received",
-                                                int(e.value) if (e.value or "").isdigit() else 0
+                                                int(e.value)
+                                                if (e.value or "").isdigit()
+                                                else 0,
                                             ),
                                             refresh_computed_row(_tt, _d, dates),
-                                        )
+                                        ),
                                     )
-                                    .props('type="number" min="0" step="1" outlined dense')
+                                    .props(
+                                        'type="number" min="0" step="1" outlined dense'
+                                    )
                                     .classes("w-full text-center")
-                                    .style("font-family:monospace;font-size:15px;font-weight:600;text-align:center")
+                                    .style(
+                                        "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                                    )
                                 )
 
                             # ── Files Pending (computed + clickable for dialog) ──
-                            fp_color  = "#92400E" if r["fp"] > 0 else "#10B981"
+                            fp_color = "#92400E" if r["fp"] > 0 else "#10B981"
                             fp_weight = "700" if r["fp"] > 0 else "600"
                             with (
                                 ui.element("td")
-                                .style(TD_S + ";cursor:pointer;background:#FFF7ED" if r["fp"] > 0 else TD_S + ";cursor:pointer")
-                                .on("click", lambda _, _tt=tt, _d=d: open_detail_dialog(_tt, _d, "files_pending"))
+                                .style(
+                                    TD_S + ";cursor:pointer;background:#FFF7ED"
+                                    if r["fp"] > 0
+                                    else TD_S + ";cursor:pointer"
+                                )
+                                .on(
+                                    "click",
+                                    lambda _, _tt=tt, _d=d: open_detail_dialog(
+                                        _tt, _d, "files_pending"
+                                    ),
+                                )
                             ):
                                 fp_lbl = ui.label(str(r["fp"])).style(
                                     f"font-family:monospace;font-size:15px;"
@@ -2437,12 +2514,23 @@ async def daily_reporting_page() -> None:
                                 label_refs[(tt, d, "files_pending")] = fp_lbl
 
                             # ── Files Incomplete (clickable label → opens dialog, count = dialog rows) ──
-                            fi_color  = "#92400E" if r["fi"] > 0 else "#10B981"
+                            fi_color = "#92400E" if r["fi"] > 0 else "#10B981"
                             fi_weight = "700" if r["fi"] > 0 else "600"
                             with (
                                 ui.element("td")
-                                .style(TD_S + ";cursor:pointer;background:#FFF7ED" if r["fi"] > 0 else TD_S + ";cursor:pointer")
-                                .on("click", lambda _, _tt=tt, _d=d, _dates=dates: open_detail_dialog(_tt, _d, "files_incomplete", _dates))
+                                .style(
+                                    TD_S + ";cursor:pointer;background:#FFF7ED"
+                                    if r["fi"] > 0
+                                    else TD_S + ";cursor:pointer"
+                                )
+                                .on(
+                                    "click",
+                                    lambda _, _tt=tt, _d=d, _dates=dates: (
+                                        open_detail_dialog(
+                                            _tt, _d, "files_incomplete", _dates
+                                        )
+                                    ),
+                                )
                             ):
                                 fi_lbl = ui.label(str(r["fi"])).style(
                                     f"font-family:monospace;font-size:15px;"
@@ -2458,11 +2546,17 @@ async def daily_reporting_page() -> None:
                                     on_change=lambda e, _tt=tt, _d=d: (
                                         row_data.setdefault((_tt, _d), {}).__setitem__(
                                             "files_verified",
-                                            int(e.value) if (e.value or "").isdigit() else 0
+                                            int(e.value)
+                                            if (e.value or "").isdigit()
+                                            else 0,
                                         ),
                                         refresh_computed_row(_tt, _d, dates),
-                                    )
-                                ).props('type="number" min="0" step="1" outlined dense').classes("w-full text-center").style("font-family:monospace;font-size:15px;font-weight:600;text-align:center")
+                                    ),
+                                ).props(
+                                    'type="number" min="0" step="1" outlined dense'
+                                ).classes("w-full text-center").style(
+                                    "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                                )
 
                             # ── Files in MIS (editable text input) ──
                             with ui.element("td").style(TD_S):
@@ -2471,20 +2565,32 @@ async def daily_reporting_page() -> None:
                                         value=str(r["fm"]) if r["fm"] else "",
                                         placeholder="0",
                                         on_change=lambda e, _tt=tt, _d=d: (
-                                            row_data.setdefault((_tt, _d), {}).__setitem__(
+                                            row_data.setdefault(
+                                                (_tt, _d), {}
+                                            ).__setitem__(
                                                 "files_in_mis",
-                                                int(e.value) if (e.value or "").isdigit() else 0
+                                                int(e.value)
+                                                if (e.value or "").isdigit()
+                                                else 0,
                                             ),
                                             refresh_computed_row(_tt, _d, dates),
-                                        )
+                                        ),
                                     )
-                                    .props('type="number" min="0" step="1" outlined dense')
+                                    .props(
+                                        'type="number" min="0" step="1" outlined dense'
+                                    )
                                     .classes("w-full text-center")
-                                    .style("font-family:monospace;font-size:15px;font-weight:600;text-align:center")
+                                    .style(
+                                        "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                                    )
                                 )
 
                             # ── Difference (computed: fv - fm) ──
-                            diff_color = "#EF4444" if r["diff"] < 0 else ("#10B981" if r["diff"] == 0 else "#F59E0B")
+                            diff_color = (
+                                "#EF4444"
+                                if r["diff"] < 0
+                                else ("#10B981" if r["diff"] == 0 else "#F59E0B")
+                            )
                             with ui.element("td").style(TD_S):
                                 diff_lbl = ui.label(str(r["diff"])).style(
                                     f"font-family:monospace;font-size:15px;"
@@ -2494,14 +2600,21 @@ async def daily_reporting_page() -> None:
 
                 # ── TFOOT ─────────────────────────────────────────
                 with ui.element("tfoot"):
-                    with ui.element("tr").style("background:#ECEEF2;border-top:2px solid #D1D5DB"):
+                    with ui.element("tr").style(
+                        "background:#ECEEF2;border-top:2px solid #D1D5DB"
+                    ):
                         with ui.element("td").style(TF_S):
                             ui.label("TOTAL").style(
                                 "font-size:12px;font-weight:800;letter-spacing:.06em;color:#374151"
                             )
                         for col_key in [
-                            "total_count", "files_received", "files_pending",
-                            "file_incomplete", "files_verified", "files_in_mis", "difference"
+                            "total_count",
+                            "files_received",
+                            "files_pending",
+                            "file_incomplete",
+                            "files_verified",
+                            "files_in_mis",
+                            "difference",
                         ]:
                             with ui.element("td").style(TF_S):
                                 lbl = ui.label("0").style(
@@ -2512,19 +2625,20 @@ async def daily_reporting_page() -> None:
         recompute_totals(tt, dates)
 
     # ── Date range helpers ────────────────────────────────────
-    _today  = date.today()
+    _today = date.today()
     _yester = _today - timedelta(days=1)
 
     _RANGE_OPTIONS = {
-        "today":     f"Today ({_today.strftime('%d-%m-%Y')})",
+        "today": f"Today ({_today.strftime('%d-%m-%Y')})",
         "yesterday": f"Yesterday ({_yester.strftime('%d-%m-%Y')})",
-        "last7":     "Last 7 Days",
-        "last15":    "Last 15 Days",
-        "custom":    "Custom Date Range",
+        "last7": "Last 7 Days",
+        "last15": "Last 15 Days",
+        "custom": "Custom Date Range",
     }
 
-    def _dates_for_range(selection: str, tt: str,
-                         from_date: str = "", to_date: str = "") -> list[str]:
+    def _dates_for_range(
+        selection: str, tt: str, from_date: str = "", to_date: str = ""
+    ) -> list[str]:
         if selection == "today":
             base = {_today.isoformat()}
         elif selection == "yesterday":
@@ -2539,7 +2653,9 @@ async def daily_reporting_page() -> None:
                     fd = date.fromisoformat(from_date)
                     td_ = date.fromisoformat(to_date)
                     delta = (td_ - fd).days
-                    base = {(fd + timedelta(days=i)).isoformat() for i in range(delta + 1)}
+                    base = {
+                        (fd + timedelta(days=i)).isoformat() for i in range(delta + 1)
+                    }
                 except ValueError:
                     base = {today_str}
             elif from_date:
@@ -2553,24 +2669,23 @@ async def daily_reporting_page() -> None:
         return sorted(base | (txn_dates & base), reverse=True)
 
     # ── Rebuild function ──────────────────────────────────────
-    booking_dates_state: dict  = {"v": []}
+    booking_dates_state: dict = {"v": []}
     delivery_dates_state: dict = {"v": []}
 
     def _rebuild(selection: str, from_date: str = "", to_date: str = "") -> None:
         label_refs.clear()
         total_refs.clear()
-        b_dates = _dates_for_range(selection, "booking",  from_date, to_date)
+        b_dates = _dates_for_range(selection, "booking", from_date, to_date)
         d_dates = _dates_for_range(selection, "delivery", from_date, to_date)
-        booking_dates_state["v"]  = b_dates
+        booking_dates_state["v"] = b_dates
         delivery_dates_state["v"] = d_dates
         booking_wrap.clear()
         delivery_wrap.clear()
-        build_table("booking",  b_dates, booking_wrap)
+        build_table("booking", b_dates, booking_wrap)
         build_table("delivery", d_dates, delivery_wrap)
 
     # ── Page layout ───────────────────────────────────────────
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
-
         # ── Sidebar ───────────────────────────────────────────
         with ui.column().classes(
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 "
@@ -2588,9 +2703,11 @@ async def daily_reporting_page() -> None:
                 "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] "
                 "bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
             )
-            ui.link("📋 MIS Table", "/mis-table").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
-                "border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📑 Complaints Table", "/complaints-table").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
@@ -2628,13 +2745,17 @@ async def daily_reporting_page() -> None:
                     # Custom date range row — From … To
                     custom_range_row = ui.row().classes("items-center gap-2")
                     with custom_range_row:
-                        ui.label("From:").classes("text-[12px] text-gray-500 whitespace-nowrap")
+                        ui.label("From:").classes(
+                            "text-[12px] text-gray-500 whitespace-nowrap"
+                        )
                         from_inp = (
                             ui.input(label="", value=today_str)
                             .props('type="date" outlined dense')
                             .classes("w-36")
                         )
-                        ui.label("To:").classes("text-[12px] text-gray-500 whitespace-nowrap")
+                        ui.label("To:").classes(
+                            "text-[12px] text-gray-500 whitespace-nowrap"
+                        )
                         to_inp = (
                             ui.input(label="", value=today_str)
                             .props('type="date" outlined dense')
@@ -2648,8 +2769,12 @@ async def daily_reporting_page() -> None:
                     "border-b border-gray-100 bg-white"
                 ):
                     with ui.row().classes("items-center gap-2"):
-                        ui.element("div").classes("w-2.5 h-2.5 rounded-full bg-[#6366F1]")
-                        ui.label("Booking Details").classes("text-[13px] font-bold text-gray-800")
+                        ui.element("div").classes(
+                            "w-2.5 h-2.5 rounded-full bg-[#6366F1]"
+                        )
+                        ui.label("Booking Details").classes(
+                            "text-[13px] font-bold text-gray-800"
+                        )
                     ui.label(
                         "Click 'Files Pending' or  on 'Files Incomplete' to see details"
                     ).classes("text-[11px] text-gray-400")
@@ -2667,8 +2792,12 @@ async def daily_reporting_page() -> None:
                     "border-b border-gray-100 bg-white"
                 ):
                     with ui.row().classes("items-center gap-2"):
-                        ui.element("div").classes("w-2.5 h-2.5 rounded-full bg-[#10B981]")
-                        ui.label("Delivery Details").classes("text-[13px] font-bold text-gray-800")
+                        ui.element("div").classes(
+                            "w-2.5 h-2.5 rounded-full bg-[#10B981]"
+                        )
+                        ui.label("Delivery Details").classes(
+                            "text-[13px] font-bold text-gray-800"
+                        )
                     ui.label(
                         "Click 'Files Pending' or  on 'Files Incomplete' to see details"
                     ).classes("text-[11px] text-gray-400")
@@ -2707,6 +2836,8 @@ async def daily_reporting_page() -> None:
 
     # ── Initial render (default: custom = today only) ──────────
     _rebuild("custom", today_str, today_str)
+
+
 # ══════════════════════════════════════════════════════════════
 #                        PAGE: SETTINGS
 # ══════════════════════════════════════════════════════════════
@@ -2893,18 +3024,19 @@ class FormState:
         self.complaint_dealerships: list = []
         self.complainant_outlets: list = []
         self.complainee_outlets: list = []
-        
+
         self.complainant_dealership: ui.select | None = None
         self.complainant_showroom: ui.select | None = None
         self.complainee_dealership: ui.select | None = None
         self.complainee_showroom: ui.select | None = None
-        
+        self.complaint_status: ui.select | None = None
+
         self.comp_quotation_no: ui.input | None = None
         self.comp_quotation_date: ui.input | None = None
         self.comp_total_offered: ui.input | None = None
         self.comp_net_offered: ui.input | None = None
         self.comp_tcs: ui.input | None = None
-        
+
         self.comp_booking_file_no: ui.input | None = None
         self.comp_receipt_no: ui.input | None = None
         self.comp_booking_amt: ui.input | None = None
@@ -2912,7 +3044,7 @@ class FormState:
         self.comp_instrument_date: ui.input | None = None
         self.comp_instrument_no: ui.input | None = None
         self.comp_bank_name: ui.input | None = None
-        
+
         self.complainant_remarks: ui.textarea | None = None
         self.complainee_aa_name: ui.input | None = None
         self.complainant_aa_remarks: ui.textarea | None = None
@@ -2971,16 +3103,15 @@ class FormState:
             if not _val(self.cust_other_id):
                 return False, "Other ID Proof required for TR Case."
 
-        if self.stage != "complaint":
-            if not _val(self.cust_file_no):
-                return False, "Customer File Number is required."
-        if self.stage == "delivery":                if not _val(self.vin_no):
-                    return False, "VIN Number is required."
-                if not _val(self.engine_no):
-                    return False, "Engine Number is required."
-            year_val = _val(self.model_year)
-            if not year_val or not year_val.isdigit():
-                return False, "Valid Model Year is required."
+        year_val = _val(self.model_year)
+        if not year_val or not year_val.isdigit():
+            return False, "Valid Model Year is required."
+
+        if self.stage == "delivery":
+            if not _val(self.vin_no):
+                return False, "VIN Number is required."
+            if not _val(self.engine_no):
+                return False, "Engine Number is required."
 
         return True, ""
 
@@ -3169,7 +3300,9 @@ def populate_from_complaint(state: FormState, complaint: dict):
         return None
 
     if state.complainant_dealership:
-        item = get_item(state.complaint_dealerships, complaint.get("complainant_dealership_id"))
+        item = get_item(
+            state.complaint_dealerships, complaint.get("complainant_dealership_id")
+        )
         if item:
             state.complainant_dealership.set_value(item.get("name"))
 
@@ -3178,7 +3311,9 @@ def populate_from_complaint(state: FormState, complaint: dict):
             state.complainant_showroom.set_value(complaint["complainant_showroom_name"])
 
     if state.complainee_dealership:
-        item = get_item(state.complaint_dealerships, complaint.get("complainee_dealership_id"))
+        item = get_item(
+            state.complaint_dealerships, complaint.get("complainee_dealership_id")
+        )
         if item:
             state.complainee_dealership.set_value(item.get("name"))
 
@@ -3196,8 +3331,8 @@ def populate_from_complaint(state: FormState, complaint: dict):
     if state.complainant_aa_remarks:
         state.complainant_aa_remarks.set_value(complaint.get("remark_admin", ""))
 
-    if state.status:
-        state.status.set_value(complaint.get("status", ""))
+    if state.complaint_status:
+        state.complaint_status.set_value(complaint.get("status", ""))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3242,7 +3377,9 @@ def build_vehicle_section(state: FormState) -> None:
             )
             state.booking_date = (
                 ui.input(
-                    label="Booking Date" if state.stage == "complaint" else "Booking Date *",
+                    label="Booking Date"
+                    if state.stage == "complaint"
+                    else "Booking Date *",
                     value=str(date.today()),
                     on_change=lambda _: _fs_try_price_preload(state),
                 )
@@ -3276,7 +3413,9 @@ def build_vehicle_section(state: FormState) -> None:
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
             if state.stage in ["delivery", "complaint"]:
-                if state.stage == "delivery": # Remove this condition if car colour is also required for complaint form
+                if (
+                    state.stage == "delivery"
+                ):  # Remove this condition if car colour is also required for complaint form
                     state.vin_no = (
                         ui.input(label="VIN Number *")
                         .classes("w-full uppercase")
@@ -3315,51 +3454,52 @@ def build_vehicle_section(state: FormState) -> None:
                 state.car_color = (
                     ui.input(label="Car Colour")
                     .classes("w-full")
-                    .props("outlined dense"))
+                    .props("outlined dense")
+                )
             state.model_year = (
                 ui.input(label="Model Year *", placeholder="e.g. 2024")
                 .classes("w-full")
                 .props('outlined dense type="number"')
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
-            if state.stage == "delivery":
-                state.vin_no = (
-                    ui.input(label="VIN Number *")
-                    .classes("w-full uppercase")
-                    .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
-                )
-                state.delivery_date = (
-                    ui.input(
-                        label="Delivery Date *",
-                    )
-                    .classes("w-full")
-                    .props('type="date" outlined dense')
-                    .on_value_change(
-                        lambda _: (
-                            _fs_revalidate(state),
-                            ui.timer(
-                                0, lambda: _fs_try_price_preload(state), once=True
-                            ),
-                        )
-                    )
-                )
-                state.engine_no = (
-                    ui.input(label="Engine Number *")
-                    .classes("w-full uppercase")
-                    .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
-                )
-                state.vehicle_regn_no = (
-                    ui.input(label="Vehicle Regn Number")
-                    .classes("w-full uppercase")
-                    .props("outlined dense")
-                )
-                state.regn_date = (
-                    ui.input(label="Date of Registration")
-                    .classes("w-full")
-                    .props('outlined dense type="date"')
-                )
+            # if state.stage == "delivery":
+            #     state.vin_no = (
+            #         ui.input(label="VIN Number *")
+            #         .classes("w-full uppercase")
+            #         .props("outlined dense")
+            #         .on_value_change(lambda _: _fs_revalidate(state))
+            #     )
+            #     state.delivery_date = (
+            #         ui.input(
+            #             label="Delivery Date *",
+            #         )
+            #         .classes("w-full")
+            #         .props('type="date" outlined dense')
+            #         .on_value_change(
+            #             lambda _: (
+            #                 _fs_revalidate(state),
+            #                 ui.timer(
+            #                     0, lambda: _fs_try_price_preload(state), once=True
+            #                 ),
+            #             )
+            #         )
+            #     )
+            #     state.engine_no = (
+            #         ui.input(label="Engine Number *")
+            #         .classes("w-full uppercase")
+            #         .props("outlined dense")
+            #         .on_value_change(lambda _: _fs_revalidate(state))
+            #     )
+            #     state.vehicle_regn_no = (
+            #         ui.input(label="Vehicle Regn Number")
+            #         .classes("w-full uppercase")
+            #         .props("outlined dense")
+            #     )
+            #     state.regn_date = (
+            #         ui.input(label="Date of Registration")
+            #         .classes("w-full")
+            #         .props('outlined dense type="date"')
+            #     )
 
         if state.outlets:
             state.outlet_select.set_value(state.outlets[0]["id"])
@@ -4171,32 +4311,46 @@ def build_payment_section(state: FormState) -> None:
 
 def build_complaint_dealership_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+        ):
             ui.label("🏢").classes("text-[20px] select-none")
-            ui.label("Dealership Details").classes("text-[15px] font-bold text-gray-900")
+            ui.label("Dealership Details").classes(
+                "text-[15px] font-bold text-gray-900"
+            )
 
         with ui.grid(columns=2).classes("w-full gap-5"):
             # Create all selectors first
-            state.complainant_dealership = ui.select(
-                {d["name"]: d["name"] for d in state.complaint_dealerships},
-                label="Complainant Dealership *"
-            ).classes("w-full").props("outlined dense")
-            state.complainant_showroom = ui.select({}, label="Showroom *").classes("w-full").props("outlined dense")
+            state.complainant_dealership = (
+                ui.select(
+                    {d["name"]: d["name"] for d in state.complaint_dealerships},
+                    label="Complainant Dealership *",
+                )
+                .classes("w-full")
+                .props("outlined dense")
+            )
+            state.complainant_showroom = (
+                ui.select({}, label="Showroom *")
+                .classes("w-full")
+                .props("outlined dense")
+            )
 
             # Complainee dealership with "X" option
             complainee_options = {"X": "X"}
             for d in state.complaint_dealerships:
                 complainee_options[d["name"]] = d["name"]
-            state.complainee_dealership = ui.select(
-                complainee_options,
-                label="Complainee Dealership *"
-            ).classes("w-full").props("outlined dense")
-            
+            state.complainee_dealership = (
+                ui.select(complainee_options, label="Complainee Dealership *")
+                .classes("w-full")
+                .props("outlined dense")
+            )
+
             # Complainee showroom with "X" option
-            state.complainee_showroom = ui.select(
-                {"X": "X"},
-                label="Showroom *"
-            ).classes("w-full").props("outlined dense")
+            state.complainee_showroom = (
+                ui.select({"X": "X"}, label="Showroom *")
+                .classes("w-full")
+                .props("outlined dense")
+            )
 
             # Now attach event handlers
             def on_complainant_dealership_change(e):
@@ -4209,18 +4363,24 @@ def build_complaint_dealership_section(state: FormState) -> None:
                             filtered_dealerships[d["name"]] = d["name"]
                     state.complainee_dealership.options = filtered_dealerships
                     state.complainee_dealership.update()
-                    
+
                     # Fetch complainant showrooms
                     import asyncio
+
                     async def fetch_outlets():
                         try:
-                            outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+                            outs = await api_get(
+                                f"/complaints/dealerships/{dlr}/outlets"
+                            )
                             if outs:
                                 # outs is a list of strings, not objects
-                                state.complainant_showroom.options = {o: o for o in outs}
+                                state.complainant_showroom.options = {
+                                    o: o for o in outs
+                                }
                                 state.complainant_showroom.update()
                         except Exception as ex:
                             print(f"Error fetching outlets: {ex}")
+
                     asyncio.create_task(fetch_outlets())
                 else:
                     # If no complainant dealership is selected, show all dealerships with X
@@ -4240,9 +4400,12 @@ def build_complaint_dealership_section(state: FormState) -> None:
                     state.complainee_showroom.update()
                 elif dlr:
                     import asyncio
+
                     async def fetch_outlets():
                         try:
-                            outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+                            outs = await api_get(
+                                f"/complaints/dealerships/{dlr}/outlets"
+                            )
                             if outs:
                                 # outs is a list of strings, not objects
                                 showroom_options = {"X": "X"}
@@ -4252,51 +4415,115 @@ def build_complaint_dealership_section(state: FormState) -> None:
                                 state.complainee_showroom.update()
                         except Exception as ex:
                             print(f"Error fetching outlets: {ex}")
+
                     asyncio.create_task(fetch_outlets())
                 else:
                     state.complainee_showroom.options = {"X": "X"}
                     state.complainee_showroom.update()
-            
+
             # Attach the handlers to the selectors
-            state.complainant_dealership.on_value_change(on_complainant_dealership_change)
+            state.complainant_dealership.on_value_change(
+                on_complainant_dealership_change
+            )
             state.complainee_dealership.on_value_change(on_complainee_dealership_change)
+
 
 def build_complaint_quotation_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+        ):
             ui.label("📋").classes("text-[20px] select-none")
-            ui.label("Complaint Quotation Details").classes("text-[15px] font-bold text-gray-900")
+            ui.label("Complaint Quotation Details").classes(
+                "text-[15px] font-bold text-gray-900"
+            )
         with ui.grid(columns=3).classes("w-full gap-5"):
-            state.comp_quotation_no = ui.input(label="Quotation Number").classes("w-full").props("outlined dense")
-            state.comp_quotation_date = ui.input(label="Quotation Date").classes("w-full").props('outlined dense type="date"')
+            state.comp_quotation_no = (
+                ui.input(label="Quotation Number")
+                .classes("w-full")
+                .props("outlined dense")
+            )
+            state.comp_quotation_date = (
+                ui.input(label="Quotation Date")
+                .classes("w-full")
+                .props('outlined dense type="date"')
+            )
             state.comp_tcs = accounting_input(label_text="TCS")
-            state.comp_total_offered = accounting_input(label_text="Total Offered Price")
+            state.comp_total_offered = accounting_input(
+                label_text="Total Offered Price"
+            )
             state.comp_net_offered = accounting_input(label_text="Net Offered Price")
+
 
 def build_complaint_booking_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+        ):
             ui.label("📝").classes("text-[20px] select-none")
-            ui.label("Complaint Booking Details").classes("text-[15px] font-bold text-gray-900")
+            ui.label("Complaint Booking Details").classes(
+                "text-[15px] font-bold text-gray-900"
+            )
         with ui.grid(columns=3).classes("w-full gap-5"):
-            state.comp_booking_file_no = ui.input(label="Booking File Number").classes("w-full").props("outlined dense")
-            state.comp_receipt_no = ui.input(label="Receipt Number").classes("w-full").props("outlined dense")
+            state.comp_booking_file_no = (
+                ui.input(label="Booking File Number")
+                .classes("w-full")
+                .props("outlined dense")
+            )
+            state.comp_receipt_no = (
+                ui.input(label="Receipt Number")
+                .classes("w-full")
+                .props("outlined dense")
+            )
             state.comp_booking_amt = accounting_input(label_text="Booking Amount")
-            state.comp_mode_of_payment = ui.input(label="Mode of Payment").classes("w-full").props("outlined dense")
-            state.comp_instrument_date = ui.input(label="Instrument Date").classes("w-full").props('outlined dense type="date"')
-            state.comp_instrument_no = ui.input(label="Instrument Number").classes("w-full").props("outlined dense")
-            state.comp_bank_name = ui.input(label="Bank Name").classes("w-full").props("outlined dense")
+            state.comp_mode_of_payment = (
+                ui.input(label="Mode of Payment")
+                .classes("w-full")
+                .props("outlined dense")
+            )
+            state.comp_instrument_date = (
+                ui.input(label="Instrument Date")
+                .classes("w-full")
+                .props('outlined dense type="date"')
+            )
+            state.comp_instrument_no = (
+                ui.input(label="Instrument Number")
+                .classes("w-full")
+                .props("outlined dense")
+            )
+            state.comp_bank_name = (
+                ui.input(label="Bank Name").classes("w-full").props("outlined dense")
+            )
+
 
 def build_complaint_remarks_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes("w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"):
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+        ):
             ui.label("💬").classes("text-[20px] select-none")
             ui.label("Remarks").classes("text-[15px] font-bold text-gray-900")
         with ui.grid(columns=2).classes("w-full gap-5"):
-            state.complaint_date = ui.input(label="Date of Complaint Raised").classes("w-full").props('outlined dense type="date"')
-            state.complainee_aa_name = ui.input(label="Audit Assistant Name at Complainee").classes("w-full").props("outlined dense")
-            state.complainant_remarks = ui.textarea(label="Remarks by Complainant *").classes("w-full").props("outlined dense rows=3")
-            state.complainant_aa_remarks = ui.textarea(label="Remarks by Audit Assistant at Complainant").classes("w-full").props("outlined dense rows=3")
+            state.complaint_date = (
+                ui.input(label="Date of Complaint Raised")
+                .classes("w-full")
+                .props('outlined dense type="date"')
+            )
+            state.complainee_aa_name = (
+                ui.input(label="Audit Assistant Name at Complainee")
+                .classes("w-full")
+                .props("outlined dense")
+            )
+            state.complainant_remarks = (
+                ui.textarea(label="Remarks by Complainant *")
+                .classes("w-full")
+                .props("outlined dense rows=3")
+            )
+            state.complainant_aa_remarks = (
+                ui.textarea(label="Remarks by Audit Assistant at Complainant")
+                .classes("w-full")
+                .props("outlined dense rows=3")
+            )
 
 
 def build_live_bar(state: FormState) -> None:
@@ -4327,6 +4554,8 @@ def build_live_bar(state: FormState) -> None:
             state.lbl_excess = ui.label("—").classes(
                 "text-[16px] font-bold text-white/30 mono"
             )
+
+
 def build_complaint_action_bar(state: FormState) -> None:
     with ui.row().classes(
         "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
@@ -4343,24 +4572,33 @@ def build_complaint_action_bar(state: FormState) -> None:
         ui.button("← Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes(
             "text-gray-500 text-[13px] hover:text-gray-800"
         ).props("flat no-caps")
-                
+
         async def handle_complaint_submit():
             valid, msg = state.is_valid()
             if not valid:
                 state.error_msg_label.set_text(msg)
                 state.error_banner.set_visibility(True)
                 return
-                
+
             payload = build_complaint_payload(state)
             try:
                 await api_post("/complaints/save-complaint", payload)
-                ui.notify("Complaint Submitted Successfully", color="green", type="positive")
+                ui.notify(
+                    "Complaint Submitted Successfully", color="green", type="positive"
+                )
                 ui.navigate.to("/")
             except Exception as e:
                 state.error_msg_label.set_text(str(e))
                 state.error_banner.set_visibility(True)
-        
-        state.submit_btn = ui.button("Submit Complaint", on_click=handle_complaint_submit).classes("bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20").props("no-caps unelevated")
+
+        state.submit_btn = (
+            ui.button("Submit Complaint", on_click=handle_complaint_submit)
+            .classes(
+                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
+            )
+            .props("no-caps unelevated")
+        )
+
 
 def build_action_bar(state: FormState) -> None:
     with ui.row().classes(
@@ -5167,6 +5405,7 @@ async def form_page(
 # RUN
 # ══════════════════════════════════════════════════════════════
 
+
 def build_complaint_payload(state: FormState) -> dict:
     def val(x):
         return x.value if x else None
@@ -5180,6 +5419,7 @@ def build_complaint_payload(state: FormState) -> dict:
         try:
             v_str = str(v).replace(",", "").strip()
             import re
+
             if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
                 return int(float(eval(v_str)))
             return int(float(v_str))
@@ -5190,14 +5430,12 @@ def build_complaint_payload(state: FormState) -> dict:
         "stage": "complaint",
         "variant_id": state.variant_id,
         "employee_id": get_token() if get_token() else "unknown",
-        
         "dealer_showroom_details": {
             "complainant_dealership": val(state.complainant_dealership),
             "complainant_showroom": val(state.complainant_showroom),
             "complainee_dealership": val(state.complainee_dealership),
             "complainee_showroom": val(state.complainee_showroom),
         },
-        
         "customer_details": {
             "customer_name": val(state.cust_name),
             "contact_number": val(state.cust_mobile),
@@ -5208,7 +5446,6 @@ def build_complaint_payload(state: FormState) -> dict:
             "pan": val(state.cust_pan),
             "aadhar": val(state.cust_relative),
         },
-        
         "vehicle_details": {
             "vin_number": val(state.vin_no),
             "engine_number": val(state.engine_no),
@@ -5216,7 +5453,6 @@ def build_complaint_payload(state: FormState) -> dict:
             "registration_date": val(state.regn_date),
             "car_color": val(state.car_color),
         },
-        
         "quotation_details": {
             "quotation_number": val(state.comp_quotation_no),
             "quotation_date": val(state.comp_quotation_date),
@@ -5224,7 +5460,6 @@ def build_complaint_payload(state: FormState) -> dict:
             "total_offered_price": intval(state.comp_total_offered),
             "net_offered_price": intval(state.comp_net_offered),
         },
-
         "booking_details": {
             "booking_file_number": val(state.comp_booking_file_no),
             "receipt_number": val(state.comp_receipt_no),
@@ -5234,40 +5469,46 @@ def build_complaint_payload(state: FormState) -> dict:
             "instrument_number": val(state.comp_instrument_no),
             "bank_name": val(state.comp_bank_name),
         },
-
         "remarks_page": {
             "complaint_raised_date": val(state.complaint_date),
             "aa_name": val(state.complainee_aa_name),
             "remarks_by_complainant": val(state.complainant_remarks),
             "remarks_by_aa": val(state.complainant_aa_remarks),
         },
-        
         # Price information
         "price_info": {
-            "ex_showroom_price": intval(state.price_inputs.get("Ex Showroom Price") or state.price_inputs.get("Ex-Showroom Price")),
+            "ex_showroom_price": intval(
+                state.price_inputs.get("Ex Showroom Price")
+                or state.price_inputs.get("Ex-Showroom Price")
+            ),
             "insurance": intval(state.price_inputs.get("Insurance")),
-            "registration_road_tax": intval(state.price_inputs.get("Registration / Road Tax")),
+            "registration_road_tax": intval(
+                state.price_inputs.get("Registration / Road Tax")
+            ),
             "discount": state.live_discount,
             "accessories_charged": intval(state.acc_charged),
-        }
+        },
     }
+
 
 @protected_page
 @ui.page("/complaint-form")
-async def complaint_form_page(transaction_id: int | None = None, complaint_code: str | None = None) -> None:
+async def complaint_form_page(
+    transaction_id: int | None = None, complaint_code: str | None = None
+) -> None:
     state = FormState()
     state.stage = "complaint"
     state.txn_id = transaction_id
     state.edit_mode = bool(transaction_id or complaint_code)
-    
+
     title = "New Complaint"
     if transaction_id:
         title = f"Edit Complaint #{transaction_id}"
     elif complaint_code:
         title = f"Edit Complaint {complaint_code}"
-    
+
     render_topbar(title)
-    
+
     ref = await fetch_reference_data()
     state.cars = ref.get("cars", [])
     state.variants = ref.get("variants", [])
@@ -5276,14 +5517,21 @@ async def complaint_form_page(transaction_id: int | None = None, complaint_code:
     state.executives = ref.get("executives", [])
     state.accessory_map = {acc["id"]: acc for acc in ref.get("accessories", [])}
     state.complaint_dealerships = ref.get("dealerships", [])
-    
+
     # Load existing complaint data if complaint_code is provided
     if complaint_code:
         try:
             # Since no single-item GET exists, we fetch all and filter
             res = await api_get("/complaints/")
             all_complaints = res.get("data", [])
-            target = next((c for c in all_complaints if c.get("complaint_code") == complaint_code), None)
+            target = next(
+                (
+                    c
+                    for c in all_complaints
+                    if c.get("complaint_code") == complaint_code
+                ),
+                None,
+            )
             if target:
                 populate_from_complaint(state, target)
         except Exception as e:
@@ -5291,7 +5539,7 @@ async def complaint_form_page(transaction_id: int | None = None, complaint_code:
 
     with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
         ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
-        
+
         build_complaint_dealership_section(state)
         build_customer_section(state)
         build_vehicle_section(state)
@@ -5299,7 +5547,7 @@ async def complaint_form_page(transaction_id: int | None = None, complaint_code:
         build_complaint_booking_section(state)
         build_complaint_remarks_section(state)
         build_complaint_action_bar(state)
-        
+
 
 if __name__ in {"__main__", "__mp_main__"}:
     app.colors(primary="#e8402a")
@@ -5308,6 +5556,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret="super-secret-key",
-        port=3000,
         reload=True,
+        port=3000,
     )

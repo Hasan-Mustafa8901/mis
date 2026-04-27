@@ -62,8 +62,8 @@ class Outlet(SQLModel, table=True):
     dealership_id: int = Field(foreign_key="dealership.id")
 
     address: Optional[str] = None
-    # last_serial_no: int = Field(default=0)
-    # last_serial_month: int = Field(default=0)
+    last_serial_no: int = Field(default=0)
+    last_serial_month: int = Field(default=0)
 
     # ✅ CORRECT RELATIONSHIPS
     dealership: Optional["Dealership"] = Relationship(back_populates="outlets")
@@ -142,33 +142,6 @@ class Variant(SQLModel, table=True):
 
     car: Optional[Car] = Relationship(back_populates="variants")
     price_list_items: List["PriceListItem"] = Relationship(back_populates="variant")
-
-
-## this is will create conflict in the main branch just accept the main branch version.
-class Dealership(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)
-    created_at: datetime = Field(default_factory=get_ist_now)
-
-
-class Outlet(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)
-    city: Optional[str] = None
-    state: Optional[str] = None
-    dealership_id: Optional[int] = Field(default=None, foreign_key="dealership.id")
-    last_serial_no: int = Field(default=0)
-    last_serial_month: int = Field(default=0)
-    created_at: datetime = Field(default_factory=get_ist_now)
-
-
-# This table is for client employees data only.
-class Employee(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    outlet_id: int = Field(foreign_key="outlet.id")
-    designation: Optional[str] = None  # e.g., "Sales Executive", "Team Leader"
-    created_at: datetime = Field(default_factory=get_ist_now)
 
 
 class Bank(SQLModel, table=True):
