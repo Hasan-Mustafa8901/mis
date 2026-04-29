@@ -1,4 +1,5 @@
 import re
+from datetime import datetime, date, timezone, timedelta
 
 
 def build_component_map_from_booking(booking_data: dict) -> dict:
@@ -23,6 +24,14 @@ def normalize_key(key: str) -> str:
     key = re.sub(r"[()]", "", key)
     key = re.sub(r"[^a-z0-9]+", "_", key)
     return key.strip("_")
+
+
+def get_ist_now() -> datetime:
+    return datetime.now(timezone(timedelta(hours=5, minutes=30)))
+
+
+def get_ist_today() -> date:
+    return get_ist_now().date()
 
 
 ALIASES = {

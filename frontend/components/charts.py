@@ -1,12 +1,5 @@
 from nicegui import ui
 
-# ══════════════════════════════════════════════════════════════
-#   CHART HELPERS — ui.echart wrappers
-#   ui.echart() accepts a plain Apache ECharts option dict.
-#   No JS function strings needed — formatters use ECharts
-#   template syntax ('{b}', '{c}', etc.) or plain Python values.
-# ══════════════════════════════════════════════════════════════
-
 
 def render_line_chart(
     series_data: list[tuple[str, list[float]]],
@@ -53,30 +46,24 @@ def render_line_chart(
                 "type": "category",
                 "data": categories,
                 "axisLine": {"lineStyle": {"color": "#E5E7EB"}},
-                "axisTick": {"show": False},
-                "axisLabel": {"fontSize": 10, "color": "#9CA3AF"},
-                "splitLine": {"show": False},
+                "axisLabel": {"color": "#9CA3AF", "fontSize": 10},
+                "boundaryGap": False,
             },
             "yAxis": {
                 "type": "value",
-                "axisLabel": {
-                    "fontSize": 10,
-                    "color": "#9CA3AF",
-                    "formatter": "{value}",  # plain string — no JS needed
-                },
-                "splitLine": {"lineStyle": {"color": "#F3F4F6", "type": "dashed"}},
-                "axisLine": {"show": False},
-                "axisTick": {"show": False},
+                "splitLine": {"lineStyle": {"type": "dashed", "color": "#F3F4F6"}},
+                "axisLabel": {"color": "#9CA3AF", "fontSize": 10},
             },
             "tooltip": {
                 "trigger": "axis",
-                "backgroundColor": "#1F2937",
+                "backgroundColor": "rgba(15, 22, 35, 0.9)",
                 "borderColor": "#1F2937",
-                "textStyle": {"color": "#F9FAFB", "fontSize": 12},
+                "textStyle": {"color": "#FFF", "fontSize": 12},
+                "axisPointer": {"lineStyle": {"color": "#6366F1", "width": 1}},
             },
             "series": series,
         }
-    ).style(f"height:{height}px;width:100%")
+    ).style(f"height: {height}px; width: 100%")
 
 
 def render_bar_chart(

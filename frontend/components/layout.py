@@ -1,6 +1,5 @@
 from nicegui import ui
-from .widgets import HEAD_HTML
-
+from utils.constants import HEAD_HTML
 
 def render_topbar(page_label: str) -> None:
     """Injects sticky top header. page_label is shown as breadcrumb."""
@@ -25,3 +24,14 @@ def render_topbar(page_label: str) -> None:
         ui.label("AUDIT PORTAL").classes(
             "bg-[#E8402A] text-white text-[10px] font-bold tracking-[0.6px] px-2.5 py-0.5 rounded-full"
         )
+
+def sidebar():
+    from auth.auth import clear_token
+    with ui.column().classes("h-full justify-between w-full p-4 bg-white shadow"):
+        with ui.column().classes("mt-auto items-center"):
+            def handle_logout():
+                clear_token()
+                ui.navigate.to("/login")
+            ui.button("Logout", on_click=handle_logout).props(
+                "color=red outline"
+            ).classes("w-full")

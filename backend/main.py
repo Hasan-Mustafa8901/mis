@@ -23,6 +23,7 @@ from services.price_list.price_list_service import PriceListService
 from routes.edit_routes import router as edit_requests_router
 from routes.auth_routes import router as auth_router
 from routes.complaint_routes import router as complaints_router
+from routes.daily_reporting_routes import router as daily_reporting_router
 from rich import print
 
 
@@ -49,6 +50,7 @@ app.add_middleware(
 app.include_router(edit_requests_router)
 app.include_router(auth_router)
 app.include_router(complaints_router)
+app.include_router(daily_reporting_router)  # daily reporting routes
 
 
 @app.get("/")
@@ -177,10 +179,11 @@ def api_create_transaction(
 ):
 
     stage = payload.get("stage", "booking")
-
+    print("From API - Create Transaction")
     print("Payload: \n", payload)
     print("Stage: ", stage)
     print("\n\n")
+    print("-" * 20, "END OF PAYLOAD", "-" * 20)
 
     if stage == "booking":
         return TransactionService.create_booking_transaction(session, payload)
@@ -192,20 +195,22 @@ def api_create_transaction(
         raise HTTPException(status_code=400, detail="Invalid mode")
 
 
-# @app.post("/transactions")
-# def api_create_transaction(
-#     payload: Dict[str, Any],
-#     session: Session = Depends(get_session),
-# ):
-#     try:
-#         result = TransactionService.create_full_transaction(session, payload)
-#         return result
+@app.put("/transactions/{transaction_id}")
+def api_update_transaction(
+    transaction_id: int,
+    payload: dict[str, Any],
+    session: Session = Depends(get_session),
+):
+    stage = payload.get("stage", "booking")
+    print("Update Payload: \n", payload)
+    print("Stage: ", stage)
+    print("\n\n")
 
-#     except Exception as e:
-#         import traceback
+    if stage == "delivery":
+        return TransactionService.convert_to_delivery(session, transaction_id, payload)
 
-#         print(traceback.format_exc())
-#         raise HTTPException(status_code=400, detail=str(e))
+    else:
+        raise HTTPException(status_code=400, detail="Invalid mode")
 
 
 @app.post("/transactions/{transaction_id}/calculate")

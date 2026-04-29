@@ -252,6 +252,7 @@ class Transaction(SQLModel, table=True):
     vin_number: Optional[str] = Field(default=None, nullable=True)
     engine_number: Optional[str] = Field(default=None, nullable=True)
     color: Optional[str] = None
+    model_year: Optional[int] = None
     registration_number: Optional[str] = None
     registration_date: Optional[date] = None
 
@@ -372,6 +373,9 @@ class DailyBooking(SQLModel, table=True):
     date: date
     outlet_id: int = Field(foreign_key="outlet.id")
     number_bookings: int
+    file_received: int
+    files_pending: int
+    files_verified: int
 
 
 class DailyDelivery(SQLModel, table=True):
@@ -379,6 +383,9 @@ class DailyDelivery(SQLModel, table=True):
     date: date
     outlet_id: int = Field(foreign_key="outlet.id")
     number_deliveries: int
+    file_received: int
+    files_pending: int
+    files_verified: int
 
 
 class Remark(SQLModel, table=True):
@@ -415,13 +422,9 @@ class Complaint(SQLModel, table=True):
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     transaction_id: Optional[int] = Field(default=None, foreign_key="transaction.id")
     remark_id: Optional[str] = Field(default=None, foreign_key="remark.id")
-    variant_id: Optional[int] = Field(default=None, foreign_key="variant.id")
 
     # --- Vehicle Details ---
-    vin_number: Optional[str] = None
-    engine_number: Optional[str] = None
-    registration_number: Optional[str] = None
-    registration_date: Optional[str] = None
+    variant_id: Optional[int] = Field(default=None, foreign_key="variant.id")
     car_color: Optional[str] = None
 
     # --- Quotation Details ---

@@ -7,15 +7,17 @@ Two-page architecture:
 Backend: FastAPI at http://localhost:8000
 """
 
+import json
 import re
-from utils import build_component_map_from_booking
+from utils_old import build_component_map_from_booking
 import httpx
 from datetime import date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
+from utils_old import get_ist_today
 
-from auth import set_token, get_token, clear_token, protected_page
+from auth_old import set_token, get_token, clear_token, protected_page
 
 
 # ══════════════════════════════════════════════════════════════
@@ -264,7 +266,7 @@ def render_topbar(page_label: str) -> None:
         "bg-[#0F1623] border-b-2 border-[#E8402A] px-7 py-0 h-[52px] flex items-center justify-between shadow-lg"
     ):
         with ui.row().classes("items-center gap-4"):
-            with ui.column().classes("gap-0"):
+            with ui.column().on("click", lambda: ui.navigate.to("/")).classes("gap-0"):
                 ui.label("🚗 AutoAudit MIS").classes(
                     "text-[15px] font-bold text-white tracking-tight leading-tight"
                 )
@@ -421,7 +423,7 @@ def clear_label(column_name: str):
     )
 
 
-def render_table(transactions, stage: str = "delivery"):
+def render_table(transactions, stage: str = "booking"):
     """
     Renders the MIS transaction table using AG Grid (ui.aggrid).
     """
@@ -540,10 +542,34 @@ def render_table(transactions, stage: str = "delivery"):
         .style("font-family:Inter,sans-serif;font-size:13px;")
     )
 
+    def create_dialog(txn_id):
+        with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
+            ui.label("Update Entry").classes("text-lg font-bold mb-2")
+
+            ui.button(
+                "Delivered",
+                on_click=lambda: (
+                    dialog.close(),
+                    ui.navigate.to(f"/form?transaction_id={txn_id}&stage=delivery"),
+                ),
+            ).classes("w-full")
+
+            ui.button(
+                "Make A Complaint",
+                on_click=lambda: (
+                    dialog.close(),
+                    ui.notify("Complaint feature coming soon!", type="info"),
+                ),
+            ).classes("w-full")
+
+        dialog.open()
+
     async def on_cell_clicked(e):
         row = e.args.get("data", {})
         txn_id = row.get("id")
-        if txn_id:
+        if txn_id and stage == "booking":
+            create_dialog(txn_id)
+        if txn_id and stage == "delivery":
             ui.navigate.to(f"/form?transaction_id={txn_id}&stage={stage}")
 
     grid.on("cellClicked", on_cell_clicked)
@@ -801,36 +827,36 @@ async def dashboard_page() -> None:
             ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("📑 Complaints Table", "/complaints-table").classes(
+            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
 
             # ui.separator().classes("mx-4 my-2")
-            ui.label("Month-wise MIS").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
-            )
+            # ui.label("Month-wise MIS").classes(
+            #     "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            # )
 
-            if sorted_months:
-                for ym in sorted_months:
-                    txns_in_month = all_month_map[ym]
-                    cnt = len(txns_in_month)
-                    exc = sum(1 for t in txns_in_month if t.get("status") == "Excess")
-                    lbl = month_label(ym)
-                    badge_cls = (
-                        "bg-[#FECDC8] text-[#C0392B]"
-                        if exc > 0
-                        else "bg-gray-100 text-gray-500"
-                    )
+            # if sorted_months:
+            #     for ym in sorted_months:
+            #         txns_in_month = all_month_map[ym]
+            #         cnt = len(txns_in_month)
+            #         exc = sum(1 for t in txns_in_month if t.get("status") == "Excess")
+            #         lbl = month_label(ym)
+            #         badge_cls = (
+            #             "bg-[#FECDC8] text-[#C0392B]"
+            #             if exc > 0
+            #             else "bg-gray-100 text-gray-500"
+            #         )
 
-                    with ui.link(target=f"/delivery-mis?month={ym}").classes(
-                        "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline w-full"
-                    ):
-                        ui.label(lbl)
-                        ui.label(str(cnt)).classes(
-                            f"text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[22px] text-center {badge_cls}"
-                        )
-            else:
-                ui.label("No data yet").classes("px-4 py-2 text-xs text-gray-400")
+            #         with ui.link(target=f"/delivery-mis?month={ym}").classes(
+            #             "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline w-full"
+            #         ):
+            #             ui.label(lbl)
+            #             ui.label(str(cnt)).classes(
+            #                 f"text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[22px] text-center {badge_cls}"
+            #             )
+            # else:
+            #     ui.label("No data yet").classes("px-4 py-2 text-xs text-gray-400")
 
             ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
             ui.label("Quick Actions").classes(
@@ -1625,9 +1651,6 @@ async def dashboard_page() -> None:
 
 
 # ══════════════════════════════════════════════════════════════
-#                   PAGE: MIS TABLE
-# ══════════════════════════════════════════════════════════════
-# ══════════════════════════════════════════════════════════════
 #                   PAGE: MIS TABLES (Booking & Delivery)
 # ══════════════════════════════════════════════════════════════
 async def mis_table_page_base(stage: str, month: str | None = None) -> None:
@@ -1642,9 +1665,9 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
     # Split logic
     if stage == "booking":
-        transactions = [t for t in all_transactions if not t.get("delivery_date")]
+        transactions = [t for t in all_transactions if t.get("stage") == "booking"]
     else:
-        transactions = [t for t in all_transactions if t.get("delivery_date")]
+        transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
 
     # Get months for sidebar grouping (from the filtered set)
     month_map = defaultdict(list)
@@ -1698,7 +1721,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
                 f"flex px-4 py-2 text-[12.5px] {'font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A]' if is_delivery else 'font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50'} no-underline"
             )
-            ui.link("📑 Complaints Table", "/complaints-table").classes(
+            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
 
@@ -1779,174 +1802,162 @@ def render_complaints_table(complaints):
 
     # Define columns for complaints table
     col_defs = [
+        # ─────────────────────────────
+        # Core Info
+        # ─────────────────────────────
         {
             "field": "complaint_code",
             "headerName": "Complaint Code",
             "pinned": "left",
-            "width": 120,
-            "filter": "agTextColumnFilter",
+            "width": 130,
+            "checkboxSelection": True,
         },
         {
             "field": "date_of_complaint",
             "headerName": "Complaint Date",
-            "width": 120,
-            "filter": "agTextColumnFilter",
+            "width": 140,
+            ":valueFormatter": "params.value ? new Date(params.value).toLocaleDateString() : '—'",
         },
         {
-            "field": "car_model",
-            "headerName": "Car Model",
+            "field": "status",
+            "headerName": "Status",
             "width": 130,
-            "filter": "agTextColumnFilter",
+            ":cellStyle": (
+                "params.value === 'ESCALATED'"
+                " ? {background:'#FEE2E2', color:'#991B1B', fontWeight:'600'}"
+                " : {background:'#D1FAE5', color:'#065F46', fontWeight:'600'}"
+            ),
         },
-        {
-            "field": "car_variant",
-            "headerName": "Variant",
-            "width": 160,
-            "filter": "agTextColumnFilter",
-        },
+        # ─────────────────────────────
+        # Customer Details
+        # ─────────────────────────────
+        {"field": "customer_name", "headerName": "Customer Name", "width": 160},
+        {"field": "customer_mobile", "headerName": "Mobile", "width": 130},
+        {"field": "customer_address", "headerName": "Address", "width": 180},
+        {"field": "customer_city", "headerName": "City", "width": 120},
+        {"field": "customer_pin", "headerName": "PIN", "width": 100},
+        {"field": "customer_aadhar", "headerName": "Aadhar", "width": 150},
+        {"field": "customer_pan", "headerName": "PAN", "width": 130},
+        # ─────────────────────────────
+        # Vehicle
+        # ─────────────────────────────
+        {"field": "car_model", "headerName": "Car Model", "width": 150},
+        {"field": "car_variant", "headerName": "Variant", "width": 200},
+        {"field": "car_color", "headerName": "Color", "width": 120},
+        # ─────────────────────────────
+        # Dealership Info
+        # ─────────────────────────────
         {
             "field": "complainant_dealer_name",
             "headerName": "Complainant Dealer",
-            "width": 150,
-            "filter": "agTextColumnFilter",
+            "width": 180,
         },
         {
             "field": "complainant_showroom_name",
             "headerName": "Complainant Showroom",
-            "width": 150,
-            "filter": "agTextColumnFilter",
+            "width": 180,
         },
         {
             "field": "complainee_dealer_name",
             "headerName": "Complainee Dealer",
-            "width": 150,
-            "filter": "agTextColumnFilter",
+            "width": 180,
         },
         {
             "field": "complainee_showroom_name",
             "headerName": "Complainee Showroom",
-            "width": 150,
-            "filter": "agTextColumnFilter",
+            "width": 180,
         },
+        # ─────────────────────────────
+        # Quotation
+        # ─────────────────────────────
+        {"field": "quotation_number", "headerName": "Quotation No", "width": 150},
         {
-            "field": "customer_name",
-            "headerName": "Customer",
+            "field": "quotation_date",
+            "headerName": "Quotation Date",
             "width": 140,
-            "filter": "agTextColumnFilter",
+            ":valueFormatter": "params.value ? new Date(params.value).toLocaleDateString() : '—'",
         },
         {
-            "field": "customer_mobile",
-            "headerName": "Customer Number",
-            "width": 130,
-            "filter": "agTextColumnFilter",
-        },
-        {
-            "field": "customer_address",
-            "headerName": "Address",
-            "width": 150,
-            "filter": "agTextColumnFilter",
-        },
-        {
-            "field": "customer_city",
-            "headerName": "City",
-            "width": 100,
-            "filter": "agTextColumnFilter",
-        },
-        {
-            "field": "customer_pin",
-            "headerName": "PIN",
-            "width": 80,
-            "filter": "agTextColumnFilter",
-        },
-        # --- Vehicle Details ---
-        {
-            "field": "car_color",
-            "headerName": "Car Colour",
+            "field": "tcs_amount",
+            "headerName": "TCS",
             "width": 120,
-            "filter": "agTextColumnFilter",
-        },
-        # --- Quotation Details ---
-        {
-            "field": "quotation_number",
-            "headerName": "Quotation No",
-            "width": 130,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         },
         {
             "field": "total_offered_price",
             "headerName": "Total Offered",
-            "width": 120,
-            "valueFormatter": "Math.floor(value).toLocaleString()",
+            "width": 140,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         },
         {
             "field": "net_offered_price",
             "headerName": "Net Offered",
-            "width": 120,
-            "valueFormatter": "Math.floor(value).toLocaleString()",
-        },
-        # --- Booking Details ---
-        {
-            "field": "booking_file_number",
-            "headerName": "Booking File No",
             "width": 140,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         },
+        # ─────────────────────────────
+        # Booking
+        # ─────────────────────────────
+        {"field": "booking_file_number", "headerName": "File No", "width": 140},
+        {"field": "receipt_number", "headerName": "Receipt No", "width": 140},
         {
             "field": "booking_amount",
-            "headerName": "Booking Amt",
-            "width": 120,
-            "valueFormatter": "Math.floor(value).toLocaleString()",
+            "headerName": "Booking Amount",
+            "width": 140,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         },
-        # --- Remarks & Status ---
+        {"field": "mode_of_payment", "headerName": "Payment Mode", "width": 130},
         {
-            "field": "status",
-            "headerName": "Status",
-            "width": 120,
-            "filter": "agTextColumnFilter",
-            ":cellStyle": (
-                "params.value === 'ESCALATED'"
-                " ? {background:'#FEE2E2', color:'#991B1B', fontWeight:'600', borderRadius:'4px'}"
-                " : {background:'#D1FAE5', color:'#065F46', fontWeight:'600', borderRadius:'4px'}"
-            ),
+            "field": "instrument_date",
+            "headerName": "Instrument Date",
+            "width": 140,
+            ":valueFormatter": "params.value ? new Date(params.value).toLocaleDateString() : '—'",
         },
-        # --- Price Info ---
+        {"field": "instrument_number", "headerName": "Instrument No", "width": 150},
+        {"field": "bank_name", "headerName": "Bank", "width": 150},
+        # ─────────────────────────────
+        # Pricing
+        # ─────────────────────────────
         {
             "field": "ex_showroom_price",
             "headerName": "Ex-Showroom",
-            "width": 120,
-            "valueFormatter": "Math.floor(value).toLocaleString()",
+            "width": 140,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         },
         {
             "field": "insurance",
             "headerName": "Insurance",
-            "width": 120,
-            "valueFormatter": "Math.floor(value).toLocaleString()",
+            "width": 130,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        },
+        {
+            "field": "registration_road_tax",
+            "headerName": "Reg/Road Tax",
+            "width": 140,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         },
         {
             "field": "discount",
             "headerName": "Discount",
-            "width": 100,
+            "width": 120,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         },
-        # --- Remarks ---
+        {
+            "field": "accessories_charged",
+            "headerName": "Accessories",
+            "width": 140,
+            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        },
+        # ─────────────────────────────
+        # Remarks
+        # ─────────────────────────────
         {
             "field": "remarks_complainant",
             "headerName": "Complainant Remarks",
-            "width": 200,
+            "width": 220,
         },
-        {
-            "field": "remark_complainee_aa",
-            "headerName": "AA/Complainee Remarks",
-            "width": 200,
-        },
-        {
-            "field": "remark_admin",
-            "headerName": "Admin Remarks",
-            "width": 200,
-        },
-        {
-            "field": "flag",
-            "headerName": "Flag",
-            "width": 80,
-            "filter": "agTextColumnFilter",
-        },
+        {"field": "remark_complainee_aa", "headerName": "AA Remarks", "width": 220},
+        {"field": "remark_admin", "headerName": "Admin Remarks", "width": 220},
     ]
 
     grid = (
@@ -1986,20 +1997,23 @@ def render_complaints_table(complaints):
 
     grid.on("cellClicked", on_cell_clicked)
 
+    return grid
+
 
 # ══════════════════════════════════════════════════════════════
 #                    PAGE: COMPLAINTS TABLE
 # ══════════════════════════════════════════════════════════════
-@ui.page("/complaints-table")
+@ui.page("/complaints-ctrl")
 @protected_page
-async def complaints_table_page():
+async def complaints_ctrl_page():
 
-    render_topbar("Complaints Table")
+    render_topbar("Complaints Control Panel")
 
     try:
         response: dict = await api_get("/complaints/")
         complaints = response.get("data", [])
         total_entries = response.get("total", 0)
+
     except Exception:
         complaints = []
         total_entries = 0
@@ -2024,7 +2038,7 @@ async def complaints_table_page():
             ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("📑 Complaints Table", "/complaints-table").classes(
+            ui.link("📑 Complaints Table", "/complaints-ctrl").classes(
                 "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
             )
 
@@ -2049,35 +2063,135 @@ async def complaints_table_page():
                     ui.label("New Complaint").classes("text-weight-bold pl-2")
 
             with ui.card().classes("w-full p-0 shadow-sm rounded-xl mb-8"):
-                render_complaints_table(complaints)
+                grid = render_complaints_table(complaints)
+
+                async def get_selected_row():
+                    rows = await grid.get_selected_rows()  # type: ignore
+                    return rows[0] if rows else None
+
+            with ui.card().classes("w-full p-5 shadow-sm rounded-xl"):
+                ui.label("Actions Panel").classes("text-lg font-bold mb-4")
+
+                # ─────────────────────────────
+                # STATUS
+                # ─────────────────────────────
+                status_select = ui.select(
+                    options=["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED", "ESCALATED"],
+                    label="Change Status",
+                ).classes("w-64")
+
+                async def update_status():
+                    row = await get_selected_row()
+
+                    if not row:
+                        ui.notify("Select a complaint first", type="warning")
+                        return
+
+                    await api_post(
+                        "/complaints/update-status",
+                        {
+                            "complaint_code": row["complaint_code"],
+                            "status": status_select.value,
+                        },
+                    )
+
+                    ui.notify("Status updated", type="positive")
+
+                ui.button("Update Status", on_click=update_status)
+
+                ui.separator()
+
+                # ─────────────────────────────
+                # REMARKS
+                # ─────────────────────────────
+                remarks_input = (
+                    ui.textarea(label="Add Remarks").props("outlined").classes("w-full")
+                )
+
+                async def submit_remarks():
+                    row = await get_selected_row()
+
+                    if not row:
+                        ui.notify("Select a complaint first", type="warning")
+                        return
+
+                    await api_post(
+                        "/complaints/remarks",
+                        {
+                            "complaint_code": row["complaint_code"],
+                            "remarks": remarks_input.value,
+                        },
+                    )
+
+                    remarks_input.set_value("")
+                    ui.notify("Remarks added", type="positive")
+
+                ui.button("Submit Remarks", on_click=submit_remarks)
+
+                ui.separator()
+
+                # ─────────────────────────────
+                # FLAG
+                # ─────────────────────────────
+                flag_select = ui.select(
+                    options=["NORMAL", "IMPORTANT", "ESCALATED"],
+                    label="Set Flag",
+                ).classes("w-64")
+
+                async def update_flag():
+                    row = await get_selected_row()
+
+                    if not row:
+                        ui.notify("Select a complaint first", type="warning")
+                        return
+
+                    await api_post(
+                        "/complaints/update-flag",
+                        {
+                            "complaint_code": row["complaint_code"],
+                            "flag": flag_select.value,
+                        },
+                    )
+
+                    ui.notify("Flag updated", type="positive")
+
+                ui.button("Update Flag", on_click=update_flag)
+
+
+class ReportingState:
+    def __init__(self):
+        self.row_data: dict = {}  # (tt, date) → {total_count, files_received, file_incomplete, files_in_mis}
+        self.dialog_data: dict = {}  # (tt, date, col) → [{date, name, pan, remarks}, …]
+        self.label_refs: dict = {}  # (tt, date, col) → ui.label  for computed cells
+        self.total_refs: dict = {}  # (tt, col) → ui.label  for footer totals
 
 
 # ══════════════════════════════════════════════════════════════
 #                   PAGE: DAILY REPORTING
-# ══════════════════════════════════════════════════════════════
-# ══════════════════════════════════════════════════════════════
-#                   PAGE: DAILY REPORTING  (v2 – custom table)
 # ══════════════════════════════════════════════════════════════
 
 
 @ui.page("/daily-reporting")
 @protected_page
 async def daily_reporting_page() -> None:
+    rstate = ReportingState()
     render_topbar("Daily Reporting")
-
-    # ── In-memory state ──────────────────────────────────────
-    # row_data stores user-typed values per (tt, date)
-    row_data: dict = {}  # (tt, date) → {total_count, files_received, file_incomplete, files_in_mis}
-    # dialog_data stores rows for the popup tables (pending & incomplete dialogs)
-    dialog_data: dict = {}  # (tt, date, col) → [{date, name, pan, remarks}, …]
-    label_refs: dict = {}  # (tt, date, col) → ui.label  for computed cells
-    total_refs: dict = {}  # (tt, col) → ui.label  for footer totals
 
     # ── Transactions ─────────────────────────────────────────
     try:
         all_transactions: list = await api_get("/transactions")
     except Exception:
         all_transactions = []
+
+    async def save_reporting():
+        payload = build_reporting_payload(rstate)
+        print("Saving payload:", payload)  #
+
+        try:
+            await api_post("/daily-report", payload)
+            ui.notify("Saved successfully", type="positive")
+        except Exception:
+            ui.notify("Failed to save", type="negative")
 
     today_str = date.today().isoformat()
 
@@ -2094,14 +2208,14 @@ async def daily_reporting_page() -> None:
         }
 
     def get_stored(tt: str, d: str) -> dict:
-        return row_data.get((tt, d), {})
+        return rstate.row_data.get((tt, d), {})
 
     # ── Computed cell values ──────────────────────────────────
     def compute_row(tt: str, d: str) -> dict:
         s = get_stored(tt, d)
         tc = int(s.get("total_count", 0) or 0)
         fr = int(s.get("files_received", 0) or 0)
-        fi = len(dialog_data.get((tt, d, "files_incomplete"), []))
+        fi = len(rstate.dialog_data.get((tt, d, "files_incomplete"), []))
         fm = int(s.get("files_in_mis", 0) or 0)
         fp = max(0, tc - fr)  # Files Pending  = Total Count - Files Received
         fv = int(s.get("files_verified", 0) or 0)
@@ -2132,7 +2246,7 @@ async def daily_reporting_page() -> None:
             sums["files_in_mis"] += r["fm"]
             sums["difference"] += r["diff"]
         for col, total in sums.items():
-            lbl = total_refs.get((tt, col))
+            lbl = rstate.total_refs.get((tt, col))
             if lbl:
                 lbl.set_text(str(total))
 
@@ -2140,7 +2254,7 @@ async def daily_reporting_page() -> None:
         r = compute_row(tt, d)
 
         # Files Pending label
-        lbl_fp = label_refs.get((tt, d, "files_pending"))
+        lbl_fp = rstate.label_refs.get((tt, d, "files_pending"))
         if lbl_fp:
             color = "#92400E" if r["fp"] > 0 else "#10B981"
             weight = "700" if r["fp"] > 0 else "600"
@@ -2150,7 +2264,7 @@ async def daily_reporting_page() -> None:
             )
 
         # Files Incomplete label
-        lbl_fi = label_refs.get((tt, d, "file_incomplete"))
+        lbl_fi = rstate.label_refs.get((tt, d, "file_incomplete"))
         if lbl_fi:
             fi_color = "#92400E" if r["fi"] > 0 else "#10B981"
             fi_weight = "700" if r["fi"] > 0 else "600"
@@ -2160,12 +2274,12 @@ async def daily_reporting_page() -> None:
             )
 
         # Files Verified label
-        lbl_fv = label_refs.get((tt, d, "files_verified"))
+        lbl_fv = rstate.label_refs.get((tt, d, "files_verified"))
         if lbl_fv:
             lbl_fv.set_text(str(r["fv"]))
 
         # Difference label
-        lbl_diff = label_refs.get((tt, d, "difference"))
+        lbl_diff = rstate.label_refs.get((tt, d, "difference"))
         if lbl_diff:
             color = (
                 "#EF4444"
@@ -2347,7 +2461,7 @@ async def daily_reporting_page() -> None:
         # Update the cell count label and recompute totals for incomplete column
         if col == "files_incomplete":
             k = (tt, d, "files_incomplete")
-            dialog_data[k] = rows  # store so compute_row can read len()
+            rstate.dialog_data[k] = rows  # store so compute_row can read len()
             refresh_computed_row(tt, d, _dlg_state["dates"])
 
         refresh_detail_dialog(rows)
@@ -2417,13 +2531,18 @@ async def daily_reporting_page() -> None:
                             row_bg = "background:#FFFFFF"
 
                         with ui.element("tr").style(row_bg):
+                            from datetime import datetime
+
+                            date = datetime.strptime(d, r"%Y-%m-%d").strftime(
+                                "%d/%m/%Y"
+                            )
                             # ── Date ───────────────────────────────
                             with ui.element("td").style(TD_S + ";white-space:nowrap"):
                                 if is_today:
                                     with ui.row().classes(
                                         "items-center justify-center gap-1.5"
                                     ):
-                                        ui.label(d).style(
+                                        ui.label(date).style(
                                             "font-weight:700;color:#2563EB;font-size:14px"
                                         )
                                         ui.label("TODAY").style(
@@ -2432,7 +2551,7 @@ async def daily_reporting_page() -> None:
                                             "letter-spacing:.04em"
                                         )
                                 else:
-                                    ui.label(d).style(
+                                    ui.label(date).style(
                                         "font-weight:500;color:#374151;font-size:14px"
                                     )
 
@@ -2443,7 +2562,7 @@ async def daily_reporting_page() -> None:
                                         value=str(r["tc"]) if r["tc"] else "",
                                         placeholder="0",
                                         on_change=lambda e, _tt=tt, _d=d: (
-                                            row_data.setdefault(
+                                            rstate.row_data.setdefault(
                                                 (_tt, _d), {}
                                             ).__setitem__(
                                                 "total_count",
@@ -2470,7 +2589,7 @@ async def daily_reporting_page() -> None:
                                         value=str(r["fr"]) if r["fr"] else "",
                                         placeholder="0",
                                         on_change=lambda e, _tt=tt, _d=d: (
-                                            row_data.setdefault(
+                                            rstate.row_data.setdefault(
                                                 (_tt, _d), {}
                                             ).__setitem__(
                                                 "files_received",
@@ -2511,7 +2630,7 @@ async def daily_reporting_page() -> None:
                                     f"font-family:monospace;font-size:15px;"
                                     f"font-weight:{fp_weight};color:{fp_color};text-align:center"
                                 )
-                                label_refs[(tt, d, "files_pending")] = fp_lbl
+                                rstate.label_refs[(tt, d, "files_pending")] = fp_lbl
 
                             # ── Files Incomplete (clickable label → opens dialog, count = dialog rows) ──
                             fi_color = "#92400E" if r["fi"] > 0 else "#10B981"
@@ -2536,7 +2655,7 @@ async def daily_reporting_page() -> None:
                                     f"font-family:monospace;font-size:15px;"
                                     f"font-weight:{fi_weight};color:{fi_color};text-align:center"
                                 )
-                                label_refs[(tt, d, "file_incomplete")] = fi_lbl
+                                rstate.label_refs[(tt, d, "file_incomplete")] = fi_lbl
 
                             # ── Files Verified (user entry) ──
                             with ui.element("td").style(TD_S):
@@ -2544,7 +2663,9 @@ async def daily_reporting_page() -> None:
                                     value=str(r["fv"]) if r["fv"] else "",
                                     placeholder="0",
                                     on_change=lambda e, _tt=tt, _d=d: (
-                                        row_data.setdefault((_tt, _d), {}).__setitem__(
+                                        rstate.row_data.setdefault(
+                                            (_tt, _d), {}
+                                        ).__setitem__(
                                             "files_verified",
                                             int(e.value)
                                             if (e.value or "").isdigit()
@@ -2565,7 +2686,7 @@ async def daily_reporting_page() -> None:
                                         value=str(r["fm"]) if r["fm"] else "",
                                         placeholder="0",
                                         on_change=lambda e, _tt=tt, _d=d: (
-                                            row_data.setdefault(
+                                            rstate.row_data.setdefault(
                                                 (_tt, _d), {}
                                             ).__setitem__(
                                                 "files_in_mis",
@@ -2596,7 +2717,7 @@ async def daily_reporting_page() -> None:
                                     f"font-family:monospace;font-size:15px;"
                                     f"font-weight:700;color:{diff_color};text-align:center"
                                 )
-                                label_refs[(tt, d, "difference")] = diff_lbl
+                                rstate.label_refs[(tt, d, "difference")] = diff_lbl
 
                 # ── TFOOT ─────────────────────────────────────────
                 with ui.element("tfoot"):
@@ -2620,7 +2741,7 @@ async def daily_reporting_page() -> None:
                                 lbl = ui.label("0").style(
                                     "font-family:monospace;font-size:15px;font-weight:700;color:#111827"
                                 )
-                                total_refs[(tt, col_key)] = lbl
+                                rstate.total_refs[(tt, col_key)] = lbl
 
         recompute_totals(tt, dates)
 
@@ -2673,8 +2794,8 @@ async def daily_reporting_page() -> None:
     delivery_dates_state: dict = {"v": []}
 
     def _rebuild(selection: str, from_date: str = "", to_date: str = "") -> None:
-        label_refs.clear()
-        total_refs.clear()
+        rstate.label_refs.clear()
+        rstate.total_refs.clear()
         b_dates = _dates_for_range(selection, "booking", from_date, to_date)
         d_dates = _dates_for_range(selection, "delivery", from_date, to_date)
         booking_dates_state["v"] = b_dates
@@ -2709,7 +2830,7 @@ async def daily_reporting_page() -> None:
             ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("📑 Complaints Table", "/complaints-table").classes(
+            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
                 "border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
@@ -2807,6 +2928,9 @@ async def daily_reporting_page() -> None:
                     .classes("w-full overflow-x-auto")
                     .style("padding:0")
                 )
+            ui.button("Save", on_click=save_reporting).classes(
+                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
+            ).props("no-caps unelevated")
 
     # ── Wire controls ─────────────────────────────────────────
     def _get_current_range():
@@ -2838,6 +2962,24 @@ async def daily_reporting_page() -> None:
     _rebuild("custom", today_str, today_str)
 
 
+def build_reporting_payload(rstate: ReportingState):
+    payload = []
+
+    for (tt, d), values in rstate.row_data.items():
+        payload.append(
+            {
+                "type": tt,  # booking / delivery
+                "date": d,
+                "total_count": values.get("total_count", 0),
+                "files_received": values.get("files_received", 0),
+                "files_verified": values.get("files_verified", 0),
+                "files_in_mis": values.get("files_in_mis", 0),
+            }
+        )
+
+    return payload
+
+
 # ══════════════════════════════════════════════════════════════
 #                        PAGE: SETTINGS
 # ══════════════════════════════════════════════════════════════
@@ -2845,7 +2987,7 @@ async def daily_reporting_page() -> None:
 
 @ui.page("/settings")
 @protected_page
-def settings_page():
+async def settings_page():
     render_topbar("Settings")
 
     with ui.card().classes(
@@ -2853,40 +2995,47 @@ def settings_page():
     ):
         ui.label("Upload Price List").classes("text-xl font-bold mb-4")
 
-        # 🔹 Default today
-        today = date.today().isoformat()
-        with ui.row().classes("justify-end"):
-            # 🔹 REQUIRED: valid_from
-            valid_from = ui.date_input(
-                label="Valid From (Required)", value=today
-            ).classes("w-64")
+        with ui.row().classes("items-center w-full"):
+            ui.space()
+            ui.icon("build", size="5rem").classes("text-primary")
+            ui.label("Under Construction").classes("text-2xl")
+            ui.icon("construction", size="5rem").classes("text-primary")
+            ui.space()
 
-            # 🔹 OPTIONAL: valid_to
-            valid_to = ui.date_input(label="Valid To (Optional)").classes("w-64")
+        # # 🔹 Default today
+        # today = date.today().isoformat()
+        # with ui.row().classes("justify-end"):
+        #     # 🔹 REQUIRED: valid_from
+        #     valid_from = ui.date_input(
+        #         label="Valid From (Required)", value=today
+        #     ).classes("w-64")
 
-            status_label = ui.label("").classes("text-sm mt-2")
+        #     # 🔹 OPTIONAL: valid_to
+        #     valid_to = ui.date_input(label="Valid To (Optional)").classes("w-64")
 
-            async def handle_upload(e):
-                try:
-                    if not valid_from.value:
-                        status_label.text = "❌ Valid From date is required"
-                        status_label.classes("text-red-600")
-                        return
+        #     status_label = ui.label("").classes("text-sm mt-2")
 
-                    file = e
-                    payload = {"valid_from": valid_from.value}
-                    if valid_to.value:
-                        payload["valid_to"] = valid_to.value
+        #     async def handle_upload(e):
+        #         try:
+        #             if not valid_from.value:
+        #                 status_label.text = "❌ Valid From date is required"
+        #                 status_label.classes("text-red-600")
+        #                 return
 
-                    await api_post_file("/price-list/upload", file, payload)
-                    status_label.text = "✅ Price list uploaded successfully"
-                    status_label.classes("text-green-600")
-                except Exception as ex:
-                    status_label.text = f"❌ {str(ex)}"
-                    status_label.classes("text-red-600")
+        #             file = e
+        #             payload = {"valid_from": valid_from.value}
+        #             if valid_to.value:
+        #                 payload["valid_to"] = valid_to.value
 
-            ui.upload(on_upload=handle_upload, auto_upload=True).classes("")
-            ui.label("Upload Excel file (.xlsx)").classes("text-xs text-gray-400 mt-2")
+        #             await api_post_file("/price-list/upload", file, payload)
+        #             status_label.text = "✅ Price list uploaded successfully"
+        #             status_label.classes("text-green-600")
+        #         except Exception as ex:
+        #             status_label.text = f"❌ {str(ex)}"
+        #             status_label.classes("text-red-600")
+
+        #     ui.upload(on_upload=handle_upload, auto_upload=True).classes("")
+        #     ui.label("Upload Excel file (.xlsx)").classes("text-xs text-gray-400 mt-2")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2903,6 +3052,8 @@ class FormState:
         self.txn_id: int | None = None
         self.booking_id: int | None = None
         self.edit_mode: bool = False
+        # booking_edit in future
+        self.form_mode: str = "booking_create"  # booking_create | delivery_create | delivery_from_booking | delivery_edit | complaint_create | complaint_edit
         self.is_direct_delivery: bool = False
 
         self.stage: str = "booking"  # booking | delivery
@@ -2965,22 +3116,9 @@ class FormState:
         self.submit_btn: ui.button | None = None
         self.error_banner: ui.html | None = None
 
-        # Component toggles
-        self.price_match_toggles: dict[str, ui.switch] = {}
-        self.price_diff_labels: dict[str, ui.label] = {}
-        self.discount_match_toggles: dict[str, ui.switch] = {}
-        self.lbl_total_diff_price: ui.label | None = None
-        self.lbl_excess_discount: ui.label | None = None
-
         self.listed_prices: dict[str, int] = {}
         self.price_listed_labels: dict[str, ui.label] = {}
         self.discount_listed_labels: dict[str, ui.label] = {}
-
-        # Component inputs
-        self.price_inputs: dict[str, ui.input] = {}
-        self.price_rows: dict[str, ui.row] = {}
-        self.discount_inputs: dict[str, ui.input] = {}
-        self.discount_rows: dict[str, ui.row] = {}
 
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
@@ -3010,15 +3148,30 @@ class FormState:
         self.payment_finance: ui.input | None = None
         self.payment_exchange: ui.input | None = None
 
+        # Component inputs
+        self.price_inputs: dict[str, ui.input] = {}
+        self.price_rows: dict[str, ui.row] = {}
+        self.discount_inputs: dict[str, ui.input] = {}
+        self.discount_rows: dict[str, ui.row] = {}
+
+        # Component toggles
+        self.price_match_toggles: dict[str, ui.switch] = {}
+        self.price_diff_labels: dict[str, ui.label] = {}
+        self.discount_match_toggles: dict[str, ui.switch] = {}
+        self.lbl_excess_discount: ui.label | None = None
+
         # Live calc labels
         self.lbl_allowed: ui.label | None = None
         self.lbl_discount: ui.label | None = None
         self.lbl_excess: ui.label | None = None
-        self.lbl_total_listed_price: ui.label | None = None
-        self.lbl_total_offered_price: ui.label | None = None
+        self.lbl_total_listed_price: ui.label | None = None  # a
+        self.lbl_total_offered_price: ui.label | None = None  # b
+        self.lbl_total_diff_price: ui.label | None = None  # = a-b
+        self.lbl_total_listed_discount: ui.label | None = None
         self.stage_toggle = None
         self.delivery_mode = None
         self.booking_select = None
+        self.total_discount_booking = 0.0
 
         # Complaint Form Specifics
         self.complaint_dealerships: list = []
@@ -3067,9 +3220,38 @@ class FormState:
                     total += int(val)
         return total
 
+    def _validate_complaint(self) -> tuple[bool, str]:
+        if not self.complainant_dealership or not self.complainant_dealership.value:
+            return False, "Complainant dealership is required."
+        if not self.complainant_showroom or not self.complainant_showroom.value:
+            return False, "Complainant showroom is required."
+        if not self.complainee_dealership or not self.complainee_dealership.value:
+            return False, "Complainee dealership is required."
+        if not self.complainee_showroom or not self.complainee_showroom.value:
+            return False, "Complainee showroom is required."
+        if not self.cust_name or not self.cust_name.value:
+            return False, "Customer Name is required."
+        if not self.cust_mobile or not self.cust_mobile.value:
+            return False, "Customer Mobile is required."
+        if not self.cust_address or not self.cust_address.value:
+            return False, "Customer Address is required."
+        if not self.cust_city or not self.cust_city.value:
+            return False, "Customer City is required."
+        if not self.cust_pincode or not self.cust_pincode.value:
+            return False, "Customer PIN Code is required."
+        if not self.variant_id:
+            return False, "Please select a Car and Variant."
+        # if not self.complainant_remarks or not self.complainant_remarks.value:
+        #     return False, "Complainant's Remarks are required."
+
+        return True, ""
+
     def is_valid(self) -> tuple[bool, str]:
+        if self.form_mode == "complaint_create" or self.form_mode == "complaint_edit":
+            return self._validate_complaint()
+
         def _val(f):
-            return (f.value or "").strip() if f else ""
+            return (str(f.value) or "").strip() if f else ""
 
         def _val_upper(f):
             return (f.value or "").strip().upper() if f else ""
@@ -3089,10 +3271,6 @@ class FormState:
 
         if not _val(self.cust_city):
             return False, "City is required."
-
-        # pincode_clean = re.sub(r"\D", "", _val(self.cust_pincode))
-        # if len(pincode_clean) != 6:
-        #     return False, "Valid 6-digit PIN code required."
 
         pan_val = _val_upper(self.cust_pan)
         if pan_val and not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", pan_val):
@@ -3147,7 +3325,7 @@ def _map_car_and_variant(state, data):
 
     options = {v["id"]: v["variant_name"] for v in variants}
 
-    # 👉 FORCE update options
+    # FORCE update options
     state.variant_select.clear()
     state.variant_select.options = options
     state.variant_select.update()
@@ -3166,7 +3344,7 @@ def _map_car_and_variant(state, data):
         return
 
     # ── STEP 5: Set Variant ─────────────
-    ui.timer(0.05, lambda: state.variant_select.set_value(variant_id), once=True)
+    ui.timer(0.15, lambda: state.variant_select.set_value(variant_id), once=True)
     state.variant_id = variant_id
 
 
@@ -3177,7 +3355,8 @@ def populate_from_booking(state: FormState, data: dict):
 
     # ── Booking ──────────────────
     if state.booking_date:
-        state.booking_date.set_value(data.get("booking_date", ""))
+        state.booking_date.set_value(data.get("booking_date"))
+
     if state.booking_amt:
         state.booking_amt.set_value(data.get("booking_amt", ""))
     if state.booking_receipt_num:
@@ -3207,6 +3386,8 @@ def populate_from_booking(state: FormState, data: dict):
 
     if state.cust_pincode:
         state.cust_pincode.set_value(data.get("pin_code", ""))
+    if state.model_year:
+        state.model_year.set_value(data.get("model_year", ""))
 
     # ── Vehicle ──────────────────
     if state.cust_file_no:
@@ -3258,7 +3439,47 @@ def populate_price_and_discount(state, booking_data: dict):
             inp.set_value(format_num_inr(val))
 
 
+def populate_from_delivery(state: FormState, delivery: dict):
+
+    if not delivery:
+        return
+    print(json.dumps(delivery, indent=4))
+    populate_from_booking(state, delivery)
+
+    if state.delivery_date:
+        state.delivery_date.set_value(delivery.get("delivery_date", ""))
+    if state.car_color:
+        state.car_color.set_value(delivery.get("color", ""))
+    if state.invoice_number:
+        state.invoice_number.set_value(delivery.get("invoice_number", ""))
+    if state.invoice_date:
+        state.invoice_date.set_value(delivery.get("invoice_date", ""))
+    if state.invoice_taxable_value:
+        state.invoice_taxable_value.set_value(delivery.get("taxable_value", ""))
+    if state.invoice_ex_showroom:
+        state.invoice_ex_showroom.set_value(delivery.get("ex_showroom_price", ""))
+    if state.invoice_discount:
+        state.invoice_discount.set_value(delivery.get("discount", ""))
+    if state.invoice_cgst:
+        state.invoice_cgst.set_value(delivery.get("cgst", ""))
+    if state.invoice_sgst:
+        state.invoice_sgst.set_value(delivery.get("sgst", ""))
+    if state.invoice_igst:
+        state.invoice_igst.set_value(delivery.get("igst", ""))
+    if state.invoice_cess:
+        state.invoice_cess.set_value(delivery.get("cess", ""))
+    if state.invoice_total:
+        state.invoice_total.set_value(delivery.get("total_amount", ""))
+    # ── Trigger recalculation ────
+    _fs_update_live(state)
+    _fs_revalidate(state)
+
+
 def populate_from_complaint(state: FormState, complaint: dict):
+    import asyncio
+
+    print(json.dumps(complaint, indent=4))
+
     if not complaint:
         return
 
@@ -3276,11 +3497,37 @@ def populate_from_complaint(state: FormState, complaint: dict):
     if state.cust_pincode:
         state.cust_pincode.set_value(complaint.get("customer_pin", ""))
     if state.cust_pan:
-        state.cust_pan.set_value(complaint.get("pan_number", ""))
+        state.cust_pan.set_value(complaint.get("customer_pan", ""))
     if state.cust_aadhar:
-        state.cust_aadhar.set_value(complaint.get("aadhar_number", ""))
+        state.cust_aadhar.set_value(complaint.get("customer_aadhar", ""))
 
-    # --- Vehicle details ---
+    # --- Quotation & Booking ---
+    if state.comp_quotation_no:
+        state.comp_quotation_no.set_value(complaint.get("quotation_number", ""))
+    if state.comp_quotation_date:
+        state.comp_quotation_date.set_value(complaint.get("quotation_date", ""))
+    if state.comp_net_offered:
+        state.comp_net_offered.set_value(complaint.get("net_offered_price", ""))
+    if state.comp_total_offered:
+        state.comp_total_offered.set_value(complaint.get("total_offered_price", ""))
+    if state.comp_tcs:
+        state.comp_tcs.set_value(complaint.get("tcs_amount", ""))
+    if state.comp_booking_file_no:
+        state.comp_booking_file_no.set_value(complaint.get("booking_file_number", ""))
+    if state.comp_receipt_no:
+        state.comp_receipt_no.set_value(complaint.get("receipt_number", ""))
+    if state.comp_booking_amt:
+        state.comp_booking_amt.set_value(complaint.get("booking_amount", ""))
+    if state.comp_mode_of_payment:
+        state.comp_mode_of_payment.set_value(complaint.get("mode_of_payment", ""))
+    if state.comp_instrument_date:
+        state.comp_instrument_date.set_value(complaint.get("instrument_date", ""))
+    if state.comp_instrument_no:
+        state.comp_instrument_no.set_value(complaint.get("instrument_number", ""))
+    if state.comp_bank_name:
+        state.comp_bank_name.set_value(complaint.get("bank_name", ""))
+
+    # --- Vehicle ---
     if state.vin_no:
         state.vin_no.set_value(complaint.get("vin_number", ""))
     if state.engine_no:
@@ -3292,34 +3539,39 @@ def populate_from_complaint(state: FormState, complaint: dict):
     if state.car_color:
         state.car_color.set_value(complaint.get("car_color", ""))
 
-    # --- Dealerships & Showrooms ---
-    def get_item(items, id):
-        for item in items:
-            if item.get("id") == id:
-                return item
-        return None
+    # --- Dealerships (CRITICAL ORDER) ---
+    dlr = complaint.get("complainant_dealer_name")
 
-    if state.complainant_dealership:
-        item = get_item(
-            state.complaint_dealerships, complaint.get("complainant_dealership_id")
-        )
-        if item:
-            state.complainant_dealership.set_value(item.get("name"))
+    if dlr:
+        state.complainant_dealership.set_value(dlr)
 
-    if state.complainant_showroom:
-        if complaint.get("complainant_showroom_name"):
-            state.complainant_showroom.set_value(complaint["complainant_showroom_name"])
+        if hasattr(state, "_handle_complainant_change"):
+            asyncio.create_task(state._handle_complainant_change(dlr))
 
-    if state.complainee_dealership:
-        item = get_item(
-            state.complaint_dealerships, complaint.get("complainee_dealership_id")
-        )
-        if item:
-            state.complainee_dealership.set_value(item.get("name"))
+    comp_dlr = complaint.get("complainee_dealer_name")
 
-    if state.complainee_showroom:
-        if complaint.get("complainee_showroom_name"):
-            state.complainee_showroom.set_value(complaint["complainee_showroom_name"])
+    if comp_dlr:
+        if hasattr(state, "_handle_complainee_change"):
+            asyncio.create_task(state._handle_complainee_change(comp_dlr))
+
+    # --- Delayed dependent fields ---
+    def set_dependent_fields():
+        if state.complainant_showroom:
+            state.complainant_showroom.set_value(
+                complaint.get("complainant_showroom_name")
+            )
+
+        if state.complainee_dealership:
+            state.complainee_dealership.set_value(
+                complaint.get("complainee_dealer_name")
+            )
+
+        if state.complainee_showroom:
+            state.complainee_showroom.set_value(
+                complaint.get("complainee_showroom_name")
+            )
+
+    ui.timer(0.2, set_dependent_fields, once=True)
 
     # --- Remarks ---
     if state.complaint_date:
@@ -3333,6 +3585,32 @@ def populate_from_complaint(state: FormState, complaint: dict):
 
     if state.complaint_status:
         state.complaint_status.set_value(complaint.get("status", ""))
+
+    # --- Variant mapping ---
+    _map_car_and_variant(state, complaint)
+
+
+async def resolve_form_mode(state, transaction_id):
+    if state.stage != "delivery":
+        return
+
+    if transaction_id:
+        txn_data = await api_get(f"/transactions/{transaction_id}")
+
+        if txn_data.get("stage") == "delivery":
+            state.form_mode = "delivery_edit"
+        else:
+            state.form_mode = "delivery_from_booking"
+
+        state.txn_id = transaction_id
+        state.edit_mode = True
+        state.booking_data = txn_data
+
+        return txn_data
+
+    else:
+        state.form_mode = "delivery_direct_create"
+        return None
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3377,25 +3655,12 @@ def build_vehicle_section(state: FormState) -> None:
             )
             state.booking_date = (
                 ui.input(
-                    label="Booking Date"
-                    if state.stage == "complaint"
-                    else "Booking Date *",
+                    label="Booking Date*",
                     value=str(date.today()),
                     on_change=lambda _: _fs_try_price_preload(state),
                 )
                 .classes("w-full")
                 .props('type="date" outlined dense')
-            )
-            if state.stage != "complaint":
-                state.booking_date.on_value_change(lambda _: _fs_revalidate(state))
-            state.outlet_select = (
-                ui.select(
-                    options=outlet_opts,
-                    label="Outlet",
-                    on_change=lambda e: setattr(state, "outlet_id", e.value),
-                )
-                .classes("w-full")
-                .props("outlined dense")
             )
             state.exec_select = (
                 ui.select(
@@ -3406,105 +3671,68 @@ def build_vehicle_section(state: FormState) -> None:
                 .classes("w-full")
                 .props("outlined dense")
             )
-            state.cust_file_no = (
-                ui.input(label="Customer File No *")
-                .classes("w-full")
-                .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
-            )
-            if state.stage in ["delivery", "complaint"]:
-                if (
-                    state.stage == "delivery"
-                ):  # Remove this condition if car colour is also required for complaint form
-                    state.vin_no = (
-                        ui.input(label="VIN Number *")
-                        .classes("w-full uppercase")
-                        .props("outlined dense")
-                        .on_value_change(lambda _: _fs_revalidate(state))
+            if state.form_mode not in ["complaint_create", "complaint_edit"]:
+                state.cust_file_no = (
+                    ui.input(label="Customer File No *")
+                    .classes("w-full")
+                    .props("outlined dense")
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.model_year = (
+                    ui.input(label="Model Year *", placeholder="e.g. 2024")
+                    .classes("w-full")
+                    .props('outlined dense type="number"')
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.outlet_select = (
+                    ui.select(
+                        options=outlet_opts,
+                        label="Outlet",
+                        on_change=lambda e: setattr(state, "outlet_id", e.value),
                     )
-                    state.delivery_date = (
-                        ui.input(label="Delivery Date *")
-                        .classes("w-full")
-                        .props('type="date" outlined dense')
-                        .on_value_change(lambda _: _fs_revalidate(state))
-                    )
-                    state.engine_no = (
-                        ui.input(label="Engine Number *")
-                        .classes("w-full uppercase")
-                        .props("outlined dense")
-                        .on_value_change(lambda _: _fs_revalidate(state))
-                    )
-                    state.model_year = (
-                        ui.input(label="Model Year *", placeholder="e.g. 2024")
-                        .classes("w-full")
-                        .props('outlined dense type="number"')
-                        .on_value_change(lambda _: _fs_revalidate(state))
-                    )
-                    state.vehicle_regn_no = (
-                        ui.input(label="Vehicle Regn Number")
-                        .classes("w-full uppercase")
-                        .props("outlined dense")
-                    )
-                    state.regn_date = (
-                        ui.input(label="Date of Registration")
-                        .classes("w-full")
-                        .props('outlined dense type="date"')
-                    )
-                # Car Colour shown for both delivery and complaint
+                    .classes("w-full")
+                    .props("outlined dense")
+                )
+            if state.stage == "delivery":
+                state.vin_no = (
+                    ui.input(label="VIN Number *")
+                    .classes("w-full uppercase")
+                    .props("outlined dense")
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.delivery_date = (
+                    ui.input(label="Delivery Date *")
+                    .classes("w-full")
+                    .props('type="date" outlined dense')
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+                state.engine_no = (
+                    ui.input(label="Engine Number *")
+                    .classes("w-full uppercase")
+                    .props("outlined dense")
+                    .on_value_change(lambda _: _fs_revalidate(state))
+                )
+
+                state.vehicle_regn_no = (
+                    ui.input(label="Vehicle Regn Number")
+                    .classes("w-full uppercase")
+                    .props("outlined dense")
+                )
+                state.regn_date = (
+                    ui.input(label="Date of Registration")
+                    .classes("w-full")
+                    .props('outlined dense type="date"')
+                )
                 state.car_color = (
                     ui.input(label="Car Colour")
                     .classes("w-full")
                     .props("outlined dense")
                 )
-            state.model_year = (
-                ui.input(label="Model Year *", placeholder="e.g. 2024")
-                .classes("w-full")
-                .props('outlined dense type="number"')
-                .on_value_change(lambda _: _fs_revalidate(state))
-            )
-            # if state.stage == "delivery":
-            #     state.vin_no = (
-            #         ui.input(label="VIN Number *")
-            #         .classes("w-full uppercase")
-            #         .props("outlined dense")
-            #         .on_value_change(lambda _: _fs_revalidate(state))
-            #     )
-            #     state.delivery_date = (
-            #         ui.input(
-            #             label="Delivery Date *",
-            #         )
-            #         .classes("w-full")
-            #         .props('type="date" outlined dense')
-            #         .on_value_change(
-            #             lambda _: (
-            #                 _fs_revalidate(state),
-            #                 ui.timer(
-            #                     0, lambda: _fs_try_price_preload(state), once=True
-            #                 ),
-            #             )
-            #         )
-            #     )
-            #     state.engine_no = (
-            #         ui.input(label="Engine Number *")
-            #         .classes("w-full uppercase")
-            #         .props("outlined dense")
-            #         .on_value_change(lambda _: _fs_revalidate(state))
-            #     )
-            #     state.vehicle_regn_no = (
-            #         ui.input(label="Vehicle Regn Number")
-            #         .classes("w-full uppercase")
-            #         .props("outlined dense")
-            #     )
-            #     state.regn_date = (
-            #         ui.input(label="Date of Registration")
-            #         .classes("w-full")
-            #         .props('outlined dense type="date"')
-            #     )
 
-        if state.outlets:
+        if state.outlet_select and state.outlets:
             state.outlet_select.set_value(state.outlets[0]["id"])
             state.outlet_id = state.outlets[0]["id"]
-        if state.executives:
+        if state.exec_select and state.executives:
             state.exec_select.set_value(state.executives[0]["id"])
             state.executive_id = state.executives[0]["id"]
 
@@ -3674,12 +3902,14 @@ def build_booking_section(state: FormState):
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.booking_amt = (
-                ui.input(label="Booking Amount*", placeholder="Full name")
+                ui.input(label="Booking Amount*", placeholder="Enter Amount")
                 .classes("w-full")
                 .props("outlined dense")
             )
             state.booking_receipt_num = (
-                ui.input(label="Booking Receipt Number*", placeholder="Full name")
+                ui.input(
+                    label="Booking Receipt Number*", placeholder="Enter Receipt Number"
+                )
                 .classes("w-full")
                 .props("outlined dense")
             )
@@ -4010,7 +4240,7 @@ def _build_booking_prices_section(state: FormState) -> None:
             ui.label("Total Discount as per booking file").classes(
                 "text-sm font-bold tracking-[0.9px]"
             )
-            state.total_discount_input = accounting_input(
+            state.total_discount_booking = accounting_input(
                 label_text="",
                 placeholder="₹0",
                 container_classes="w-60",
@@ -4040,7 +4270,7 @@ def _build_booking_prices_section(state: FormState) -> None:
                         ui.button().props("dense color=primary icon=add")
                         ui.button().props("dense color=primary icon=remove")
 
-                    state.addjustment_input = accounting_input(
+                    state.adjustment_input = accounting_input(
                         label_text="",
                         placeholder="₹0",
                         container_classes="w-60",
@@ -4320,7 +4550,7 @@ def build_complaint_dealership_section(state: FormState) -> None:
             )
 
         with ui.grid(columns=2).classes("w-full gap-5"):
-            # Create all selectors first
+            # ── Selectors ─────────────────────────────
             state.complainant_dealership = (
                 ui.select(
                     {d["name"]: d["name"] for d in state.complaint_dealerships},
@@ -4329,103 +4559,93 @@ def build_complaint_dealership_section(state: FormState) -> None:
                 .classes("w-full")
                 .props("outlined dense")
             )
+
             state.complainant_showroom = (
                 ui.select({}, label="Showroom *")
                 .classes("w-full")
                 .props("outlined dense")
             )
 
-            # Complainee dealership with "X" option
             complainee_options = {"X": "X"}
             for d in state.complaint_dealerships:
                 complainee_options[d["name"]] = d["name"]
+
             state.complainee_dealership = (
                 ui.select(complainee_options, label="Complainee Dealership *")
                 .classes("w-full")
                 .props("outlined dense")
             )
 
-            # Complainee showroom with "X" option
             state.complainee_showroom = (
                 ui.select({"X": "X"}, label="Showroom *")
                 .classes("w-full")
                 .props("outlined dense")
             )
 
-            # Now attach event handlers
+            # ── Shared Logic ─────────────────────────
+            async def handle_complainant_change(dlr):
+                if not dlr:
+                    return
+
+                # Update complainee dealership options
+                filtered = {"X": "X"}
+                for d in state.complaint_dealerships:
+                    if d["name"] != dlr:
+                        filtered[d["name"]] = d["name"]
+
+                state.complainee_dealership.options = filtered
+                state.complainee_dealership.update()
+
+                # Fetch complainant showrooms
+                try:
+                    outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+                    if outs:
+                        state.complainant_showroom.options = {o: o for o in outs}
+                        state.complainant_showroom.update()
+                except Exception as ex:
+                    print(f"Error fetching outlets: {ex}")
+
+            async def handle_complainee_change(dlr):
+                if dlr == "X":
+                    state.complainee_showroom.options = {"X": "X"}
+                    state.complainee_showroom.update()
+                    return
+
+                if not dlr:
+                    return
+
+                try:
+                    outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+                    if outs:
+                        opts = {"X": "X"}
+                        for o in outs:
+                            opts[o] = o
+                        state.complainee_showroom.options = opts
+                        state.complainee_showroom.update()
+                except Exception as ex:
+                    print(f"Error fetching outlets: {ex}")
+
+            # ── Handlers ─────────────────────────────
             def on_complainant_dealership_change(e):
-                dlr = e.value
-                # Update complainee dealership options to exclude the selected complainant dealership
-                if dlr:
-                    filtered_dealerships = {"X": "X"}
-                    for d in state.complaint_dealerships:
-                        if d["name"] != dlr:
-                            filtered_dealerships[d["name"]] = d["name"]
-                    state.complainee_dealership.options = filtered_dealerships
-                    state.complainee_dealership.update()
+                import asyncio
 
-                    # Fetch complainant showrooms
-                    import asyncio
-
-                    async def fetch_outlets():
-                        try:
-                            outs = await api_get(
-                                f"/complaints/dealerships/{dlr}/outlets"
-                            )
-                            if outs:
-                                # outs is a list of strings, not objects
-                                state.complainant_showroom.options = {
-                                    o: o for o in outs
-                                }
-                                state.complainant_showroom.update()
-                        except Exception as ex:
-                            print(f"Error fetching outlets: {ex}")
-
-                    asyncio.create_task(fetch_outlets())
-                else:
-                    # If no complainant dealership is selected, show all dealerships with X
-                    complainee_options = {"X": "X"}
-                    for d in state.complaint_dealerships:
-                        complainee_options[d["name"]] = d["name"]
-                    state.complainee_dealership.options = complainee_options
-                    state.complainee_dealership.update()
-                    state.complainant_showroom.options = {}
-                    state.complainant_showroom.update()
+                asyncio.create_task(handle_complainant_change(e.value))
 
             def on_complainee_dealership_change(e):
-                dlr = e.value
-                if dlr == "X":
-                    # When X is selected, show only X in showroom dropdown
-                    state.complainee_showroom.options = {"X": "X"}
-                    state.complainee_showroom.update()
-                elif dlr:
-                    import asyncio
+                import asyncio
 
-                    async def fetch_outlets():
-                        try:
-                            outs = await api_get(
-                                f"/complaints/dealerships/{dlr}/outlets"
-                            )
-                            if outs:
-                                # outs is a list of strings, not objects
-                                showroom_options = {"X": "X"}
-                                for o in outs:
-                                    showroom_options[o] = o
-                                state.complainee_showroom.options = showroom_options
-                                state.complainee_showroom.update()
-                        except Exception as ex:
-                            print(f"Error fetching outlets: {ex}")
+                asyncio.create_task(handle_complainee_change(e.value))
 
-                    asyncio.create_task(fetch_outlets())
-                else:
-                    state.complainee_showroom.options = {"X": "X"}
-                    state.complainee_showroom.update()
-
-            # Attach the handlers to the selectors
+            # ── Bind Events ──────────────────────────
             state.complainant_dealership.on_value_change(
                 on_complainant_dealership_change
             )
+
             state.complainee_dealership.on_value_change(on_complainee_dealership_change)
+
+            # ── SAVE HANDLERS FOR POPULATION (IMPORTANT) ──
+            state._handle_complainant_change = handle_complainant_change
+            state._handle_complainee_change = handle_complainee_change
 
 
 def build_complaint_quotation_section(state: FormState) -> None:
@@ -4476,8 +4696,16 @@ def build_complaint_booking_section(state: FormState) -> None:
                 .props("outlined dense")
             )
             state.comp_booking_amt = accounting_input(label_text="Booking Amount")
+            mop_ops = [
+                "Cash",
+                "Credit Card",
+                "Debit Card",
+                "Net Banking",
+                "UPI",
+                "Other",
+            ]
             state.comp_mode_of_payment = (
-                ui.input(label="Mode of Payment")
+                ui.input(label="Mode of Payment", autocomplete=mop_ops)
                 .classes("w-full")
                 .props("outlined dense")
             )
@@ -4505,7 +4733,10 @@ def build_complaint_remarks_section(state: FormState) -> None:
             ui.label("Remarks").classes("text-[15px] font-bold text-gray-900")
         with ui.grid(columns=2).classes("w-full gap-5"):
             state.complaint_date = (
-                ui.input(label="Date of Complaint Raised")
+                ui.input(
+                    label="Date of Complaint Raised",
+                    value=str(get_ist_today()),
+                )
                 .classes("w-full")
                 .props('outlined dense type="date"')
             )
@@ -5017,6 +5248,8 @@ async def _fs_handle_submit(state: FormState) -> None:
 
     payload = build_payload(state)
 
+    print(payload)
+
     try:
         if state.stage == "delivery":
             if state.txn_id:
@@ -5165,7 +5398,9 @@ def build_payload(state: FormState) -> dict:
         # ── VEHICLE ──
         "customer_file_number": val(state.cust_file_no),
         "vin_number": val(state.vin_no),
+        "color": val(state.car_color),
         "engine_number": val(state.engine_no),
+        "model_year": val(state.model_year),
         "registration_number": val(state.vehicle_regn_no),
         "registration_date": val(state.regn_date),
         # ── CORE LOGIC ──
@@ -5186,11 +5421,21 @@ def build_payload(state: FormState) -> dict:
             "actions": val(state.audit_action),
         },
     }
+    print(
+        "From Build Payload:",
+        all([k for k, v in state.booking_cbs.items() if v.value]),
+    )
     if state.stage == "booking":
         payload["stage"] = "booking"
         payload["booking_checklist"] = {
             k: v.value for k, v in state.booking_cbs.items()
         }
+        payload["booking_file_incomplete"] = all(
+            [v.value for v in state.booking_cbs.values()]
+        )
+        payload["total_discount_booking"] = val(
+            state.total_discount_booking
+        )  # discount as per booking file
 
     elif state.stage == "delivery":
         payload["stage"] = "delivery"
@@ -5198,6 +5443,9 @@ def build_payload(state: FormState) -> dict:
         payload["delivery_date"] = val(state.delivery_date)
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
+        payload["delivery_file_incomplete"] = all(
+            v.value for v in state.delivery_cbs.values()
+        )
 
     return payload
 
@@ -5340,29 +5588,41 @@ async def form_page(
     state.outlets = ref["outlets"]
     state.executives = ref["executives"]
     state.accessory_map = {acc["id"]: acc for acc in ref["accessories"]}
+    txn_data = None
+
+    if state.stage == "delivery":
+        txn_data = await resolve_form_mode(state, transaction_id)
 
     with ui.element("div").classes("max-w-[1200px] mx-auto p-6"):
         # ── Edit mode indicator ──────────────────────────
-        if state.edit_mode:
+        if state.form_mode in ["delivery_from_booking", "delivery_edit"]:
             variant_label = (
                 txn_data.get("variant_name") or txn_data.get("variant") or ""
             )
+
             with ui.row().classes("items-center gap-3 mb-4"):
+                if state.form_mode == "delivery_from_booking":
+                    title = f"📦 Converting Booking #{state.txn_id} to Delivery"
+
+                elif state.form_mode == "delivery_edit":
+                    title = f"✏️ Editing Delivery #{state.txn_id}"
+
                 ui.label(
-                    f"✏️ Editing Booking #{state.txn_id} {(' — ' + variant_label) if variant_label else ''}"
+                    f"{title} {(' — ' + variant_label) if variant_label else ''}"
                 ).classes(
                     "bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1 rounded-md text-[12px] font-medium"
                 )
-                ui.label("All fields pre-filled from saved data").classes(
+
+                ui.label("Fields pre-filled from saved data").classes(
                     "text-[11px] text-gray-400"
                 )
 
-        # ── Form sections ────────────────────────────────
-        if state.stage == "booking":
+        # ── Different Forms ────────────────────────────────
+        if state.form_mode == "booking_create":
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
-
                 ui.checkbox("Is File Incomplete?").classes("text-bold ml-auto")
+
             build_vehicle_section(state)
             build_booking_section(state)
             build_customer_section(state)
@@ -5371,11 +5631,38 @@ async def form_page(
             build_accessories_section(state)
             build_booking_checklist_section(state)
 
-        elif state.stage == "delivery":
-            ui.label("Delivery MIS Form").classes("text-2xl text-bold mb-5")
+        elif state.form_mode == "delivery_direct_create":
+            ui.label("Direct Delivery MIS Form").classes("text-2xl text-bold mb-5")
 
-            if state.booking_id:
-                ...
+            build_vehicle_section(state)
+            build_booking_section(state)
+            build_customer_section(state)
+            build_conditions_section(state)
+            build_prices_section(state)
+            build_accessories_section(state)
+            build_delivery_section(state)
+            build_invoice_section(state)
+            build_payment_section(state)
+            build_audit_section(state)
+
+        elif state.form_mode == "delivery_from_booking":
+            ui.label("Delivery (From Booking)").classes("text-2xl text-bold mb-5")
+
+            build_vehicle_section(state)
+            build_booking_section(state)
+            build_customer_section(state)
+            build_conditions_section(state)
+            build_prices_section(state)
+
+            # Only delivery additions
+            build_accessories_section(state)
+            build_delivery_section(state)
+            build_invoice_section(state)
+            build_payment_section(state)
+            build_audit_section(state)
+
+        elif state.form_mode == "delivery_edit":
+            ui.label("Edit Delivery Entry").classes("text-2xl text-bold mb-5")
 
             build_vehicle_section(state)
             build_booking_section(state)
@@ -5395,10 +5682,11 @@ async def form_page(
         _fs_revalidate(state)
 
     # ── Prefill after UI is built (edit mode) ───────────
-    if state.booking_id and state.stage == "delivery":
+    if state.form_mode == "delivery_from_booking":
         populate_from_booking(state, state.booking_data)
-    elif state.edit_mode and txn_data:
-        await _fs_prefill(state, txn_data)
+
+    elif state.form_mode == "delivery_edit" and txn_data:
+        populate_from_delivery(state, txn_data)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -5444,7 +5732,7 @@ def build_complaint_payload(state: FormState) -> dict:
             "city": val(state.cust_city),
             "pin": val(state.cust_pincode),
             "pan": val(state.cust_pan),
-            "aadhar": val(state.cust_relative),
+            "aadhar": val(state.cust_aadhar),
         },
         "vehicle_details": {
             "vin_number": val(state.vin_no),
@@ -5497,7 +5785,9 @@ async def complaint_form_page(
     transaction_id: int | None = None, complaint_code: str | None = None
 ) -> None:
     state = FormState()
-    state.stage = "complaint"
+    state.form_mode = (
+        "complaint_edit" if transaction_id or complaint_code else "complaint_create"
+    )
     state.txn_id = transaction_id
     state.edit_mode = bool(transaction_id or complaint_code)
 
@@ -5518,6 +5808,16 @@ async def complaint_form_page(
     state.accessory_map = {acc["id"]: acc for acc in ref.get("accessories", [])}
     state.complaint_dealerships = ref.get("dealerships", [])
 
+    with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
+        ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
+
+        build_complaint_dealership_section(state)
+        build_customer_section(state)
+        build_vehicle_section(state)
+        build_complaint_quotation_section(state)
+        build_complaint_booking_section(state)
+        build_complaint_remarks_section(state)
+        build_complaint_action_bar(state)
     # Load existing complaint data if complaint_code is provided
     if complaint_code:
         try:
@@ -5536,17 +5836,6 @@ async def complaint_form_page(
                 populate_from_complaint(state, target)
         except Exception as e:
             ui.notify(f"Failed to load complaint: {str(e)}", type="negative")
-
-    with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
-        ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
-
-        build_complaint_dealership_section(state)
-        build_customer_section(state)
-        build_vehicle_section(state)
-        build_complaint_quotation_section(state)
-        build_complaint_booking_section(state)
-        build_complaint_remarks_section(state)
-        build_complaint_action_bar(state)
 
 
 if __name__ in {"__main__", "__mp_main__"}:

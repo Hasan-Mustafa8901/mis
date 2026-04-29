@@ -193,6 +193,9 @@ class TransactionService:
     ):
 
         transaction = session.get(Transaction, transaction_id)
+        payload = convert_date_fields(
+            payload, ["booking_date", "registration_date", "delivery_date"]
+        )
 
         if not transaction:
             raise ValueError("Transaction not found")
@@ -235,6 +238,14 @@ class TransactionService:
         # STEP 4: Recalculate discount (if needed)
         # =========================
         transaction.stage = "delivery"  # Set stage BEFORE calculation
+        transaction.vin_number = payload.get("vin_number", "")
+        transaction.engine_number = payload.get("engine_number", "")
+        transaction.model_year = payload.get("model_year", "")
+        transaction.color = payload.get("color", "")
+        transaction.registration_number = payload.get("registration_number", "")
+        transaction.registration_date = payload.get("registration_date", None)
+        transaction.delivery_date = payload.get("delivery_date", None)
+        transaction.booking_date = payload.get("booking_date", transaction.booking_date)
 
         if not use_booking_data:
             audit_result = DiscountService.calculate_discount(
@@ -302,7 +313,9 @@ class TransactionService:
             )
 
         # STEP 5: Discount
-        print(f"DEBUG: create_delivery_transaction - BEFORE CALC: stage={transaction.stage}")
+        print(
+            f"DEBUG: create_delivery_transaction - BEFORE CALC: stage={transaction.stage}"
+        )
         audit_result = DiscountService.calculate_discount(
             session=session,
             transaction=transaction,
@@ -412,6 +425,8 @@ class TransactionService:
             created_by=payload.get("user_id", None),
             stage=payload.get("stage", "booking"),
             booking_date=payload["booking_date"],
+            booking_amt=payload.get("booking_amt", 0.0),
+            booking_receipt_num=payload.get("booking_receipt_num", None),
             delivery_date=payload.get("delivery_date", None),
             # VEHICLE
             customer_file_number=payload.get("customer_file_number"),
@@ -428,13 +443,13 @@ class TransactionService:
             exchange_details=payload.get("exchange_details", {}),
             audit_info=payload.get("audit_info", {}),
         )
-        print(f"DEBUG: create_transaction_raw - BEFORE ADD: stage={transaction.stage}")
+        print(f"DEBUG: create_transaction_raw - Transaction: \n{transaction}")
         session.add(transaction)
         session.flush()
-        print(f"DEBUG: create_transaction_raw - BEFORE COMMIT: stage={transaction.stage}")
+
         session.commit()
         session.refresh(transaction)
-        print(f"DEBUG: create_transaction_raw - AFTER REFRESH: stage={transaction.stage}")
+
         return transaction
 
     @staticmethod
@@ -507,6 +522,8 @@ class TransactionService:
                 "booking_date": transaction.booking_date.isoformat()
                 if transaction.booking_date
                 else None,
+                "booking_amt": transaction.booking_amt,
+                "booking_receipt_num": transaction.booking_receipt_num,
                 "delivery_date": transaction.delivery_date.isoformat()
                 if transaction.delivery_date
                 else None,
@@ -536,14 +553,13 @@ class TransactionService:
             item = item_map.get(comp.id)
             # prefix = ""  # Could use section prefix if desired, but user wants MIS names
             data[f"{comp.name}_actual"] = item.actual_amount if item else 0.0
-            # data[f"{comp.name}_allowed"] = item.allowed_amount if item else 0.0
-            # data[f"{comp.name}_diff"] = item.difference if item else 0.0
 
         # 6. Section 5: Conditions
         for cond, val in transaction.conditions.items():
             data[f"cond_{cond}"] = val
 
         # 7. Section 6: Additional Sections (JSON)
+        data.update({f"{k}": v for k, v in transaction.invoice_details.items()})
         data.update(
             {f"exchange_{k}": v for k, v in transaction.exchange_details.items()}
         )
