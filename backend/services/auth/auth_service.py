@@ -22,7 +22,14 @@ class AuthService:
         return pwd_context.verify(password, hashed)
 
     @staticmethod
-    def register(session: Session, name: str, password: str, role: str):
+    def register(
+        session: Session,
+        name: str,
+        username: str,
+        password: str,
+        role: str,
+        outlet_id: int | None = None,
+    ):
         existing = session.exec(select(User).where(User.name == name)).first()
         if existing:
             raise HTTPException(status_code=400, detail="User already exists")
@@ -33,8 +40,10 @@ class AuthService:
 
         user = User(
             name=name,
+            username=username,
             password_hash=hashed,
             role=user_role,
+            outlet_id=outlet_id,
         )
         session.add(user)
         session.commit()
@@ -42,16 +51,22 @@ class AuthService:
         return user
 
     @staticmethod
-    def login(session: Session, name: str, password: str):
-        user = session.exec(select(User).where(User.name == name)).first()
+    def login(session: Session, username: str, password: str):
+        user = session.exec(select(User).where(User.username == username)).first()
         if not user:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+            raise HTTPException(status_code=401, detail="User Not Found")
 
         if not AuthService.verify_password(password, user.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         token = AuthService.create_access_token({"sub": str(user.id)})
-        return token
+
+        return {
+            "access_token": token,
+            "name": user.name,
+            "outlet_id": user.outlet_id,
+            "role": UserRole(user.role),
+        }
 
     @staticmethod
     def create_access_token(data: dict):
