@@ -1,12 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from typing import Optional, Dict, Any
 from datetime import date
 from pydantic import BaseModel
 from db.session import get_session
+from db.models import User
 from services.complaints import query as complaint_service
-from db.models import Complaint
+from services.auth.dependencies import get_current_user
+from schemas.complaints import UpdateStatusRequest, UpdateFlagRequest, RemarkPayload
 
 router = APIRouter(prefix="/complaints", tags=["Complaints"])
 
@@ -53,28 +55,68 @@ def get_complaints_per_status(session: Session = Depends(get_session)):
     return complaint_service.get_complaints_per_status(session)
 
 
-class RemarkPayload(BaseModel):
-    remark: str
-    code: str
-    submitted_by: str
-    complainee_name: Optional[str] = None
-
-
 @router.post("/remarks")
-def submit_remark(payload: RemarkPayload, session: Session = Depends(get_session)):
+def submit_remark(
+    payload: RemarkPayload,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    print(payload)
     success = complaint_service.submit_remarks(
-        session,
-        payload.remark,
-        payload.code,
-        payload.submitted_by,
-        payload.complainee_name,
+        session=session,
+        remark=payload.remark,
+        code=payload.code,
+        submitted_by=payload.submitted_by,
+        user=current_user,
     )
     if not success:
         raise HTTPException(status_code=400, detail="Failed to submit remark")
     return {"message": "Remark submitted successfully"}
 
 
-# @router.p
+@router.get("/flags")
+def api_get_flags():
+    return {"data": complaint_service.get_complaint_flags()}
+
+
+@router.get("/statuses")
+def api_get_statuses():
+    return {"data": complaint_service.get_complaint_status()}
+
+
+@router.post("/update-status")
+def update_status(
+    payload: UpdateStatusRequest,
+    session: Session = Depends(get_session),
+):
+    updated = complaint_service.update_complaint_status(
+        session=session,
+        complaint_code=payload.complaint_code,
+        status=payload.status,
+    )
+
+    return {
+        "message": "Status updated successfully",
+        "data": updated,
+    }
+
+
+@router.post("/update-flag")
+def update_flag(
+    payload: UpdateFlagRequest,
+    session: Session = Depends(get_session),
+):
+    updated = complaint_service.update_complaint_flag(
+        session=session,
+        complaint_code=payload.complaint_code,
+        flag=payload.flag,
+    )
+    return {
+        "message": "Flag updated successfully",
+        "data": updated,
+    }
+
+
 @router.post("/save-complaint")
 def api_save_complaint(
     payload: Dict[str, Any], session: Session = Depends(get_session)

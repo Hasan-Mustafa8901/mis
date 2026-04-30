@@ -1,7 +1,7 @@
-from sqlmodel import Session, select, or_, and_, func, cast
-from datetime import date, datetime
-import pandas as pd
-from sqlalchemy.orm import aliased, joinedload
+from sqlmodel import Session, select, or_
+from datetime import datetime
+from sqlalchemy.orm import joinedload
+from fastapi import HTTPException
 
 # Avoid conflicts with python built-ins
 from db.models import (
@@ -9,15 +9,16 @@ from db.models import (
     Outlet,
     Complaint,
     User,
+    UserRole,
     Customer,
-    Transaction,
-    DailyBooking,
-    DailyDelivery,
+    # Transaction,
+    # DailyBooking,
+    # DailyDelivery,
     ComplaintStatus,
     ComplaintFlag,
     Remark,
     Variant,
-    Car,
+    # Car,
 )
 from services.utils import get_ist_today, get_ist_now
 
@@ -257,12 +258,56 @@ def get_complaints_per_status(session: Session):
     }
 
 
-def submit_remarks(
+def update_complaint_status(
     session: Session,
-    remark: str,
-    code: str,
-    submitted_by: str,
-    complainee_name: str | None = None,
+    complaint_code: str,
+    status: ComplaintStatus,
+):
+    complaint = session.exec(
+        select(Complaint).where(Complaint.complaint_code == complaint_code)
+    ).first()
+
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    complaint.status = status
+    session.add(complaint)
+    session.commit()
+    session.refresh(complaint)
+
+    return complaint
+
+
+def update_complaint_flag(
+    session: Session,
+    complaint_code: str,
+    flag: ComplaintFlag,
+):
+    complaint = session.exec(
+        select(Complaint).where(Complaint.complaint_code == complaint_code)
+    ).first()
+
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    complaint.flag = flag
+    session.add(complaint)
+    session.commit()
+    session.refresh(complaint)
+
+    return complaint
+
+
+def get_complaint_flags():
+    return [{"label": flag.name, "value": flag.value} for flag in ComplaintFlag]
+
+
+def get_complaint_status():
+    return [{"label": status.name, "value": status.value} for status in ComplaintStatus]
+
+
+def submit_remarks(
+    session: Session, remark: str, code: str, submitted_by: UserRole, user: User
 ) -> bool:
     if not remark or not code:
         return False
@@ -275,12 +320,10 @@ def submit_remarks(
     if not complaint:
         return False
 
-    if submitted_by == "admin":
+    if submitted_by == UserRole.ADMIN:
         complaint.remark_admin = remark
-    elif submitted_by == "complainee":
-        new_entry = (
-            f"{complainee_name} ({now}): {remark}" if complainee_name else remark
-        )
+    elif submitted_by == UserRole.AUDITOR:
+        new_entry = f"{user.name} ({now}): {remark}" if user.name else remark
         if complaint.remark_complainee_aa is None:
             complaint.remark_complainee_aa = new_entry
         else:
@@ -300,7 +343,9 @@ def get_dealership_id_by_name(session: Session, name: str):
     return dealer.id if dealer else None
 
 
-def get_outlet_id_by_name(session: Session, name: str, dealership_id: int = None):
+def get_outlet_id_by_name(
+    session: Session, name: str, dealership_id: int | None = None
+):
     if not name:
         return None
     query = select(Outlet).where(Outlet.name == name)
