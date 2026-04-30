@@ -9,3 +9,6 @@ tests
 old_code
 .nicegui/
 *.pdf
+test_daily_report.py
+test_report.py
+test_report_empty.py
