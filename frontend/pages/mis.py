@@ -20,9 +20,9 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
     # Split logic
     if stage == "booking":
-        transactions = [t for t in all_transactions if not t.get("delivery_date")]
+        transactions = [t for t in all_transactions if t.get("stage") == "booking"]
     else:
-        transactions = [t for t in all_transactions if t.get("delivery_date")]
+        transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
 
     # Get months for sidebar grouping
     month_map = defaultdict(list)
@@ -39,93 +39,39 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
         except Exception:
             return ym
 
-    # Filter by specific month if passed in URL
+    # Filter by specific month
     if month:
-        transactions = [
-            t
-            for t in transactions
-            if (t.get("booking_date", "") or "").startswith(month)
-        ]
+        transactions = [t for t in transactions if (t.get("booking_date", "") or "").startswith(month)]
 
     total_entries = len(transactions)
     total_excess = sum(t.get("total_excess_discount", 0) or 0 for t in transactions)
 
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
-        # ── SIDEBAR ─────────────────────────────────────────
-        with ui.column().classes(
-            "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
-        ):
-            ui.label("Quick Nav").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-400 px-4 mb-1.5 mt-4.5"
-            )
-            ui.link("📊 Dashboard", "/").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-
-            is_booking = stage == "booking"
-            ui.link("📋 Booking MIS", "/booking-mis").classes(
-                f"flex px-4 py-2 text-[12.5px] {'font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A]' if is_booking else 'font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50'} no-underline"
-            )
-
-            is_delivery = stage == "delivery"
-            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
-                f"flex px-4 py-2 text-[12.5px] {'font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A]' if is_delivery else 'font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50'} no-underline"
-            )
-            ui.link("📑 Complaints Table", "/complaints-table").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-
-            ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
-            ui.label("Filter by Month").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-400 px-4 mb-1.5 mt-4.5"
-            )
-
-            route_path = f"/{stage}-mis"
-            ui.link("All Months", route_path).classes(
-                f"flex px-4 py-1.5 text-[12.5px] font-medium {'text-[#E8402A]' if not month else 'text-gray-600'} hover:bg-gray-50 no-underline"
-            )
-            for ym in sorted_months:
-                is_curr = month == ym
-                with ui.link(target=f"{route_path}?month={ym}").classes(
-                    f"flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium {'text-[#E8402A] bg-[#FEF2F0]' if is_curr else 'text-gray-600'} hover:bg-gray-50 no-underline w-full"
-                ):
-                    ui.label(month_label_local(ym))
-                    ui.label(str(len(month_map[ym]))).classes(
-                        "text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
-                    )
-            
+        with ui.column().classes("w-[240px] shrink-0 bg-white border-r border-gray-200 py-4 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"):
             sidebar()
 
-        # ── MAIN CONTENT ─────────────────────────────────────
-        with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
-            with ui.row().classes("w-full items-center justify-between mb-5"):
+        with ui.column().classes("flex-1 min-w-0 p-8 bg-[#F8F9FC] overflow-x-hidden"):
+            with ui.row().classes("w-full items-center justify-between mb-6"):
                 with ui.column().classes("gap-1"):
-                    title = f"{label}{' — ' + month_label_local(month) if month else ' — All Months'}"
-                    ui.label(title).classes(
-                        "text-[18px] font-bold text-gray-900 leading-none"
-                    )
-                    exc_txt = (
-                        f" · ₹{total_excess:,.0f} excess" if total_excess > 0 else ""
-                    )
-                    ui.label(f"{total_entries} records{exc_txt}").classes(
-                        "text-[12px] text-gray-400"
-                    )
+                    title_suffix = f" — {month_label_local(month)}" if month else " — All Time"
+                    ui.label(f"{label}{title_suffix}").classes("text-2xl font-bold text-gray-900")
+
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label(f"{total_entries} Total Records").classes("text-sm text-gray-500")
+                        if total_excess > 0:
+                            ui.label(f"₹{total_excess:,.0f} Excess").classes("text-sm font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded")
 
                 with (
                     ui.button(on_click=open_new_entry_dialog)
-                    .classes(
-                        "bg-[#E8402A] text-white font-semibold text-[13px] px-4.5 py-2 rounded-[7px] shadow-sm"
-                    )
+                    .classes("bg-[#E8402A] text-white font-bold px-6 py-2.5 rounded-lg shadow-md hover:bg-[#D4351F]")
                     .props("no-caps unelevated")
                 ):
-                    ui.icon("add").classes("text-white text-lg text-weight-bold")
-                    ui.label("New Entry").classes("text-weight-bold pl-2")
+                    ui.icon("add").classes("mr-2")
+                    ui.label("New Entry")
 
-            with ui.card().classes("w-full p-0 shadow-sm rounded-xl mb-8"):
-                render_table(transactions, stage=stage)
+            with ui.card().classes("w-full p-0 overflow-hidden rounded-xl shadow-sm border-none"):
+                # Pass the theme explicitly for a consistent look
+                grid = render_table(transactions, stage=stage)
 
 @ui.page("/booking-mis")
 @protected_page
@@ -151,49 +97,22 @@ async def complaints_table_page():
         total_entries = 0
 
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
-        # ── SIDEBAR ─────────────────────────────────────────
-        with ui.column().classes(
-            "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
-        ):
-            ui.label("Quick Nav").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-400 px-4 mb-1.5 mt-4.5"
-            )
-            ui.link("📊 Dashboard", "/").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-            ui.link("📋 Booking MIS", "/booking-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("📑 Complaints Table", "/complaints-table").classes(
-                "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
-            )
+        with ui.column().classes("w-[240px] shrink-0 bg-white border-r border-gray-200 py-4 sticky top-[52px] h-[calc(100vh-52px)]"):
             sidebar()
 
-        # ── MAIN CONTENT ─────────────────────────────────────
-        with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
-            with ui.row().classes("w-full items-center justify-between mb-5"):
+        with ui.column().classes("flex-1 min-w-0 p-8 bg-[#F8F9FC] overflow-x-hidden"):
+            with ui.row().classes("w-full items-center justify-between mb-6"):
                 with ui.column().classes("gap-1"):
-                    ui.label("Complaints Table").classes(
-                        "text-[18px] font-bold text-gray-900 leading-none"
-                    )
-                    ui.label(f"{total_entries} complaints").classes(
-                        "text-[12px] text-gray-400"
-                    )
+                    ui.label("Complaints Management").classes("text-2xl font-bold text-gray-900")
+                    ui.label(f"{total_entries} Active Complaints").classes("text-sm text-gray-500")
+
                 with (
                     ui.button(on_click=lambda: ui.navigate.to("/complaint-form"))
-                    .classes(
-                        "bg-[#E8402A] text-white font-semibold text-[13px] px-4.5 py-2 rounded-[7px] shadow-sm"
-                    )
+                    .classes("bg-[#E8402A] text-white font-bold px-6 py-2.5 rounded-lg shadow-md hover:bg-[#D4351F]")
                     .props("no-caps unelevated")
                 ):
-                    ui.icon("add").classes("text-white text-lg text-weight-bold")
-                    ui.label("New Complaint").classes("text-weight-bold pl-2")
+                    ui.icon("add").classes("mr-2")
+                    ui.label("New Complaint")
 
-            with ui.card().classes("w-full p-0 shadow-sm rounded-xl mb-8"):
+            with ui.card().classes("w-full p-0 overflow-hidden rounded-xl shadow-sm border-none"):
                 render_complaints_table(complaints)

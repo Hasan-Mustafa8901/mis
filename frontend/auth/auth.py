@@ -38,3 +38,18 @@ def get_token():
 
 def clear_token():
     app.storage.user.pop("token", None)
+
+def get_user():
+    return {
+        "name": app.storage.user.get("name"),
+        "role": app.storage.user.get("role"),
+        "outlet_id": app.storage.user.get("outlet_id"),
+        "showroom": app.storage.user.get("showroom", "-"),
+    }
+
+def set_user(data: dict):
+    app.storage.user["token"] = data.get("access_token")
+    app.storage.user["name"] = data.get("name")
+    app.storage.user["role"] = data.get("role")
+    app.storage.user["outlet_id"] = data.get("outlet_id")
+    app.storage.user["showroom"] = data.get("showroom", "-")

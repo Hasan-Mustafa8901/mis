@@ -1,67 +1,44 @@
 from nicegui import ui
 
-HEAD_HTML = """
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  body, .q-page {
-    font-family: 'Inter', sans-serif !important;
-    background: #F0F2F8 !important;
-  }
-  .mono { font-family: 'JetBrains Mono', monospace !important; }
-  
-  /* AG Grid Overrides */
-  .ag-theme-alpine {
-    --ag-font-family: 'Inter', sans-serif;
-    --ag-header-background-color: #F8F9FC;
-    --ag-odd-row-background-color: #FAFBFF;
-  }
-  
-  /* Custom Scrollbar */
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: #F0F2F8; }
-  ::-webkit-scrollbar-thumb { background: #D1D5DB; border-radius: 3px; }
-</style>
-"""
-
-
 def format_num_inr(num_val):
     """Format float into standard accounting formatting, e.g. 1,000.00"""
-    return f"{float(num_val):,.2f}"
-
+    try:
+        return f"{float(num_val):,.2f}"
+    except (ValueError, TypeError):
+        return "0.00"
 
 def get_eval_math(val_str):
     import re
-
     val_clean = str(val_str).replace(",", "").strip()
     if not val_clean:
         return None
+    # Allow numbers and basic operators
     if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", val_clean):
-        return eval(val_clean)
+        try:
+            # Using eval safely for math only
+            return eval(val_clean, {"__builtins__": {}}, {})
+        except Exception:
+            return None
     return None
-
 
 def parsed_val(ui_input_element) -> float | int:
     """Safe evaluation helper to get the numeric underlying float value from accounting_input or ui.number"""
     if not ui_input_element:
         return 0
     v = getattr(ui_input_element, "value", None)
-    if not v:
+    if v is None or v == "":
         return 0
     try:
         if isinstance(v, (int, float)):
             return float(v)
         v_str = str(v).replace(",", "").strip()
         import re
-
         if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
-            res = float(eval(v_str))
+            res = float(eval(v_str, {"__builtins__": {}}, {}))
             return int(res) if res.is_integer() else res
         return float(v_str) if "." in v_str else int(v_str)
     except Exception:
         return 0
-
 
 def accounting_input(
     label_text: str, placeholder: str = "", container_classes: str = "w-full"
