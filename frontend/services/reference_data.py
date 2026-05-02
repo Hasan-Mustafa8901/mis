@@ -1,23 +1,25 @@
+import asyncio
 from services.api import api_get
 
 async def fetch_reference_data() -> dict:
     """
     Fetch all static reference data needed by the form.
-    Returns a dict with keys: cars, components, outlets, executives
+    Returns a dict with keys: cars, variants, outlets, executives, accessories, dealerships
     """
-    result = {}
-    for key, path, fallback in [
-        ("cars", "/cars", []),
-        ("variants", "/variants", []),
-        ("components", "/components", []),
-        ("outlets", "/outlets", [{"id": 1, "name": "Main Outlet"}]),
-        ("executives", "/sales-executives", [{"id": 1, "name": "Default SE"}]),
-        ("accessories", "/accessories", []),
-        ("dealerships", "/complaints/dealerships", []),
-    ]:
-        try:
-            result[key] = await api_get(path)
-        except Exception:
-            result[key] = fallback
+    tasks = {
+        "cars": api_get("/cars"),
+        "variants": api_get("/variants"),
+        "outlets": api_get("/outlets"),
+        "executives": api_get("/sales-executives"),
+        "accessories": api_get("/accessories"),
+        "dealerships": api_get("/complaints/dealerships"),
+    }
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
-    return result
+    final = {}
+    for (key, _), result in zip(tasks.items(), results):
+        if isinstance(result, Exception):
+            final[key] = []
+        else:
+            final[key] = result
+    return final
