@@ -37,9 +37,10 @@ class PriceListIngestionService:
     def seed_from_excel(
         session: Session,
         file_path: str,
+        model_year: int,
         sheet_name: Union[str, int] = 0,
-        valid_from: date = None,
-        valid_to: date = None,
+        valid_from: date | None = None,
+        valid_to: date | None = None,
     ):
 
         # 🔹 1. Read Excel (SINGLE HEADER ONLY)
@@ -90,6 +91,7 @@ class PriceListIngestionService:
             price_list = PriceList(
                 valid_from=valid_from,
                 valid_to=valid_to,
+                model_year=model_year,
                 name=f"Price List {valid_from}",
             )
             session.add(price_list)
@@ -104,8 +106,8 @@ class PriceListIngestionService:
         # 🔹 6. Process rows
         for _, row in df.iterrows():
             raw_model = row.iloc[0]
-            raw_variant = row.iloc[4]  # Concatenate column
-            fuel_type_col = row.iloc[5]
+            raw_variant = row.iloc[1]  # Concatenate column
+            fuel_type_col = row.iloc[2]
 
             if pd.isna(raw_model) or pd.isna(raw_variant):
                 continue
@@ -135,7 +137,6 @@ class PriceListIngestionService:
                     variant_name=full_variant,
                     full_variant_name=full_variant,
                     fuel_type=FuelType(fuel_type),
-                    model_year=2025,
                 )
                 session.add(variant)
                 session.flush()

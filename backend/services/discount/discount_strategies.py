@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
+from db.models import PriceList, Transaction
+from services.price_list.price_list_service import PriceListService
 from rich import print
 
 
@@ -8,24 +10,23 @@ class DiscountStrategy(ABC):
     def calculate(
         self,
         session,
-        transaction,
-        actual_amounts: Dict[str, float],
-        conditions: Dict[str, bool],
+        transaction: Transaction,
+        actual_amounts: dict[str, int | float],
+        conditions: dict[str, bool],
     ) -> Dict[str, Any]:
         pass
 
 
 class BookingDiscountStrategy(DiscountStrategy):
     def calculate(self, session, transaction, actual_amounts, conditions):
-        from services.price_list.price_list_service import PriceListService
 
-        price_list = PriceListService.get_active_price_list(
-            session, transaction.booking_date
+        price_list: PriceList = PriceListService.get_active_price_list(
+            session, transaction.booking_date, transaction.model_year
         )
-
-        allowed_map = PriceListService.get_allowed_amounts(
-            session, price_list.id, transaction.variant_id, conditions
-        )
+        if price_list.id:
+            allowed_map = PriceListService.get_allowed_amounts(
+                session, price_list.id, transaction.variant_id, conditions
+            )
 
         components = PriceListService.get_all_components(session)
 
@@ -80,10 +81,11 @@ class DeliveryDiscountStrategy(DiscountStrategy):
 
     def calculate(self, session, transaction, actual_amounts, conditions):
         print(__class__, "called")
-        from services.price_list.price_list_service import PriceListService
 
         price_list = PriceListService.get_active_price_list(
-            session, transaction.booking_date
+            session,
+            transaction.booking_date,
+            transaction.model_year,
         )
 
         allowed_map = PriceListService.get_allowed_amounts(
@@ -91,12 +93,16 @@ class DeliveryDiscountStrategy(DiscountStrategy):
         )
 
         components = PriceListService.get_all_components(session)
+        print(components)
 
         total_invoice_value = self.total_invoice_value(transaction)
+        print(total_invoice_value)
 
         actual_ex_showroom = actual_amounts.get("Ex Showroom Price", 0)
+        print(actual_ex_showroom)
 
         invoice_discount = actual_ex_showroom - total_invoice_value
+        print(invoice_discount)
 
         pricelist_discount = sum(
             allowed_map.get(comp.id, 0)
@@ -105,6 +111,7 @@ class DeliveryDiscountStrategy(DiscountStrategy):
         )
 
         excess = invoice_discount - pricelist_discount
+        print(excess)
 
         audit_result = {
             "total_actual_discount": sum(

@@ -14,7 +14,6 @@ from db.models import (
     Outlet,
     Employee,
     Bank,
-    Dealership,
 )
 from db.session import engine
 
@@ -38,46 +37,46 @@ def reset_db():
 def seed_masters():
     with Session(engine) as session:
         # ── 1. Dealerships & Showrooms ────────────────────────────
-        # 2 dealerships × 3 showrooms = 6 outlets total
+        # (1 dealerships × 5 showrooms) + 1 dealerships × 1 showrooms = 6 outlets total
         dealership_data = [
             {
-                "name": "Alpha Motors",
-                "code": "AM",
+                "name": "SRM Motors",
+                "code": "SRM",
                 "showrooms": [
                     {
-                        "name": "Alpha Motors – Main Branch",
-                        "code": "AM-MB",
+                        "name": "SRM Motors – SRM VKN",
+                        "code": "SRM VKN",
                         "address": "Lucknow, Uttar Pradesh",
                     },
                     {
-                        "name": "Alpha Motors – Hazratganj",
-                        "code": "AM-HG",
+                        "name": "SRM Motors – SRM KPR",
+                        "code": "SRM KPR",
                         "address": "Lucknow, Uttar Pradesh",
                     },
                     {
-                        "name": "Alpha Motors – Kanpur Road",
-                        "code": "AM-KR",
+                        "name": "SRM Motors – SRM STR",
+                        "code": "SRM STR",
                         "address": "Lucknow, Uttar Pradesh",
+                    },
+                    {
+                        "name": "SRM Motors – SRM MLG",
+                        "code": "SRM MLG",
+                        "address": "Lucknow, Uttar Pradesh",
+                    },
+                    {
+                        "name": "SRM Motors – SRM RLB",
+                        "code": "SRM RLB",
+                        "address": "Raebareli, Uttar Pradesh",
                     },
                 ],
             },
             {
-                "name": "Beta Auto Group",
-                "code": "BA",
+                "name": "Beeaar TATA",
+                "code": "BR",
                 "showrooms": [
                     {
-                        "name": "Beta Auto – Gomti Nagar",
+                        "name": "Beeaar TATA – BR GC",
                         "code": "BA-GN",
-                        "address": "Lucknow, Uttar Pradesh",
-                    },
-                    {
-                        "name": "Beta Auto – Aliganj",
-                        "code": "BA-AG",
-                        "address": "Lucknow, Uttar Pradesh",
-                    },
-                    {
-                        "name": "Beta Auto – Faizabad Road",
-                        "code": "BA-FR",
                         "address": "Lucknow, Uttar Pradesh",
                     },
                 ],
@@ -139,35 +138,41 @@ def seed_masters():
         # -------------------------
         components = [
             ("Ex Showroom Price", "price", "price_charged", 1),
-            ("Insurance (With Depreciation Cover)", "price", "price_charged", 2),
-            ("Registration", "price", "price_charged", 3),
-            ("Accessories", "price", "price_charged", 4),
-            ("TCS", "price", "price_charged", 5),
-            ("FasTag", "price", "price_charged", 6),
-            ("Extended Warranty", "price", "price_charged", 7),
-            ("Shield Of Trust", "price", "price_charged", 8),
+            ("TCS", "price", "price_charged", 2),
+            ("Insurance", "price", "price_charged", 3),
+            ("Registration", "price", "price_charged", 4),
+            ("FasTag", "price", "price_charged", 5),
+            ("Accessories", "price", "price_charged", 6),
+            ("AMC", "price", "price_charged", 7),
+            ("Extended Warranty", "price", "price_charged", 8),
             ("Cash Discount All Customers", "discount", "discount_allowed", 1),
             ("Additional Discount From Dealer", "discount", "discount_allowed", 2),
-            ("Extra Kitty on TR Cases", "discount", "discount_allowed", 3),
             (
                 "Additional for POI /Corporate Customers",
                 "discount",
                 "discount_allowed",
-                4,
+                3,
             ),
+            ("Green Bonus", "discount", "discount_allowed", 4),
             ("Additional for Exchange Customers", "discount", "discount_allowed", 5),
             ("Additional for Scrappage Customers", "discount", "discount_allowed", 6),
             (
-                "Additional for Upward Sales Customers",
+                "Additional Loyalty (EV TO EV)",
                 "discount",
                 "discount_allowed",
                 7,
             ),
             (
-                "Maximum benefit due to price increase",
+                "Additional Loyalty (ICE TO EV)",
                 "discount",
                 "discount_allowed",
                 8,
+            ),
+            (
+                "Maximum benefit due to price increase",
+                "discount",
+                "discount_allowed",
+                9,
             ),
         ]
 

@@ -13,6 +13,7 @@ from db.models import (
 )
 from services.discount.discount_service import DiscountService
 from datetime import datetime, date
+from rich import print
 
 
 def normalize_conditions_delivery_checks(payload: dict) -> dict:
@@ -306,6 +307,9 @@ class TransactionService:
         # STEP 3: Save checklists
         transaction.delivery_checklist = payload.get("delivery_checklist", {})
 
+        # Most Important
+        transaction.invoice_details = payload.get("invoice_details", {})
+
         # STEP 4: Items
         if transaction.id:
             TransactionService.create_transaction_items(
@@ -366,22 +370,16 @@ class TransactionService:
                 session, transaction.id, payload
             )
 
-        # STEP 5: Calculate discount
-        audit_result = DiscountService.calculate_discount(
-            session=session,
-            transaction=transaction,
-            actual_amounts=payload.get("actual_amounts", {}),
-            conditions=payload.get("conditions", {}),
+        transaction.discount_booking = payload.get("discount_booking", 0.0)
+        transaction.total_discount_booking = payload.get("total_discount_booking", 0.0)
+        transaction.price_offered_booking = payload.get("price_offered_booking", 0.0)
+        transaction.excess_booking = payload.get("excess_booking", 0.0)
+
+        transaction.status = (
+            "Excess Discount"
+            if transaction.excess_booking > 0
+            else "No Excess Discount"
         )
-        # STEP 6: Store discount
-        transaction.total_actual_discount = (
-            audit_result["total_actual_discount"]
-            if audit_result["total_actual_discount"] is not None
-            else 0
-        )
-        transaction.total_allowed_discount = audit_result["pricelist_discount"]
-        transaction.total_excess_discount = audit_result["excess_discount"]
-        transaction.status = audit_result["status"]
 
         session.add(transaction)
         session.commit()
@@ -391,7 +389,6 @@ class TransactionService:
             "id": transaction.id,
             "stage": transaction.stage,
             "status": transaction.status,
-            "summary": audit_result,
         }
 
     @staticmethod
@@ -443,12 +440,12 @@ class TransactionService:
             exchange_details=payload.get("exchange_details", {}),
             audit_info=payload.get("audit_info", {}),
         )
-        print(f"DEBUG: create_transaction_raw - Transaction: \n{transaction}")
         session.add(transaction)
         session.flush()
 
         session.commit()
         session.refresh(transaction)
+        print(f"DEBUG: create_transaction_raw - Transaction: \n{transaction}")
 
         return transaction
 
@@ -507,7 +504,6 @@ class TransactionService:
                 "vin_number": transaction.vin_number,
                 "engine_number": transaction.engine_number,
                 "color": transaction.color,
-                "model_year": variant.model_year,
                 "registration_number": transaction.registration_number,
                 "registration_date": transaction.registration_date.isoformat()
                 if transaction.registration_date

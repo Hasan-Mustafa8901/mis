@@ -7,23 +7,25 @@ Two-page architecture:
 Backend: FastAPI at http://localhost:8000
 """
 
-import json
+import asyncio
 import re
 from utils_old import build_component_map_from_booking
 import httpx
-from datetime import date, timedelta
+from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
 from utils_old import get_ist_today
 
-from auth_old import set_token, get_token, clear_token, protected_page
+from auth_old import get_token, clear_user, protected_page, set_user
 
 
 # ══════════════════════════════════════════════════════════════
 # CONFIG & SHARED CONSTANTS
 # ══════════════════════════════════════════════════════════════
-BASE_URL = "http://localhost:8000"
+import os
+
+BASE_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 CONDITION_KEYS = [
     ("exchange", "Exchange"),
@@ -32,11 +34,15 @@ CONDITION_KEYS = [
     ("scrap", "Scrap"),
     ("upgrade", "Upgrade"),
     ("self_insurance", "Self Insurance"),
-    ("tr_case", "TR Case"),
-    ("acc_kit", "Genuine Acc Kit"),
+    # ("tr_case", "TR Case"),
+    ("tcs", "TCS"),
+    ("green_bonus", "Green Bonus"),
+    ("acc_kit", "Accessories"),
     ("fastag", "FasTag"),
     ("ext_warr", "Extended Warranty"),
-    ("shield", "Shield Of Trust"),
+    ("amc", "AMC"),
+    ("loyalty_ev_ev", "Additional Loyalty (EV TO EV)"),
+    ("loyalty_ice_ev", "Additional Loyalty (ICE TO EV)"),
 ]
 
 DELIVERY_CHECK_KEYS = [
@@ -106,26 +112,72 @@ ui.add_head_html(
 # ══════════════════════════════════════════════════════════════
 # API HELPERS
 # ══════════════════════════════════════════════════════════════
+def get_auth_headers():
+    token = app.storage.user.get("token")  # adjust if stored differently
+    if not token:
+        return {}
+
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+
 async def api_get(path: str):
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{BASE_URL}{path}", timeout=10)
+        r = await client.get(
+            f"{BASE_URL}{path}", headers=get_auth_headers(), timeout=10
+        )
         r.raise_for_status()
         return r.json()
 
 
 async def api_post(path: str, payload: dict):
     async with httpx.AsyncClient() as client:
-        r = await client.post(f"{BASE_URL}{path}", json=payload, timeout=10)
+        r = await client.post(
+            f"{BASE_URL}{path}", json=payload, headers=get_auth_headers(), timeout=10
+        )
+        if r.status_code == 422:
+            print("422 ERROR: ", r.json())  # debug help
         r.raise_for_status()
         return r.json()
 
 
+# async def api_post_file(path: str, file, data: dict):
+#     token = app.storage.user.get("token")
+#     headers = {}
+#     if token:
+#         headers["Authorization"] = f"Bearer {token}"
+
+
+#     async with httpx.AsyncClient() as client:
+#         r = await client.post(
+#             f"{BASE_URL}{path}",
+#             files={"file": (file.name, await file.content.read())},
+#             data=data,
+#             headers=headers,
+#             timeout=20,
+#         )
+#         r.raise_for_status()
+#         return r.json()
+
+
 async def api_post_file(path: str, file, data: dict):
+    token = app.storage.user.get("token")
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    name = file.file.name
+    content = await file.file.read()
+
     async with httpx.AsyncClient() as client:
         r = await client.post(
             f"{BASE_URL}{path}",
-            files={"file": (file.name, await file.content.read())},
+            files={
+                "file": (name, content)  # ✅ no await
+            },
             data=data,
+            headers=headers,
             timeout=20,
         )
         r.raise_for_status()
@@ -134,7 +186,9 @@ async def api_post_file(path: str, file, data: dict):
 
 async def api_put(path: str, payload: dict):
     async with httpx.AsyncClient() as client:
-        r = await client.put(f"{BASE_URL}{path}", json=payload, timeout=10)
+        r = await client.put(
+            f"{BASE_URL}{path}", json=payload, headers=get_auth_headers(), timeout=10
+        )
         r.raise_for_status()
         return r.json()
 
@@ -147,22 +201,38 @@ async def fetch_reference_data() -> dict:
     Fetch all static reference data needed by the form.
     Returns a dict with keys: cars, components, outlets, executives
     """
-    result = {}
-    for key, path, fallback in [
-        ("cars", "/cars", []),
-        ("variants", "/variants", []),
-        ("components", "/components", []),
-        ("outlets", "/outlets", [{"id": 1, "name": "Main Outlet"}]),
-        ("executives", "/sales-executives", [{"id": 1, "name": "Default SE"}]),
-        ("accessories", "/accessories", []),
-        ("dealerships", "/complaints/dealerships", []),
-    ]:
-        try:
-            result[key] = await api_get(path)
-        except Exception:
-            result[key] = fallback
+    tasks = {
+        "cars": api_get("/cars"),
+        "variants": api_get("/variants"),
+        "outlets": api_get("/outlets"),
+        "executives": api_get("/sales-executives"),
+        "accessories": api_get("/accessories"),
+        "dealerships": api_get("/complaints/dealerships"),
+    }
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
-    return result
+    final = {}
+    for (key, _), result in zip(tasks.items(), results):
+        if isinstance(results, Exception):
+            final[key] = []
+        else:
+            final[key] = result
+    return final
+    # for key, path, fallback in [
+    #     ("cars", "/cars", []),
+    #     ("variants", "/variants", []),
+    #     ("components", "/components", []),
+    #     ("outlets", "/outlets", [{"id": 1, "name": "Main Outlet"}]),
+    #     ("executives", "/sales-executives", [{"id": 1, "name": "Default SE"}]),
+    #     ("accessories", "/accessories", []),
+    #     ("dealerships", "/complaints/dealerships", []),
+    # ]:
+    #     try:
+    #         result[key] = await api_get(path)
+    #     except Exception:
+    #         result[key] = fallback
+
+    # return result
 
 
 # ══════════════════════════════════════════════════════════════
@@ -256,16 +326,26 @@ def accounting_input(
     return inp
 
 
+def get_user():
+    return {
+        "name": app.storage.user.get("name"),
+        "role": app.storage.user.get("role"),
+        "outlet_id": app.storage.user.get("outlet_id"),
+    }
+
+
 # ══════════════════════════════════════════════════════════════
 # TOPBAR  (shared component for both pages)
 # ══════════════════════════════════════════════════════════════
 def render_topbar(page_label: str) -> None:
     """Injects sticky top header. page_label is shown as breadcrumb."""
+    # user = app.storage.user.get("user")
+    user = get_user()
     ui.add_head_html(HEAD_HTML)
     with ui.header().classes(
         "bg-[#0F1623] border-b-2 border-[#E8402A] px-7 py-0 h-[52px] flex items-center justify-between shadow-lg"
     ):
-        with ui.row().classes("items-center gap-4"):
+        with ui.row().classes("items-center gap-4 cursor-pointer"):
             with ui.column().on("click", lambda: ui.navigate.to("/")).classes("gap-0"):
                 ui.label("🚗 AutoAudit MIS").classes(
                     "text-[15px] font-bold text-white tracking-tight leading-tight"
@@ -279,9 +359,27 @@ def render_topbar(page_label: str) -> None:
             with ui.row().classes("text-[12px] text-white/40 items-center"):
                 ui.label(page_label).classes("text-white/80 font-semibold")
 
-        ui.label("AUDIT PORTAL").classes(
-            "bg-[#E8402A] text-white text-[10px] font-bold tracking-[0.6px] px-2.5 py-0.5 rounded-full"
-        )
+        with ui.row().classes(
+            "items-center gap-3 hover:bg-white/5 px-3 py-1.5 rounded-lg transition"
+        ):
+            name = user.get("name") or "U"
+            role = user.get("role") or []
+            role_d = ", ".join(role) if role else "-"
+            # Avatar (initial)
+            with ui.element("div").classes(
+                "w-8 h-8 rounded-full bg-[#E8402A] flex items-center justify-center text-white font-bold text-sm shadow"
+            ):
+                initials = "".join([word[0].upper() for word in name.split()])
+                ui.label(initials if len(initials) <= 3 else initials[:2])
+
+            # User details
+            with ui.column().classes("gap-0"):
+                ui.label(user.get("name", "Unknown User")).classes(
+                    "text-[12.5px] text-white font-semibold leading-tight"
+                )
+                ui.label(f"{role_d} • {user.get('showroom', '-')}").classes(
+                    "text-[10px] text-white/40 tracking-wide leading-none"
+                )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -289,7 +387,6 @@ def render_topbar(page_label: str) -> None:
 # ══════════════════════════════════════════════════════════════
 @ui.page("/login")
 def login_page():
-
     if get_token():
         ui.navigate.to("/")
     render_topbar("Login Page")
@@ -305,6 +402,7 @@ def login_page():
             )
 
             async def handle_login():
+
                 try:
                     async with httpx.AsyncClient() as client:
                         r = await client.post(
@@ -318,22 +416,72 @@ def login_page():
                         r.raise_for_status()
                         data = r.json()
 
-                    set_token(data["access_token"])
+                    set_user(data)
+
                     ui.notify("Login successful", type="positive")
                     ui.navigate.to("/")
 
-                except Exception:
-                    ui.notify("Invalid credentials", type="negative")
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 401:
+                        ui.notify("Invalid Credentials", type="negative")
+                    elif exc.response.status_code == 404:
+                        ui.notify("Not Found", type="negative")
+
+                except httpx.ConnectError as exc:
+                    # log this exc error
+                    ui.notify(
+                        str(exc),
+                        type="negative",
+                    )
 
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
 
 def sidebar():
+    ui.label("Quick Nav").classes(
+        "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+    )
+
+    ui.link("📊 Dashboard", "/").classes(
+        "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
+    )
+    ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+    )
+    ui.link("📋 Booking MIS", "/booking-mis").classes(
+        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+    )
+    ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+    )
+    ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
+        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+    )
+
+    ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
+    ui.label("Quick Actions").classes(
+        "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+    )
+    with ui.button(on_click=open_new_entry_dialog).classes(
+        "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+    ):
+        ui.icon("add").classes("text-primary text-lg text-weight-bold")
+        ui.label("New Entry").classes("text-weight-bold pl-2")
+    with ui.link(target="/complaint-form").classes(
+        "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+    ):
+        ui.icon("insert_drive_file").classes("text-primary text-lg text-weight-bold")
+        ui.label("Complaint Form").classes("text-weight-bold pl-2")
+    with ui.link(target="settings").classes(
+        "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+    ):
+        ui.icon("settings").classes("text-primary text-lg text-weight-bold")
+        ui.label("Settings").classes("text-weight-bold pl-2")
     with ui.column().classes("h-full justify-between w-full p-4 bg-white shadow"):
         with ui.column().classes("mt-auto items-center"):
 
             def handle_logout():
-                clear_token()
+                clear_user()
                 ui.navigate.to("/login")
 
             ui.button("Logout", on_click=handle_logout).props(
@@ -545,6 +693,14 @@ def render_table(transactions, stage: str = "booking"):
     def create_dialog(txn_id):
         with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
             ui.label("Update Entry").classes("text-lg font-bold mb-2")
+
+            ui.button(
+                "Edit this Entry",
+                on_click=lambda: (
+                    dialog.close(),
+                    ui.navigate.to(f"/form?transaction_id={txn_id}&stage=booking"),
+                ),
+            ).classes("w-full")
 
             ui.button(
                 "Delivered",
@@ -800,10 +956,10 @@ async def dashboard_page() -> None:
 
     # Build month map over ALL transactions (for sidebar + filter options)
     all_month_map: dict = defaultdict(list)
-    for t in all_transactions:
-        bd = t.get("booking_date", "")
-        if bd and len(bd) >= 7:
-            all_month_map[bd[:7]].append(t)
+    for txn in all_transactions:
+        booking_date = txn.get("booking_date", "")
+        if booking_date and len(booking_date) >= 7:
+            all_month_map[booking_date[:7]].append(txn)
     sorted_months = sorted(all_month_map.keys(), reverse=True)
     # ── DASHBOARD LAYOUT ─────────────────────────────────────
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -811,74 +967,6 @@ async def dashboard_page() -> None:
         with ui.column().classes(
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
-            ui.label("Quick Nav").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
-            )
-
-            ui.link("📊 Dashboard", "/").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
-            )
-            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("📋 Booking MIS", "/booking-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-
-            # ui.separator().classes("mx-4 my-2")
-            # ui.label("Month-wise MIS").classes(
-            #     "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
-            # )
-
-            # if sorted_months:
-            #     for ym in sorted_months:
-            #         txns_in_month = all_month_map[ym]
-            #         cnt = len(txns_in_month)
-            #         exc = sum(1 for t in txns_in_month if t.get("status") == "Excess")
-            #         lbl = month_label(ym)
-            #         badge_cls = (
-            #             "bg-[#FECDC8] text-[#C0392B]"
-            #             if exc > 0
-            #             else "bg-gray-100 text-gray-500"
-            #         )
-
-            #         with ui.link(target=f"/delivery-mis?month={ym}").classes(
-            #             "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline w-full"
-            #         ):
-            #             ui.label(lbl)
-            #             ui.label(str(cnt)).classes(
-            #                 f"text-[10px] font-bold px-2 py-0.5 rounded-full min-w-[22px] text-center {badge_cls}"
-            #             )
-            # else:
-            #     ui.label("No data yet").classes("px-4 py-2 text-xs text-gray-400")
-
-            ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
-            ui.label("Quick Actions").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
-            )
-            with ui.button(on_click=open_new_entry_dialog).classes(
-                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            ):
-                ui.icon("add").classes("text-primary text-lg text-weight-bold")
-                ui.label("New Entry").classes("text-weight-bold pl-2")
-            with ui.link(target="/complaint-form").classes(
-                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            ):
-                ui.icon("insert_drive_file").classes(
-                    "text-primary text-lg text-weight-bold"
-                )
-                ui.label("Complaint Form").classes("text-weight-bold pl-2")
-            with ui.link(target="settings").classes(
-                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            ):
-                ui.icon("settings").classes("text-primary text-lg text-weight-bold")
-                ui.label("Settings").classes("text-weight-bold pl-2")
             sidebar()
 
         # ── MAIN CONTENT ─────────────────────────────────────
@@ -1505,7 +1593,7 @@ async def dashboard_page() -> None:
                             with ui.row().classes(
                                 "w-full items-baseline justify-between mb-3.5 pb-2.5 border-b border-gray-50"
                             ):
-                                ui.label("Top Excess Transactions").classes(
+                                ui.label("Top Excess Deliveries").classes(
                                     "text-[12.5px] font-semibold text-gray-900"
                                 )
                                 ui.label("by amount").classes(
@@ -1841,9 +1929,8 @@ def render_complaints_table(complaints):
         # ─────────────────────────────
         # Vehicle
         # ─────────────────────────────
-        {"field": "car_model", "headerName": "Car Model", "width": 150},
-        {"field": "car_variant", "headerName": "Variant", "width": 200},
-        {"field": "car_color", "headerName": "Color", "width": 120},
+        {"field": "car_name", "headerName": "Car Model", "width": 150},
+        {"field": "variant_name", "headerName": "Variant", "width": 200},
         # ─────────────────────────────
         # Dealership Info
         # ─────────────────────────────
@@ -1918,36 +2005,36 @@ def render_complaints_table(complaints):
         # ─────────────────────────────
         # Pricing
         # ─────────────────────────────
-        {
-            "field": "ex_showroom_price",
-            "headerName": "Ex-Showroom",
-            "width": 140,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        {
-            "field": "insurance",
-            "headerName": "Insurance",
-            "width": 130,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        {
-            "field": "registration_road_tax",
-            "headerName": "Reg/Road Tax",
-            "width": 140,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        {
-            "field": "discount",
-            "headerName": "Discount",
-            "width": 120,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        {
-            "field": "accessories_charged",
-            "headerName": "Accessories",
-            "width": 140,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
+        # {
+        #     "field": "ex_showroom_price",
+        #     "headerName": "Ex-Showroom",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # {
+        #     "field": "insurance",
+        #     "headerName": "Insurance",
+        #     "width": 130,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # {
+        #     "field": "registration_road_tax",
+        #     "headerName": "Reg/Road Tax",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # {
+        #     "field": "discount",
+        #     "headerName": "Discount",
+        #     "width": 120,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # {
+        #     "field": "accessories_charged",
+        #     "headerName": "Accessories",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
         # ─────────────────────────────
         # Remarks
         # ─────────────────────────────
@@ -2023,24 +2110,7 @@ async def complaints_ctrl_page():
         with ui.column().classes(
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
-            ui.label("Quick Nav").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-400 px-4 mb-1.5 mt-4.5"
-            )
-            ui.link("📊 Dashboard", "/").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-            ui.link("📋 Booking MIS", "/booking-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("📑 Complaints Table", "/complaints-ctrl").classes(
-                "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
-            )
+            sidebar()
 
         # ── MAIN CONTENT ─────────────────────────────────────
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
@@ -2071,14 +2141,27 @@ async def complaints_ctrl_page():
 
             with ui.card().classes("w-full p-5 shadow-sm rounded-xl"):
                 ui.label("Actions Panel").classes("text-lg font-bold mb-4")
-
                 # ─────────────────────────────
                 # STATUS
                 # ─────────────────────────────
-                status_select = ui.select(
-                    options=["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED", "ESCALATED"],
-                    label="Change Status",
-                ).classes("w-64")
+                try:
+                    status_resp = await api_get("/complaints/statuses")
+                    status_options_raw = status_resp.get("data", [])
+                except Exception:
+                    status_options_raw = []
+
+                status_options = {
+                    item["value"]: item["label"].replace("_", " ").title()
+                    for item in status_options_raw
+                }
+                status_select = (
+                    ui.select(
+                        options=status_options,
+                        label="Change Status",
+                    )
+                    .props("outlined dense")
+                    .classes("w-64")
+                )
 
                 async def update_status():
                     row = await get_selected_row()
@@ -2097,15 +2180,17 @@ async def complaints_ctrl_page():
 
                     ui.notify("Status updated", type="positive")
 
-                ui.button("Update Status", on_click=update_status)
-
-                ui.separator()
+                ui.button("Update Status", on_click=update_status).classes(
+                    "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
+                ).props("no-caps unelevated")
 
                 # ─────────────────────────────
                 # REMARKS
                 # ─────────────────────────────
                 remarks_input = (
-                    ui.textarea(label="Add Remarks").props("outlined").classes("w-full")
+                    ui.textarea(label="Add Remarks")
+                    .props("outlined dense")
+                    .classes("w-full")
                 )
 
                 async def submit_remarks():
@@ -2118,25 +2203,41 @@ async def complaints_ctrl_page():
                     await api_post(
                         "/complaints/remarks",
                         {
-                            "complaint_code": row["complaint_code"],
-                            "remarks": remarks_input.value,
+                            "code": row["complaint_code"],
+                            "remark": remarks_input.value,
+                            "submitted_by": "admin",
                         },
                     )
 
                     remarks_input.set_value("")
                     ui.notify("Remarks added", type="positive")
 
-                ui.button("Submit Remarks", on_click=submit_remarks)
-
-                ui.separator()
+                ui.button("Submit Remarks", on_click=submit_remarks).classes(
+                    "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
+                ).props("no-caps unelevated")
 
                 # ─────────────────────────────
                 # FLAG
                 # ─────────────────────────────
-                flag_select = ui.select(
-                    options=["NORMAL", "IMPORTANT", "ESCALATED"],
-                    label="Set Flag",
-                ).classes("w-64")
+                try:
+                    flag_resp = await api_get("/complaints/flags")
+                    flag_options_raw = flag_resp.get("data", [])
+                except Exception:
+                    flag_options_raw = []
+
+                flag_options = {
+                    item["value"]: item["label"].replace("_", " ").title()
+                    for item in flag_options_raw
+                }
+
+                flag_select = (
+                    ui.select(
+                        options=flag_options,
+                        label="Set Flag",
+                    )
+                    .props("outlined dense")
+                    .classes("w-64")
+                )
 
                 async def update_flag():
                     row = await get_selected_row()
@@ -2155,7 +2256,9 @@ async def complaints_ctrl_page():
 
                     ui.notify("Flag updated", type="positive")
 
-                ui.button("Update Flag", on_click=update_flag)
+                ui.button("Update Flag", on_click=update_flag).classes(
+                    "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
+                ).props("no-caps unelevated")
 
 
 class ReportingState:
@@ -2164,6 +2267,9 @@ class ReportingState:
         self.dialog_data: dict = {}  # (tt, date, col) → [{date, name, pan, remarks}, …]
         self.label_refs: dict = {}  # (tt, date, col) → ui.label  for computed cells
         self.total_refs: dict = {}  # (tt, col) → ui.label  for footer totals
+        self.locked_dates: set = (
+            set()
+        )  # this keeps the user from reentring from on a already done date
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2185,45 +2291,61 @@ async def daily_reporting_page() -> None:
 
     async def save_reporting():
         payload = build_reporting_payload(rstate)
-        print("Saving payload:", payload)  #
 
         try:
-            await api_post("/daily-report", payload)
+            await api_post("/daily-report/", payload)
+
+            # ✅ lock all submitted dates
+            for _, d in rstate.row_data.keys():
+                rstate.locked_dates.add(d)
+
             ui.notify("Saved successfully", type="positive")
-        except Exception:
+
+            # refresh UI
+            _rebuild(_get_current_range(), from_inp.value, to_inp.value)
+
+        except Exception as e:
+            print(str(e))
             ui.notify("Failed to save", type="negative")
 
     today_str = date.today().isoformat()
 
-    def mis_count(tt: str, d: str) -> int:
-        field = "booking_date" if tt == "booking" else "delivery_date"
-        return sum(1 for t in all_transactions if (t.get(field) or "")[:10] == d)
+    def mis_count(stage: str, input_date: str) -> int:
+        field = "booking_date" if stage == "booking" else "delivery_date"
+        return sum(
+            1 for t in all_transactions if (t.get(field) or "")[:10] == input_date
+        )
 
-    def get_all_txn_dates(tt: str) -> set:
-        field = "booking_date" if tt == "booking" else "delivery_date"
+    # def incomplete_count(stage: str, input_date: str) -> int:
+    #     field = "booking_date" if stage == "booking" else "delivery_date"
+    #     num_incomp = sum(1 for t in all_transactions if )
+    #     return num_incomp
+
+    def get_all_txn_dates(stage: str) -> set:
+        field = "booking_date" if stage == "booking" else "delivery_date"
         return {
             (t.get(field) or "")[:10]
             for t in all_transactions
             if (t.get(field) or "")[:10]
         }
 
-    def get_stored(tt: str, d: str) -> dict:
-        return rstate.row_data.get((tt, d), {})
+    def get_stored(stage: str, input_date: str) -> dict:
+        return rstate.row_data.get((stage, input_date), {})
 
     # ── Computed cell values ──────────────────────────────────
-    def compute_row(tt: str, d: str) -> dict:
-        s = get_stored(tt, d)
+    def compute_row(stage: str, input_date: str) -> dict:
+        s = get_stored(stage, input_date)
         tc = int(s.get("total_count", 0) or 0)
         fr = int(s.get("files_received", 0) or 0)
-        fi = len(rstate.dialog_data.get((tt, d, "files_incomplete"), []))
-        fm = int(s.get("files_in_mis", 0) or 0)
+        fi = len(rstate.dialog_data.get((stage, input_date, "files_incomplete"), []))
+        fm = fm = mis_count(stage, input_date)
         fp = max(0, tc - fr)  # Files Pending  = Total Count - Files Received
         fv = int(s.get("files_verified", 0) or 0)
         diff = fv - fm  # Difference     = Files Verified - Files in MIS
         return dict(tc=tc, fr=fr, fi=fi, fm=fm, fp=fp, fv=fv, diff=diff)
 
     # ── Totals recompute ─────────────────────────────────────
-    def recompute_totals(tt: str, dates: list) -> None:
+    def recompute_totals(stage: str, dates: list) -> None:
         sums = {
             c: 0
             for c in [
@@ -2237,7 +2359,7 @@ async def daily_reporting_page() -> None:
             ]
         }
         for d in dates:
-            r = compute_row(tt, d)
+            r = compute_row(stage, d)
             sums["total_count"] += r["tc"]
             sums["files_received"] += r["fr"]
             sums["files_pending"] += r["fp"]
@@ -2246,15 +2368,15 @@ async def daily_reporting_page() -> None:
             sums["files_in_mis"] += r["fm"]
             sums["difference"] += r["diff"]
         for col, total in sums.items():
-            lbl = rstate.total_refs.get((tt, col))
+            lbl = rstate.total_refs.get((stage, col))
             if lbl:
                 lbl.set_text(str(total))
 
-    def refresh_computed_row(tt: str, d: str, dates: list) -> None:
-        r = compute_row(tt, d)
+    def refresh_computed_row(stage: str, input_date: str, dates: list) -> None:
+        r = compute_row(stage, input_date)
 
         # Files Pending label
-        lbl_fp = rstate.label_refs.get((tt, d, "files_pending"))
+        lbl_fp = rstate.label_refs.get((stage, input_date, "files_pending"))
         if lbl_fp:
             color = "#92400E" if r["fp"] > 0 else "#10B981"
             weight = "700" if r["fp"] > 0 else "600"
@@ -2264,7 +2386,7 @@ async def daily_reporting_page() -> None:
             )
 
         # Files Incomplete label
-        lbl_fi = rstate.label_refs.get((tt, d, "file_incomplete"))
+        lbl_fi = rstate.label_refs.get((stage, input_date, "file_incomplete"))
         if lbl_fi:
             fi_color = "#92400E" if r["fi"] > 0 else "#10B981"
             fi_weight = "700" if r["fi"] > 0 else "600"
@@ -2274,12 +2396,12 @@ async def daily_reporting_page() -> None:
             )
 
         # Files Verified label
-        lbl_fv = rstate.label_refs.get((tt, d, "files_verified"))
+        lbl_fv = rstate.label_refs.get((stage, input_date, "files_verified"))
         if lbl_fv:
             lbl_fv.set_text(str(r["fv"]))
 
         # Difference label
-        lbl_diff = rstate.label_refs.get((tt, d, "difference"))
+        lbl_diff = rstate.label_refs.get((stage, input_date, "difference"))
         if lbl_diff:
             color = (
                 "#EF4444"
@@ -2291,7 +2413,7 @@ async def daily_reporting_page() -> None:
                 f"font-family:monospace;font-size:15px;font-weight:700;color:{color};text-align:center"
             )
 
-        recompute_totals(tt, dates)
+        recompute_totals(stage, dates)
 
     # ── Generic detail dialog (Pending & Incomplete) ─────────
     _dlg_state: dict = {
@@ -2494,7 +2616,7 @@ async def daily_reporting_page() -> None:
     )
 
     # ── Table builder ────────────────────────────────────────
-    def build_table(tt: str, dates: list, parent) -> None:
+    def build_table(stage: str, dates: list, parent) -> None:
         with parent:
             with ui.element("table").style(
                 "width:100%;border-collapse:collapse;border:1px solid #D1D5DB;"
@@ -2519,13 +2641,14 @@ async def daily_reporting_page() -> None:
 
                 # ── TBODY ─────────────────────────────────────────
                 with ui.element("tbody"):
-                    for idx_d, d in enumerate(dates):
-                        r = compute_row(tt, d)
-                        is_today = d == today_str
+                    for date_idx, date in enumerate(dates):
+                        r = compute_row(stage, date)
+                        is_today = date == today_str
+                        is_locked = date in rstate.locked_dates
 
                         if is_today:
                             row_bg = "background:#EFF6FF"
-                        elif idx_d % 2 == 1:
+                        elif date_idx % 2 == 1:
                             row_bg = "background:#FAFAFA"
                         else:
                             row_bg = "background:#FFFFFF"
@@ -2533,7 +2656,7 @@ async def daily_reporting_page() -> None:
                         with ui.element("tr").style(row_bg):
                             from datetime import datetime
 
-                            date = datetime.strptime(d, r"%Y-%m-%d").strftime(
+                            date = datetime.strptime(date, r"%Y-%m-%d").strftime(
                                 "%d/%m/%Y"
                             )
                             # ── Date ───────────────────────────────
@@ -2557,11 +2680,11 @@ async def daily_reporting_page() -> None:
 
                             # ── Total Count (editable text input) ──
                             with ui.element("td").style(TD_S):
-                                tc_inp = (
+                                total_count_inp = (
                                     ui.input(
                                         value=str(r["tc"]) if r["tc"] else "",
                                         placeholder="0",
-                                        on_change=lambda e, _tt=tt, _d=d: (
+                                        on_change=lambda e, _tt=stage, _d=date: (
                                             rstate.row_data.setdefault(
                                                 (_tt, _d), {}
                                             ).__setitem__(
@@ -2574,7 +2697,7 @@ async def daily_reporting_page() -> None:
                                         ),
                                     )
                                     .props(
-                                        'type="number" min="0" step="1" outlined dense'
+                                        f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
                                     )
                                     .classes("w-full text-center")
                                     .style(
@@ -2588,7 +2711,7 @@ async def daily_reporting_page() -> None:
                                     ui.input(
                                         value=str(r["fr"]) if r["fr"] else "",
                                         placeholder="0",
-                                        on_change=lambda e, _tt=tt, _d=d: (
+                                        on_change=lambda e, _tt=stage, _d=date: (
                                             rstate.row_data.setdefault(
                                                 (_tt, _d), {}
                                             ).__setitem__(
@@ -2601,7 +2724,7 @@ async def daily_reporting_page() -> None:
                                         ),
                                     )
                                     .props(
-                                        'type="number" min="0" step="1" outlined dense'
+                                        f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
                                     )
                                     .classes("w-full text-center")
                                     .style(
@@ -2621,7 +2744,7 @@ async def daily_reporting_page() -> None:
                                 )
                                 .on(
                                     "click",
-                                    lambda _, _tt=tt, _d=d: open_detail_dialog(
+                                    lambda _, _tt=stage, _d=date: open_detail_dialog(
                                         _tt, _d, "files_pending"
                                     ),
                                 )
@@ -2630,7 +2753,9 @@ async def daily_reporting_page() -> None:
                                     f"font-family:monospace;font-size:15px;"
                                     f"font-weight:{fp_weight};color:{fp_color};text-align:center"
                                 )
-                                rstate.label_refs[(tt, d, "files_pending")] = fp_lbl
+                                rstate.label_refs[(stage, date, "files_pending")] = (
+                                    fp_lbl
+                                )
 
                             # ── Files Incomplete (clickable label → opens dialog, count = dialog rows) ──
                             fi_color = "#92400E" if r["fi"] > 0 else "#10B981"
@@ -2644,7 +2769,7 @@ async def daily_reporting_page() -> None:
                                 )
                                 .on(
                                     "click",
-                                    lambda _, _tt=tt, _d=d, _dates=dates: (
+                                    lambda _, _tt=stage, _d=date, _dates=dates: (
                                         open_detail_dialog(
                                             _tt, _d, "files_incomplete", _dates
                                         )
@@ -2655,14 +2780,16 @@ async def daily_reporting_page() -> None:
                                     f"font-family:monospace;font-size:15px;"
                                     f"font-weight:{fi_weight};color:{fi_color};text-align:center"
                                 )
-                                rstate.label_refs[(tt, d, "file_incomplete")] = fi_lbl
+                                rstate.label_refs[(stage, date, "file_incomplete")] = (
+                                    fi_lbl
+                                )
 
                             # ── Files Verified (user entry) ──
                             with ui.element("td").style(TD_S):
                                 ui.input(
                                     value=str(r["fv"]) if r["fv"] else "",
                                     placeholder="0",
-                                    on_change=lambda e, _tt=tt, _d=d: (
+                                    on_change=lambda e, _tt=stage, _d=date: (
                                         rstate.row_data.setdefault(
                                             (_tt, _d), {}
                                         ).__setitem__(
@@ -2674,38 +2801,16 @@ async def daily_reporting_page() -> None:
                                         refresh_computed_row(_tt, _d, dates),
                                     ),
                                 ).props(
-                                    'type="number" min="0" step="1" outlined dense'
+                                    f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
                                 ).classes("w-full text-center").style(
                                     "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
                                 )
 
                             # ── Files in MIS (editable text input) ──
                             with ui.element("td").style(TD_S):
-                                fm_inp = (
-                                    ui.input(
-                                        value=str(r["fm"]) if r["fm"] else "",
-                                        placeholder="0",
-                                        on_change=lambda e, _tt=tt, _d=d: (
-                                            rstate.row_data.setdefault(
-                                                (_tt, _d), {}
-                                            ).__setitem__(
-                                                "files_in_mis",
-                                                int(e.value)
-                                                if (e.value or "").isdigit()
-                                                else 0,
-                                            ),
-                                            refresh_computed_row(_tt, _d, dates),
-                                        ),
-                                    )
-                                    .props(
-                                        'type="number" min="0" step="1" outlined dense'
-                                    )
-                                    .classes("w-full text-center")
-                                    .style(
-                                        "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
-                                    )
+                                ui.label(str(r["fm"])).style(
+                                    "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
                                 )
-
                             # ── Difference (computed: fv - fm) ──
                             diff_color = (
                                 "#EF4444"
@@ -2717,7 +2822,9 @@ async def daily_reporting_page() -> None:
                                     f"font-family:monospace;font-size:15px;"
                                     f"font-weight:700;color:{diff_color};text-align:center"
                                 )
-                                rstate.label_refs[(tt, d, "difference")] = diff_lbl
+                                rstate.label_refs[(stage, date, "difference")] = (
+                                    diff_lbl
+                                )
 
                 # ── TFOOT ─────────────────────────────────────────
                 with ui.element("tfoot"):
@@ -2741,17 +2848,17 @@ async def daily_reporting_page() -> None:
                                 lbl = ui.label("0").style(
                                     "font-family:monospace;font-size:15px;font-weight:700;color:#111827"
                                 )
-                                rstate.total_refs[(tt, col_key)] = lbl
+                                rstate.total_refs[(stage, col_key)] = lbl
 
-        recompute_totals(tt, dates)
+        recompute_totals(stage, dates)
 
     # ── Date range helpers ────────────────────────────────────
     _today = date.today()
     _yester = _today - timedelta(days=1)
 
     _RANGE_OPTIONS = {
-        "today": f"Today ({_today.strftime('%d-%m-%Y')})",
-        "yesterday": f"Yesterday ({_yester.strftime('%d-%m-%Y')})",
+        "today": f"Today ({_today.strftime('%d/%m/%Y')})",
+        "yesterday": f"Yesterday ({_yester.strftime('%d/%m/%Y')})",
         "last7": "Last 7 Days",
         "last15": "Last 15 Days",
         "custom": "Custom Date Range",
@@ -2784,10 +2891,10 @@ async def daily_reporting_page() -> None:
             else:
                 # fallback: all MIS dates + today
                 txn_dates = get_all_txn_dates(tt)
-                return sorted(txn_dates | {today_str}, reverse=True)
+                return sorted(txn_dates | {today_str})
 
         txn_dates = get_all_txn_dates(tt)
-        return sorted(base | (txn_dates & base), reverse=True)
+        return sorted(base | (txn_dates & base))
 
     # ── Rebuild function ──────────────────────────────────────
     booking_dates_state: dict = {"v": []}
@@ -2796,14 +2903,14 @@ async def daily_reporting_page() -> None:
     def _rebuild(selection: str, from_date: str = "", to_date: str = "") -> None:
         rstate.label_refs.clear()
         rstate.total_refs.clear()
-        b_dates = _dates_for_range(selection, "booking", from_date, to_date)
-        d_dates = _dates_for_range(selection, "delivery", from_date, to_date)
-        booking_dates_state["v"] = b_dates
-        delivery_dates_state["v"] = d_dates
+        bking_dates = _dates_for_range(selection, "booking", from_date, to_date)
+        del_dates = _dates_for_range(selection, "delivery", from_date, to_date)
+        booking_dates_state["v"] = bking_dates
+        delivery_dates_state["v"] = del_dates
         booking_wrap.clear()
         delivery_wrap.clear()
-        build_table("booking", b_dates, booking_wrap)
-        build_table("delivery", d_dates, delivery_wrap)
+        build_table("booking", bking_dates, booking_wrap)
+        build_table("delivery", del_dates, delivery_wrap)
 
     # ── Page layout ───────────────────────────────────────────
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -2812,28 +2919,6 @@ async def daily_reporting_page() -> None:
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 "
             "sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
-            ui.label("Quick Nav").classes(
-                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 "
-                "px-4 mb-1.5 mt-4.5"
-            )
-            ui.link("📊 Dashboard", "/").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
-                "border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
-            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
-                "flex px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] "
-                "bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
-            )
-            ui.link("📋 Booking MIS", "/booking-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-            )
-            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
-                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 "
-                "border-l-3 border-transparent hover:bg-gray-50 no-underline"
-            )
             sidebar()
 
         # ── Main content ──────────────────────────────────────
@@ -2963,19 +3048,37 @@ async def daily_reporting_page() -> None:
 
 
 def build_reporting_payload(rstate: ReportingState):
-    payload = []
+    payload = {
+        "bookings": [],
+        "deliveries": [],
+    }
 
-    for (tt, d), values in rstate.row_data.items():
-        payload.append(
-            {
-                "type": tt,  # booking / delivery
-                "date": d,
-                "total_count": values.get("total_count", 0),
-                "files_received": values.get("files_received", 0),
-                "files_verified": values.get("files_verified", 0),
-                "files_in_mis": values.get("files_in_mis", 0),
-            }
-        )
+    for (stage, _date), values in rstate.row_data.items():
+        base = {
+            "date": _date,
+            "outlet_id": values.get("outlet_id", 1),  # ⚠️ adjust this properly
+            "file_received": values.get("files_received", 0),
+            "files_pending": max(
+                0,
+                values.get("total_count", 0) - values.get("files_received", 0),
+            ),
+            "files_verified": values.get("files_verified", 0),
+        }
+
+        if stage == "booking":
+            payload["bookings"].append(
+                {
+                    **base,
+                    "number_bookings": values.get("total_count", 0),
+                }
+            )
+        else:  # delivery
+            payload["deliveries"].append(
+                {
+                    **base,
+                    "number_deliveries": values.get("total_count", 0),
+                }
+            )
 
     return payload
 
@@ -2983,59 +3086,425 @@ def build_reporting_payload(rstate: ReportingState):
 # ══════════════════════════════════════════════════════════════
 #                        PAGE: SETTINGS
 # ══════════════════════════════════════════════════════════════
-
-
 @ui.page("/settings")
 @protected_page
 async def settings_page():
+
+    def get_id_by_name(iter: list[dict], name: str) -> int | None:
+        for o in iter:
+            if o["name"] == name:
+                return o["id"]
+        return None
+
+    dealers = await api_get("/complaints/dealerships")
+    outlets = await api_get("/outlets")
+    outlet_names = [o["name"] for o in outlets]
+    dealer_names = [d["name"] for d in dealers]
+
     render_topbar("Settings")
+    with ui.column().classes("w-full"):
+        with ui.card().classes(
+            "max-w-[1100px] mx-auto p-8 w-full shadow-sm rounded-xl mt-6"
+        ):
+            ui.label("Register New Users").classes("text-xl font-bold mb-4")
+            with ui.row().classes("w-full gap-6"):
+                # ── LEFT: FORM ─────────────────────────────────────
+                with ui.column().classes("flex-1 gap-4 "):
+                    name = (
+                        ui.input("Full Name")
+                        .props("outlined dense")
+                        .classes("w-[500px]")
+                    )
+                    username = (
+                        ui.input("User Name")
+                        .props("outlined dense")
+                        .classes("w-[500px]")
+                    )
 
-    with ui.card().classes(
-        "max-w-[1100px] mx-auto p-8 w-full shadow-sm rounded-xl mt-6"
-    ):
-        ui.label("Upload Price List").classes("text-xl font-bold mb-4")
+                    password = (
+                        ui.input("Password", password=True, password_toggle_button=True)
+                        .props("outlined dense")
+                        .classes("w-[500px]")
+                    )
 
-        with ui.row().classes("items-center w-full"):
-            ui.space()
-            ui.icon("build", size="5rem").classes("text-primary")
-            ui.label("Under Construction").classes("text-2xl")
-            ui.icon("construction", size="5rem").classes("text-primary")
-            ui.space()
+                    def on_role_change(e):
+                        if e.value == "Admin":
+                            outlet.value = None
+                            outlet.disable()
+                        else:
+                            outlet.enable()
 
-        # # 🔹 Default today
-        # today = date.today().isoformat()
-        # with ui.row().classes("justify-end"):
-        #     # 🔹 REQUIRED: valid_from
-        #     valid_from = ui.date_input(
-        #         label="Valid From (Required)", value=today
-        #     ).classes("w-64")
+                    role = (
+                        ui.select(
+                            ["Admin", "Client", "Audit Assistant"],
+                            label="Role",
+                        )
+                        .props("outlined dense")
+                        .classes("w-[500px]")
+                    )
+                    role.on_value_change(on_role_change)
 
-        #     # 🔹 OPTIONAL: valid_to
-        #     valid_to = ui.date_input(label="Valid To (Optional)").classes("w-64")
+                    outlet = (
+                        (
+                            ui.select(
+                                options=outlet_names,
+                                label="Showroom",
+                                value=None,
+                            )
+                        )
+                        .props("outlined dense")
+                        .classes("w-[500px]")
+                    )
+                    print("user register", outlet.value)
+                    # ── ACTIONS ────────────────────────────────────
+                    with ui.row().classes("gap-3 mt-4"):
 
-        #     status_label = ui.label("").classes("text-sm mt-2")
+                        async def handle_register():
+                            if not name.value or not password.value:
+                                ui.notify("Name and Password required", type="negative")
+                                return
 
-        #     async def handle_upload(e):
-        #         try:
-        #             if not valid_from.value:
-        #                 status_label.text = "❌ Valid From date is required"
-        #                 status_label.classes("text-red-600")
-        #                 return
+                            if not role.value:
+                                ui.notify("Role is required", type="negative")
+                                return
+                            if role.value != "Admin" and not outlet.value:
+                                ui.notify("Showroom is required.", type="negative")
+                                return
 
-        #             file = e
-        #             payload = {"valid_from": valid_from.value}
-        #             if valid_to.value:
-        #                 payload["valid_to"] = valid_to.value
+                            payload = {
+                                "name": name.value.strip(),
+                                "username": username.value,
+                                "password": password.value,
+                                "role": role.value.replace(" ", "_").lower(),
+                                "outlet_id": None
+                                if role.value == "Admin"
+                                else get_id_by_name(outlets, outlet.value),
+                            }
 
-        #             await api_post_file("/price-list/upload", file, payload)
-        #             status_label.text = "✅ Price list uploaded successfully"
-        #             status_label.classes("text-green-600")
-        #         except Exception as ex:
-        #             status_label.text = f"❌ {str(ex)}"
-        #             status_label.classes("text-red-600")
+                            try:
+                                await api_post("/auth/register", payload)
 
-        #     ui.upload(on_upload=handle_upload, auto_upload=True).classes("")
-        #     ui.label("Upload Excel file (.xlsx)").classes("text-xs text-gray-400 mt-2")
+                                ui.notify("User created successfully", type="positive")
+
+                                # Reset form
+                                name.value = ""
+                                username.value = ""
+                                password.value = ""
+                                role.value = None
+                                outlet.value = None
+
+                            except httpx.HTTPStatusError as e:
+                                # Backend validation / known errors
+                                try:
+                                    error_detail = e.response.json()
+                                except Exception:
+                                    error_detail = e.response.text
+
+                                ui.notify(f"Error: {error_detail}", type="negative")
+
+                            except httpx.ConnectError:
+                                ui.notify("Server unreachable", type="negative")
+
+                            except Exception as e:
+                                ui.notify(str(e), type="negative")
+
+                        ui.button("Create User", on_click=handle_register).classes(
+                            "bg-[#E8402A] text-white px-4 py-2 rounded-md"
+                        )
+
+                        ui.button(
+                            "Reset",
+                            on_click=lambda: [
+                                setattr(name, "value", ""),
+                                setattr(password, "value", ""),
+                                setattr(role, "value", None),
+                                setattr(outlet, "value", None),
+                            ],
+                        ).props("outline")
+
+                # ── RIGHT: INFO PANEL (professional touch) ─────────
+                with ui.column().classes(
+                    "w-[280px] bg-gray-50 rounded-lg p-4 border text-sm text-gray-600"
+                ):
+                    ui.label("Guidelines").classes("font-semibold text-gray-800 mb-2")
+
+                    ui.label("• Use a unique username")
+                    ui.label("• Assign correct role carefully")
+                    ui.label("• Outlet determines data visibility")
+                    ui.label("• Password should be secure")
+
+                    ui.separator()
+
+                    ui.label("Roles").classes("font-semibold mt-2 text-gray-800")
+                    ui.label("Admin → Full access")
+                    ui.label("Audit Assistant → For Audit Assistant")
+                    ui.label("Client → For Dealership Owners")
+
+    with ui.column().classes("w-full items-center"):
+        with ui.card().classes(
+            "max-w-[900px] w-full p-8 mt-8 rounded-2xl shadow-lg border border-gray-100"
+        ):
+            # ── Header ─────────────────────────────────────
+            ui.label("Upload Price List").classes("text-xl font-semibold text-gray-800")
+            ui.label("Upload Excel file with pricing details").classes(
+                "text-sm text-gray-400 mb-4"
+            )
+
+            ui.separator()
+
+            # ── Form Section ───────────────────────────────
+            with ui.column().classes("w-full gap-4 mt-4"):
+                with ui.row().classes("w-full gap-4"):
+                    valid_from = (
+                        ui.date_input(
+                            label="Valid From",
+                            value=date.today().isoformat(),
+                        )
+                        .props("outlined dense")
+                        .classes("w-1/3")
+                    )
+
+                    valid_to = (
+                        ui.date_input(label="Valid To")
+                        .props("outlined dense")
+                        .classes("w-1/3")
+                    )
+
+                    model_year = (
+                        ui.number(label="Model Year")
+                        .props("outlined dense")
+                        .classes("w-1/3")
+                    )
+
+            # ── Upload Area ────────────────────────────────
+            with ui.card().classes(
+                "mt-6 p-6 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 w-full items-center text-center"
+            ):
+                ui.icon("upload_file", size="2.5rem").classes("text-gray-400")
+
+                ui.label("Drag & drop your Excel file here").classes(
+                    "text-sm text-gray-600 mt-2"
+                )
+
+                ui.label("or click to browse (.xlsx only)").classes(
+                    "text-xs text-gray-400"
+                )
+
+                status_label = ui.label("").classes("text-sm mt-3")
+
+                async def handle_upload(e):
+                    try:
+                        # ── Validation ─────────────────────
+                        if not valid_from.value:
+                            status_label.text = "❌ Valid From is required"
+                            status_label.classes("text-red-500")
+                            return
+
+                        if not model_year.value:
+                            status_label.text = "❌ Model Year is required"
+                            status_label.classes("text-red-500")
+                            return
+
+                        payload = {
+                            "valid_from": valid_from.value,
+                            "model_year": int(model_year.value),
+                            "sheet_name": "0",
+                        }
+
+                        if valid_to.value:
+                            payload["valid_to"] = valid_to.value
+
+                        status_label.text = "Uploading..."
+                        status_label.classes("text-blue-500")
+
+                        await api_post_file("/price-list/upload", e, payload)
+
+                        status_label.text = "✅ Upload successful"
+                        status_label.classes("text-green-600")
+
+                    except Exception as ex:
+                        status_label.text = f"❌ {str(ex)}"
+                        status_label.classes("text-red-500")
+
+                ui.upload(
+                    on_upload=handle_upload,
+                    auto_upload=True,
+                ).props("accept=.xlsx").classes("mt-4")
+
+            # ── Footer Note ────────────────────────────────
+            ui.label("Only .xlsx files are supported").classes(
+                "text-xs text-gray-400 mt-3 text-center"
+            )
+    # with ui.column().classes("w-full"):
+    #     with ui.card().classes(
+    #         "max-w-[1100px] mx-auto p-8 w-full shadow-sm rounded-xl mt-6"
+    #     ):
+    #         # 🔹 Default today
+    #         today = date.today().isoformat()
+    #         with ui.row().classes("justify-end"):
+    #             # 🔹 REQUIRED: valid_from
+    #             valid_from = ui.date_input(
+    #                 label="Valid From (Required)", value=today
+    #             ).classes("w-64")
+
+    #             # 🔹 OPTIONAL: valid_to
+    #             valid_to = ui.date_input(label="Valid To (Optional)").classes("w-64")
+    #             # 🔹 OPTIONAL: valid_to
+    #             model_year = ui.number(label="Model Year").classes("w-64")
+
+    #             status_label = ui.label("").classes("text-sm mt-2")
+
+    #             async def handle_upload(e):
+    #                 try:
+    #                     if not valid_from.value:
+    #                         status_label.text = "❌ Valid From date is required"
+    #                         status_label.classes("text-red-600")
+    #                         return
+
+    #                     payload = {
+    #                         "valid_from": valid_from.value,
+    #                         "model_year": model_year.value,
+    #                         "sheet_name": "0",
+    #                     }
+    #                     if valid_to.value:
+    #                         payload["valid_to"] = valid_to.value
+
+    #                     await api_post_file("/price-list/upload", e, payload)
+
+    #                     status_label.text = "✅ Price list uploaded successfully"
+    #                     status_label.classes("text-green-600")
+
+    #                 except Exception as ex:
+    #                     status_label.text = f"❌ {str(ex)}"
+    #                     status_label.classes("text-red-600")
+
+    #             ui.upload(on_upload=handle_upload, auto_upload=True).classes("")
+    #             ui.label("Upload Excel file (.xlsx)").classes(
+    #                 "text-xs text-gray-400 mt-2"
+    #             )
+    with ui.column().classes("w-full items-center gap-6"):
+        # ─────────────────────────────────────────────
+        # 🏢 DEALERSHIP CARD
+        # ─────────────────────────────────────────────
+        with ui.card().classes("w-full max-w-[900px] p-6 rounded-2xl shadow border"):
+            ui.label("Create Dealership").classes("text-lg font-semibold")
+
+            d_name = (
+                ui.input("Dealership Name").props("outlined dense").classes("w-full")
+            )
+            d_code = (
+                ui.input("Dealership Code").props("outlined dense").classes("w-full")
+            )
+
+            async def create_dealership():
+                try:
+                    await api_post(
+                        "/dealership",
+                        {
+                            "name": d_name.value,
+                            "code": d_code.value,
+                        },
+                    )
+                    ui.notify("Dealership created", type="positive")
+                    d_name.value = ""
+                    d_code.value = ""
+                except Exception as e:
+                    ui.notify(str(e), type="negative")
+
+            ui.button("Create Dealership", on_click=create_dealership).classes(
+                "mt-3 bg-[#E8402A] text-white"
+            )
+
+        # ─────────────────────────────────────────────
+        # 🏬 OUTLET CARD
+        # ─────────────────────────────────────────────
+        with ui.card().classes("w-full max-w-[900px] p-6 rounded-2xl shadow border"):
+            ui.label("Create Showroom").classes("text-lg font-semibold")
+
+            o_name = ui.input("Outlet Name").props("outlined dense").classes("w-full")
+            o_code = ui.input("Outlet Code").props("outlined dense").classes("w-full")
+            o_address = ui.input("Address").props("outlined dense").classes("w-full")
+            print(dealer_names)
+            dealership_select = (
+                ui.select(options=dealer_names, label="Dealership", value=None)
+                .props("outlined dense")
+                .classes("w-full")
+            )
+
+            async def create_outlet():
+                try:
+                    await api_post(
+                        "/outlets",
+                        {
+                            "name": o_name.value,
+                            "code": o_code.value,
+                            "address": o_address.value,
+                            "dealership_id": get_id_by_name(
+                                dealers, dealership_select.value
+                            ),
+                        },
+                    )
+                    ui.notify("Outlet created", type="positive")
+
+                    o_name.value = ""
+                    o_code.value = ""
+                    o_address.value = ""
+                    dealership_select.value = None
+
+                except Exception as e:
+                    ui.notify(str(e), type="negative")
+
+            print("name", o_name.value)
+            print("code", o_code.value)
+            print("address", o_address.value)
+            print("Showroom", dealership_select.value)
+            ui.button("Create Outlet", on_click=create_outlet).classes(
+                "mt-3 bg-[#E8402A] text-white"
+            )
+
+        # ─────────────────────────────────────────────
+        # 👤 EMPLOYEE CARD
+        # ─────────────────────────────────────────────
+        with ui.card().classes("w-full max-w-[900px] p-6 rounded-2xl shadow border"):
+            ui.label("Create Showroom Employee").classes("text-lg font-semibold")
+
+            e_name = ui.input("Employee Name").props("outlined dense").classes("w-full")
+            e_designation = (
+                ui.input("Designation").props("outlined dense").classes("w-full")
+            )
+
+            outlet_select = (
+                ui.select(
+                    options=outlet_names,
+                    label="Outlet",
+                )
+                .props("outlined dense")
+                .classes("w-full")
+            )
+            print("Employee", outlet_select.value)
+
+            async def create_employee():
+                try:
+                    await api_post(
+                        "/sales-executive",
+                        {
+                            "name": e_name.value,
+                            "outlet_id": get_id_by_name(outlets, outlet_select.value),
+                            "designation": e_designation.value,
+                        },
+                    )
+                    ui.notify("Employee created", type="positive")
+
+                    e_name.value = ""
+                    e_designation.value = ""
+                    outlet_select.value = None
+
+                except Exception as e:
+                    ui.notify(str(e), type="negative")
+
+            ui.button("Create Employee", on_click=create_employee).classes(
+                "mt-3 bg-[#E8402A] text-white"
+            )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3115,6 +3584,7 @@ class FormState:
         # UI element refs — actions
         self.submit_btn: ui.button | None = None
         self.error_banner: ui.html | None = None
+        self.error_msg_label: ui.html | None = None
 
         self.listed_prices: dict[str, int] = {}
         self.price_listed_labels: dict[str, ui.label] = {}
@@ -3157,7 +3627,7 @@ class FormState:
         # Component toggles
         self.price_match_toggles: dict[str, ui.switch] = {}
         self.price_diff_labels: dict[str, ui.label] = {}
-        self.discount_match_toggles: dict[str, ui.switch] = {}
+        self.discount_match_toggles: dict[str, ui.switch] = {}  # Not required now
         self.lbl_excess_discount: ui.label | None = None
 
         # Live calc labels
@@ -3168,6 +3638,7 @@ class FormState:
         self.lbl_total_offered_price: ui.label | None = None  # b
         self.lbl_total_diff_price: ui.label | None = None  # = a-b
         self.lbl_total_listed_discount: ui.label | None = None
+        self.adjustment_input: ui.input | None = None
         self.stage_toggle = None
         self.delivery_mode = None
         self.booking_select = None
@@ -3410,7 +3881,19 @@ def populate_from_booking(state: FormState, data: dict):
 
     # ── Conditions ───────────────
     conditions = data.get("conditions", {})
-    for key, cb in state.condition_cbs.items():
+    disp_key = [
+        "Exchange",
+        "Corporate",
+        "Govt Employee",
+        "Scrap",
+        "Upgrade",
+        "Self Insurance",
+        "FasTag",
+        "Entended Warranty",
+        "Shield Of Trust",
+    ]
+    for key, cb in zip(disp_key, state.condition_cbs.values()):
+        print(f"From populate_booking: {key}")
         cb.set_value(conditions.get(key, False))
 
     # ── Trigger recalculation ────
@@ -3443,7 +3926,7 @@ def populate_from_delivery(state: FormState, delivery: dict):
 
     if not delivery:
         return
-    print(json.dumps(delivery, indent=4))
+
     populate_from_booking(state, delivery)
 
     if state.delivery_date:
@@ -3470,6 +3953,19 @@ def populate_from_delivery(state: FormState, delivery: dict):
         state.invoice_cess.set_value(delivery.get("cess", ""))
     if state.invoice_total:
         state.invoice_total.set_value(delivery.get("total_amount", ""))
+
+    # Delivery checks
+    delv = delivery.get("delivery_checks", {})
+    for key, cb in state.delivery_cbs.items():
+        cb.set_value(bool(delv.get(key, False)))
+
+    # Audit
+    audit = delivery.get("audit_info", {})
+    if state.audit_obs:
+        state.audit_obs.set_value(audit.get("observations", ""))
+    if state.audit_action:
+        state.audit_action.set_value(audit.get("follow_up_action", ""))
+
     # ── Trigger recalculation ────
     _fs_update_live(state)
     _fs_revalidate(state)
@@ -3477,8 +3973,6 @@ def populate_from_delivery(state: FormState, delivery: dict):
 
 def populate_from_complaint(state: FormState, complaint: dict):
     import asyncio
-
-    print(json.dumps(complaint, indent=4))
 
     if not complaint:
         return
@@ -3679,10 +4173,17 @@ def build_vehicle_section(state: FormState) -> None:
                     .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.model_year = (
-                    ui.input(label="Model Year *", placeholder="e.g. 2024")
+                    ui.input(
+                        label="Model Year *",
+                        value=2026,
+                        placeholder="e.g. 2024",
+                        on_change=lambda _: _fs_try_price_preload(state),
+                    )
                     .classes("w-full")
                     .props('outlined dense type="number"')
-                    .on_value_change(lambda _: _fs_revalidate(state))
+                    .on_value_change(
+                        lambda _: _fs_revalidate(state),
+                    )
                 )
                 state.outlet_select = (
                     ui.select(
@@ -3854,7 +4355,7 @@ def build_conditions_section(state: FormState) -> None:
             ui.label("☑️").classes("text-[20px] select-none")
             ui.label("Sale Conditions").classes("text-[15px] font-bold text-gray-900")
 
-        with ui.grid(columns=FORM_COLUMNS + 2).classes("w-full"):
+        with ui.grid(columns=FORM_COLUMNS + 1).classes("w-full"):
             for key, label in CONDITION_KEYS:
                 state.condition_cbs[key] = (
                     ui.checkbox(label)
@@ -3901,11 +4402,10 @@ def build_booking_section(state: FormState):
                 .props('type="date" outlined dense')
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
-            state.booking_amt = (
-                ui.input(label="Booking Amount*", placeholder="Enter Amount")
-                .classes("w-full")
-                .props("outlined dense")
+            state.booking_amt = accounting_input(
+                label_text="Booking Amount", placeholder="Enter Amount"
             )
+
             state.booking_receipt_num = (
                 ui.input(
                     label="Booking Receipt Number*", placeholder="Enter Receipt Number"
@@ -4119,7 +4619,19 @@ def _build_direct_delivery_prices_section(state: FormState) -> None:
 
                         toggle.on("update:model-value", on_toggle_disc)
                         inp.on_value_change(lambda _: _fs_update_live(state))
-
+                with ui.column().classes("w-full"):
+                    with ui.row().classes("w-full mb-0"):
+                        ui.label("Price Adjustment").classes(
+                            "w-146 text-lg font-bold tracking-[0.9px] uppercase vertical-align-center"
+                        )
+                        state.adjustment_input = accounting_input(
+                            "Price Adjustment",
+                            placeholder="Enter Adjustment",
+                            container_classes="w-[250px]",
+                        )
+                        state.adjustment_input.on_value_change(
+                            lambda _: _fs_update_live(state)
+                        )
         # ── SUMMARY LABELS ──
         with ui.grid(columns=1).classes("w-full align-center mt-4 pt-4 border-t"):
             with ui.row().classes("w-full items-center h-10"):
@@ -4245,6 +4757,10 @@ def _build_booking_prices_section(state: FormState) -> None:
                 placeholder="₹0",
                 container_classes="w-60",
             )
+            state.total_discount_booking.on_value_change(
+                lambda _: _fs_update_live(state)
+            )
+
         if discount_comps:
             with ui.grid(columns=1).classes("w-full align-center"):
                 for comp in discount_comps:
@@ -4263,17 +4779,17 @@ def _build_booking_prices_section(state: FormState) -> None:
                 with ui.row().classes(
                     "w-full items-center h-12 mt-2 pt-2 border-t border-gray-100"
                 ):
-                    ui.label("Adjustments").classes(
+                    ui.label("Price Adjustment").classes(
                         "w-60 text-lg font-bold tracking-[0.9px] uppercase"
                     )
-                    with ui.button_group().classes("ml-auto"):
-                        ui.button().props("dense color=primary icon=add")
-                        ui.button().props("dense color=primary icon=remove")
 
                     state.adjustment_input = accounting_input(
                         label_text="",
                         placeholder="₹0",
                         container_classes="w-60",
+                    )
+                    state.adjustment_input.on_value_change(
+                        lambda _: _fs_update_live(state)
                     )
                     ui.label("Excess Discount").classes(
                         "w-60 text-lg font-bold tracking-[0.9px] uppercase"
@@ -4315,7 +4831,6 @@ def build_accessories_section(state: FormState) -> None:
         }
 
         # ── Visual List Display ────────────────────
-        selection_display = ui.column().classes("w-full mt-2 gap-1 col-span-3")
 
         def update_total(e):
             selected = e.value or []
@@ -4329,29 +4844,6 @@ def build_accessories_section(state: FormState) -> None:
             # auto-fill charged if empty
             if not state.acc_charged.value:
                 state.acc_charged.set_value(total)
-
-            # Update visual list
-            selection_display.clear()
-            with selection_display:
-                if selected:
-                    ui.label("Selected Accessories:").classes(
-                        "text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1"
-                    )
-                    for i in selected:
-                        acc = state.accessory_map.get(int(i))
-                        if acc:
-                            with ui.row().classes(
-                                "items-center gap-2 bg-gray-50/50 px-3 py-1.5 rounded-lg border border-gray-100 w-full"
-                            ):
-                                ui.label(f"ID: {acc['id']}").classes(
-                                    "text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded"
-                                )
-                                ui.label(acc["name"]).classes(
-                                    "text-[12px] text-gray-700 font-medium"
-                                )
-                                ui.label(f"₹{acc['listed_price']:,}").classes(
-                                    "text-[11px] text-gray-400 mono ml-auto"
-                                )
 
         # ── Multi-select ───────────────────────────
         with ui.grid(columns=3).classes("w-full items-center gap-4"):
@@ -4370,12 +4862,16 @@ def build_accessories_section(state: FormState) -> None:
             # ── Total Display ──────────────────────────
             state.acc_total_label = (
                 ui.label("Total: ₹0")
-                .classes("text-sm text-bold vertical-align-center")
+                .classes(
+                    "text-lg text-bold vertical-align-center horizotal-align-center"
+                )
                 .props("dense")
             )
 
             # ── Charged Input ─────────────────────────
-            state.acc_charged = accounting_input(label_text="Actual Charged (₹)")
+            state.acc_charged = accounting_input(
+                label_text="Actual Charged (₹)"
+            ).on_value_change(lambda _: _fs_update_live(state))
 
 
 def build_delivery_section(state: FormState) -> None:
@@ -4899,20 +5395,19 @@ async def _fs_try_price_preload(state: FormState) -> None:
     """Call GET /price-list/preview when both variant + date are known."""
     # Extract booking date from available sources
     booking_date = None
-    if state.booking_date and state.booking_date.value:
+    if state.booking_date and state.booking_date.value and state.model_year.value:
         booking_date = state.booking_date.value
-    elif state.delivery_date and state.delivery_date.value:
+    elif state.delivery_date and state.delivery_date.value and state.model_year.value:
         booking_date = state.delivery_date.value
-
-    if not state.variant_id or not booking_date:
+    if not state.variant_id or not booking_date or not state.model_year:
         return
 
     try:
         booking_date = state.booking_date.value
+        model_year = state.model_year.value
         preview = await api_get(
-            f"/price-list/preview?variant_id={state.variant_id}&booking_date={booking_date}"
+            f"/price-list/preview?variant_id={state.variant_id}&booking_date={booking_date}&model_year={model_year}"
         )
-
         # ── Store listed prices (source of truth) ──
         state.listed_prices = preview or {}
         filled = 0
@@ -4969,9 +5464,6 @@ async def _fs_try_price_preload(state: FormState) -> None:
 
 
 def _fs_update_live(state: FormState) -> None:
-    if not state.lbl_discount:
-        return
-
     # 1. Sync Ex-showroom from Prices Section (if match exists)
     # Match main.py line 1574
     found_ex = None
@@ -5016,16 +5508,6 @@ def _fs_update_live(state: FormState) -> None:
     if state.lbl_discount:
         state.lbl_discount.set_text(f"₹{discount_given:,.0f}")
 
-    # Excess Discount = Actual Discount - Allowed Discount
-    excess = discount_given - allowed_discount
-    if state.lbl_excess:
-        state.lbl_excess.set_text(f"₹{excess:,.0f}")
-        # Color coding: Green if actual <= allowed (good), Red if actual > allowed (bad)
-        if excess <= 0:
-            state.lbl_excess.style("color:#6EE7B7")  # Soft green
-        else:
-            state.lbl_excess.style("color:#F87171")  # Soft red
-
     # 5. Update Total Price Labels (Sum of Prices section)
     total_listed = 0
     total_offered = 0
@@ -5052,8 +5534,8 @@ def _fs_update_live(state: FormState) -> None:
         # Sum offered price (from input)
         offered_price = 0
         try:
-            offered_price = int(float(str(parsed_val(inp)).replace(",", "") or 0))
-        except:
+            offered_price = parsed_val(inp)
+        except Exception:
             pass
         total_offered += offered_price
 
@@ -5092,6 +5574,20 @@ def _fs_update_live(state: FormState) -> None:
             state.lbl_total_diff_price.set_text("₹0")
             state.lbl_total_diff_price.style("color: #9CA3AF")
 
+    acc_listed, acc_charged = 0, 0
+    if (
+        hasattr(state, "acc_total_label")
+        and hasattr(state, "acc_charged")
+        and state.acc_charged
+        and state.acc_total_label
+    ):
+        try:
+            acc_listed = float(state.acc_total_label.text[8:].replace(",", ""))
+
+            acc_charged = parsed_val(state.acc_charged)
+        except Exception:
+            pass
+    acc_diff = acc_listed - acc_charged
     # ── Excess Discount Calculation ─────────────────
     # Formula: max(0, total_diff - allowed_discount)
     if hasattr(state, "lbl_excess_discount") and state.lbl_excess_discount:
@@ -5103,62 +5599,79 @@ def _fs_update_live(state: FormState) -> None:
                     val = state.listed_prices.get(name)
                     if val is not None:
                         current_allowed += int(val)
+        total_discount_given = (
+            total_diff
+            + acc_diff
+            + parsed_val(state.total_discount_booking)
+            - parsed_val(state.adjustment_input)
+        )
+        excess_val = total_discount_given - current_allowed
 
-        excess_val = total_diff - current_allowed
         if excess_val < 0:
             excess_val = 0
 
         state.lbl_excess_discount.set_text(f"₹{excess_val:,.2f}")
+        state.lbl_allowed.set_text(f"₹{current_allowed:,.2f}")
+        state.lbl_discount.set_text(f"₹{total_discount_given:,.2f}")
+
         if excess_val > 0:
             state.lbl_excess_discount.style("color: #D41717")  # Red
         else:
             state.lbl_excess_discount.style("color: #9CA3AF")  # Gray
 
-
-def _fs_validate_mobile(state: FormState) -> None:
-    if state.cust_mobile is None:
-        return
-    mob = (state.cust_mobile.value or "").strip()
-    if mob and not re.fullmatch(r"[6-9]\d{9}", mob):
-        state.cust_mobile.props(
-            "error error-message='Must be 10 digits starting 6 to 9'"
-        )
-    else:
-        state.cust_mobile.props(remove="error")
-    _fs_revalidate(state)
+        if state.lbl_excess:
+            state.lbl_excess.set_text(f"₹{excess_val:,.0f}")
+        # Color coding: Green if actual <= allowed (good), Red if actual > allowed (bad)
+        if excess_val <= 0:
+            state.lbl_excess.style("color:#6EE7B7")  # Soft green
+        else:
+            state.lbl_excess.style("color:#F87171")  # Soft red
 
 
-def _fs_validate_pincode(state: FormState) -> None:
-    if state.cust_pincode is None:
-        return
-    val = (state.cust_pincode.value or "").strip()
-    if not re.fullmatch(r"\d{6}", val):
-        state.cust_pincode.props("error error-message='Must be 6 digits'")
-    else:
-        state.cust_pincode.props(remove="error")
-    _fs_revalidate(state)
+# def _fs_validate_mobile(state: FormState) -> None:
+#     if state.cust_mobile is None:
+#         return
+#     mob = (state.cust_mobile.value or "").strip()
+#     if mob and not re.fullmatch(r"[6-9]\d{9}", mob):
+#         state.cust_mobile.props(
+#             "error error-message='Must be 10 digits starting 6 to 9'"
+#         )
+#     else:
+#         state.cust_mobile.props(remove="error")
+#     _fs_revalidate(state)
 
 
-def _fs_validate_pan(state: FormState) -> None:
-    if state.cust_pan is None:
-        return
-    val = (state.cust_pan.value or "").strip().upper()
-    if not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", val):
-        state.cust_pan.props("error error-message='Invalid PAN format'")
-    else:
-        state.cust_pan.props(remove="error")
-    _fs_revalidate(state)
+# def _fs_validate_pincode(state: FormState) -> None:
+#     if state.cust_pincode is None:
+#         return
+#     val = (state.cust_pincode.value or "").strip()
+#     if not re.fullmatch(r"\d{6}", val):
+#         state.cust_pincode.props("error error-message='Must be 6 digits'")
+#     else:
+#         state.cust_pincode.props(remove="error")
+#     _fs_revalidate(state)
 
 
-def _fs_validate_aadhar(state: FormState) -> None:
-    if state.cust_aadhar is None:
-        return
-    val = (state.cust_aadhar.value or "").strip()
-    if not re.fullmatch(r"\d{12}", val):
-        state.cust_aadhar.props("error error-message='Must be 12 digits'")
-    else:
-        state.cust_aadhar.props(remove="error")
-    _fs_revalidate(state)
+# def _fs_validate_pan(state: FormState) -> None:
+#     if state.cust_pan is None:
+#         return
+#     val = (state.cust_pan.value or "").strip().upper()
+#     if not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", val):
+#         state.cust_pan.props("error error-message='Invalid PAN format'")
+#     else:
+#         state.cust_pan.props(remove="error")
+#     _fs_revalidate(state)
+
+
+# def _fs_validate_aadhar(state: FormState) -> None:
+#     if state.cust_aadhar is None:
+#         return
+#     val = (state.cust_aadhar.value or "").strip()
+#     if not re.fullmatch(r"\d{12}", val):
+#         state.cust_aadhar.props("error error-message='Must be 12 digits'")
+#     else:
+#         state.cust_aadhar.props(remove="error")
+#     _fs_revalidate(state)
 
 
 def _fs_update_visibility(state: FormState) -> None:
@@ -5171,19 +5684,23 @@ def _fs_update_visibility(state: FormState) -> None:
         return re.sub(r"[^a-zA-Z0-9]", "", s).lower()
 
     discount_visibility_rules = {
-        norm("Extra Kitty On TR cases"): is_checked("tr_case"),
+        # norm("Extra Kitty On TR cases"): is_checked("tr_case"),
         norm("Additional For POI /Corporate Customers"): is_checked("corporate")
         or is_checked("govt_employee"),
         norm("Additional For Exchange Customers"): is_checked("exchange"),
         norm("Additional For Scrappage Customers"): is_checked("scrap"),
         norm("Additional For Upward Sales Customers"): is_checked("upgrade"),
+        norm("Additional Loyalty (EV TO EV)"): is_checked("loyalty_ev_ev"),
+        norm("Additional Loyalty (ICE TO EV)"): is_checked("loyalty_ice_ev"),
+        norm("Green Bonus"): is_checked("green_bonus"),
     }
 
     price_visibility_rules = {
         norm("Accessories"): is_checked("acc_kit"),
         norm("FasTag"): is_checked("fastag"),
         norm("Extended Warranty"): is_checked("ext_warr"),
-        norm("Shield Of Trust"): is_checked("shield"),
+        norm("AMC"): is_checked("amc"),
+        norm("TCS"): is_checked("tcs"),
         norm("Insurance (With Depreciation Cover)"): not is_checked("self_insurance"),
         norm("Insurance"): not is_checked("self_insurance"),
     }
@@ -5248,8 +5765,6 @@ async def _fs_handle_submit(state: FormState) -> None:
 
     payload = build_payload(state)
 
-    print(payload)
-
     try:
         if state.stage == "delivery":
             if state.txn_id:
@@ -5272,6 +5787,10 @@ async def _fs_handle_submit(state: FormState) -> None:
 def build_payload(state: FormState) -> dict:
     def val(x):
         return x.value if x else None
+
+    def lbl_val(x, chr_slice=1):
+        val = x.text[chr_slice:].strip().replace(",", "")
+        return float(val)
 
     def intval(x):
         if not x:
@@ -5380,7 +5899,7 @@ def build_payload(state: FormState) -> dict:
         # ── REQUIRED ──
         "variant_id": state.variant_id,
         "booking_date": val(state.booking_date),
-        "booking_amt": val(state.booking_amt),
+        "booking_amt": intval(state.booking_amt),
         "booking_receipt_num": val(state.booking_receipt_num),
         "outlet_id": state.outlet_id,
         "sales_executive_id": state.executive_id,
@@ -5403,6 +5922,7 @@ def build_payload(state: FormState) -> dict:
         "model_year": val(state.model_year),
         "registration_number": val(state.vehicle_regn_no),
         "registration_date": val(state.regn_date),
+        "price_adjustment": val(state.adjustment_input),
         # ── CORE LOGIC ──
         "actual_amounts": actual_amounts,
         "conditions": conditions,
@@ -5421,21 +5941,23 @@ def build_payload(state: FormState) -> dict:
             "actions": val(state.audit_action),
         },
     }
-    print(
-        "From Build Payload:",
-        all([k for k, v in state.booking_cbs.items() if v.value]),
-    )
+
     if state.stage == "booking":
         payload["stage"] = "booking"
         payload["booking_checklist"] = {
             k: v.value for k, v in state.booking_cbs.items()
         }
-        payload["booking_file_incomplete"] = all(
+        payload["booking_file_incomplete"] = not all(
             [v.value for v in state.booking_cbs.values()]
         )
-        payload["total_discount_booking"] = val(
+        payload["discount_booking"] = intval(
             state.total_discount_booking
         )  # discount as per booking file
+        payload["total_discount_booking"] = lbl_val(
+            state.lbl_discount
+        )  # after adding differences and subtracting price adjustment
+        payload["price_offered_booking"] = lbl_val(state.lbl_total_offered_price)
+        payload["excess_booking"] = lbl_val(state.lbl_excess)
 
     elif state.stage == "delivery":
         payload["stage"] = "delivery"
@@ -5443,7 +5965,7 @@ def build_payload(state: FormState) -> dict:
         payload["delivery_date"] = val(state.delivery_date)
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
-        payload["delivery_file_incomplete"] = all(
+        payload["delivery_file_incomplete"] = not all(
             v.value for v in state.delivery_cbs.values()
         )
 
@@ -5548,8 +6070,8 @@ async def _fs_prefill(state: FormState, txn: dict) -> None:
 # ══════════════════════════════════════════════════════════════
 #   PAGE 2: FORM
 # ══════════════════════════════════════════════════════════════
-@protected_page
 @ui.page("/form")
+@protected_page
 async def form_page(
     stage: str = "booking", mode: str = "booking", transaction_id: int | None = None
 ) -> None:
@@ -5565,6 +6087,8 @@ async def form_page(
     if transaction_id and stage == "delivery":
         state.booking_id = transaction_id
         state.edit_mode = True
+    if transaction_id and stage == "booking":
+        state.form_mode = "booking_edit"
 
         try:
             txn_data = await api_get(f"/transactions/{transaction_id}")
@@ -5631,6 +6155,19 @@ async def form_page(
             build_accessories_section(state)
             build_booking_checklist_section(state)
 
+        elif state.form_mode == "booking_edit":
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
+                ui.checkbox("Is File Incomplete?").classes("text-bold ml-auto")
+
+            build_vehicle_section(state)
+            build_booking_section(state)
+            build_customer_section(state)
+            build_conditions_section(state)
+            build_prices_section(state)
+            build_accessories_section(state)
+            build_booking_checklist_section(state)
+
         elif state.form_mode == "delivery_direct_create":
             ui.label("Direct Delivery MIS Form").classes("text-2xl text-bold mb-5")
 
@@ -5682,7 +6219,10 @@ async def form_page(
         _fs_revalidate(state)
 
     # ── Prefill after UI is built (edit mode) ───────────
-    if state.form_mode == "delivery_from_booking":
+    if state.form_mode == "booking_edit":
+        populate_from_booking(state, state.booking_data)
+
+    elif state.form_mode == "delivery_from_booking":
         populate_from_booking(state, state.booking_data)
 
     elif state.form_mode == "delivery_edit" and txn_data:

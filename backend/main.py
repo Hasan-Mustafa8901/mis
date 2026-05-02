@@ -14,11 +14,14 @@ from db.models import (
     Employee,
     DiscountComponent,
     Accessory,
+    Dealership,
 )
 from services.ingestion.price_seed_service import PriceListIngestionService
 from services.discount.discount_service import DiscountService
 from services.transaction.transaction_service import TransactionService
 from services.price_list.price_list_service import PriceListService
+
+from schemas.mis import DealershipCreate, EmployeeCreate, OutletCreate
 
 from routes.edit_routes import router as edit_requests_router
 from routes.auth_routes import router as auth_router
@@ -78,10 +81,45 @@ def get_components(session: Session = Depends(get_session)):
     return PriceListService.get_all_components(session)
 
 
+@app.post("/dealership")
+def create_dealership(
+    payload: DealershipCreate, session: Session = Depends(get_session)
+):
+    obj = Dealership(**payload.dict())
+
+    try:
+        session.add(obj)
+        session.commit()
+        session.refresh(obj)
+        return {"id": obj.id, "name": obj.name}
+    except Exception:
+        session.rollback()
+        raise HTTPException(400, "Dealership with same name/code already exists")
+
+
 @app.get("/outlets")
 def api_list_outlets(session: Session = Depends(get_session)):
     outlets = session.exec(select(Outlet)).all()
     return [{"id": o.id, "name": o.name} for o in outlets]
+
+
+@app.post("/outlets")
+def create_outlet(payload: OutletCreate, session: Session = Depends(get_session)):
+
+    # Validate dealership exists
+    if not session.get(Dealership, payload.dealership_id):
+        raise HTTPException(400, "Invalid dealership_id")
+
+    obj = Outlet(**payload.dict())
+
+    try:
+        session.add(obj)
+        session.commit()
+        session.refresh(obj)
+        return {"id": obj.id, "name": obj.name}
+    except Exception:
+        session.rollback()
+        raise HTTPException(400, "Outlet already exists")
 
 
 @app.get("/sales-executives")
@@ -90,11 +128,32 @@ def api_list_sales_executives(session: Session = Depends(get_session)):
     return [{"id": e.id, "name": e.name} for e in executives]
 
 
+@app.post("/sales-executive")
+def create_employee(payload: EmployeeCreate, session: Session = Depends(get_session)):
+
+    # Validate outlet exists
+    if not session.get(Outlet, payload.outlet_id):
+        raise HTTPException(400, "Invalid outlet_id")
+
+    obj = Employee(**payload.dict())
+
+    session.add(obj)
+    session.commit()
+    session.refresh(obj)
+
+    return {"id": obj.id, "name": obj.name}
+
+
 @app.get("/price-list/preview")
 def api_price_list_preview(
-    variant_id: int, booking_date: date, session: Session = Depends(get_session)
+    variant_id: int,
+    booking_date: date,
+    model_year: int,
+    session: Session = Depends(get_session),
 ):
-    active_price_list = PriceListService.get_active_price_list(session, booking_date)
+    active_price_list = PriceListService.get_active_price_list(
+        session, booking_date, model_year
+    )
     print("\nActive Price List:", active_price_list)
     if not active_price_list:
         raise HTTPException(status_code=404, detail="Active Price List not found")
@@ -127,6 +186,7 @@ def api_price_list_preview(
 async def upload_price_list(
     file: UploadFile = File(...),
     sheet_name: str = Form("0"),
+    model_year: int = Form(...),
     valid_from: date = Form(...),
     valid_to: date = Form(None),
     session: Session = Depends(get_session),
@@ -141,6 +201,7 @@ async def upload_price_list(
         result = PriceListIngestionService.seed_from_excel(
             session,
             file_path,
+            model_year,
             sheet_name=parsed_sheet,
             valid_from=valid_from,
             valid_to=valid_to,
@@ -179,11 +240,11 @@ def api_create_transaction(
 ):
 
     stage = payload.get("stage", "booking")
-    print("From API - Create Transaction")
-    print("Payload: \n", payload)
-    print("Stage: ", stage)
-    print("\n\n")
-    print("-" * 20, "END OF PAYLOAD", "-" * 20)
+    # print("From API - Create Transaction")
+    # print("Payload: \n", payload)
+    # print("Stage: ", stage)
+    # print("\n\n")
+    # print("-" * 20, "END OF PAYLOAD", "-" * 20)
 
     if stage == "booking":
         return TransactionService.create_booking_transaction(session, payload)

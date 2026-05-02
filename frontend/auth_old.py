@@ -31,10 +31,14 @@ def require_roles(*allowed_roles: str):
     return decorator
 
 
+def is_authenticated():
+    return "token" in app.storage.user
+
+
 def protected_page(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        if "token" not in app.storage.user:
+        if not is_authenticated():
             ui.navigate.to("/login")
             return
         return await func(*args, **kwargs)
@@ -46,9 +50,20 @@ def set_token(token: str):
     app.storage.user["token"] = token
 
 
+def set_user(data: dict):
+    app.storage.user.update(
+        {
+            "token": data["access_token"],
+            "name": data["name"],
+            "role": [data["role"]],
+            "outlet_id": data["outlet_id"],
+        }
+    )
+
+
 def get_token():
     return app.storage.user.get("token")
 
 
-def clear_token():
-    app.storage.user.pop("token", None)
+def clear_user():
+    app.storage.user.clear()

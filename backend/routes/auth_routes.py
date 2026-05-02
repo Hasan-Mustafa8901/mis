@@ -11,6 +11,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/register")
 def register(payload: UserCreate, session: Session = Depends(get_session)):
+    print(payload)
     user = AuthService.register(
         session,
         payload.name,

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class PriceListService:
     @staticmethod
     def get_active_price_list(
-        session: Session, booking_date: date
+        session: Session, booking_date: date, model_year: int
     ) -> Optional[PriceList]:
         """
         Finds the price list valid for the given date.
@@ -20,7 +20,9 @@ class PriceListService:
         """
         statement = (
             select(PriceList)
-            .where(PriceList.valid_from <= booking_date)
+            .where(
+                PriceList.valid_from <= booking_date, PriceList.model_year == model_year
+            )
             .order_by(desc(PriceList.valid_from))
         )
 

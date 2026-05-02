@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, JSON, UniqueConstraint
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from services.utils import get_ist_now, get_ist_today
@@ -9,14 +9,14 @@ from enum import Enum
 class UserRole(str, Enum):
     ADMIN = "admin"
     CLIENT = "client"
-    AUDITOR = "auditor"
+    AUDIT_ASST = "audit_assistant"
 
 
 class FuelType(str, Enum):
     CNG = "cng"
     PET = "petrol"
     DIESEL = "diesel"
-    EV = "electric"
+    EV = "ev"
 
 
 class ComplaintStatus(str, Enum):
@@ -87,10 +87,11 @@ class Employee(SQLModel, table=True):
 ## User Table
 class User(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)
+    name: str = Field(index=True)
+    username: str = Field(unique=True)
     password_hash: str
     outlet_id: Optional[int] = Field(foreign_key="outlet.id")
-    role: UserRole = Field(default=UserRole.AUDITOR, index=True)
+    role: UserRole = Field(default=UserRole.AUDIT_ASST, index=True)
 
     transactions: list["Transaction"] = Relationship(back_populates="user")
     outlet: Optional["Outlet"] = Relationship(back_populates="users")
@@ -136,7 +137,6 @@ class Variant(SQLModel, table=True):
     full_variant_name: str  # Concatenated name for MIS display
     fuel_type: FuelType
     transmission: Optional[str] = None
-    model_year: Optional[int] = None
 
     created_at: datetime = Field(default_factory=get_ist_now)
 
@@ -169,6 +169,7 @@ class PriceList(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     valid_from: date
     valid_to: Optional[date] = None
+    model_year: int
     name: Optional[str] = None
     created_at: datetime = Field(default_factory=get_ist_now)
 
@@ -268,6 +269,8 @@ class Transaction(SQLModel, table=True):
         default_factory=dict, sa_column=Column(JSON)
     )
     audit_info: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+
+    # this is important for discount calculation at delivery that is the final discount
     invoice_details: Dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON)
     )
@@ -275,18 +278,19 @@ class Transaction(SQLModel, table=True):
         default_factory=dict, sa_column=Column(JSON)
     )
 
-    # Values at the time of booking
-    booking_price_offered: float = 0.0  # Total price that the customer is being offered with all the components that they are buying.
-    booking_discount_offered: float = 0.0  # Total Discount at the time of booking, Total Discount - Listed Discount = Excess Discount
-
-    status: str = "No Excess Discount"  # "UnderLimit", "Excess"
-
     total_receivable: float = 0.0
     total_received: float = 0.0
+    balance: float = 0.0
+
+    # Values at the time of booking
+    price_offered_booking: float = 0.0  # Total price that the customer is being offered with all the components that they are buying.
+    discount_booking: float = 0.0  # Quoted on file
+    total_discount_booking: float = 0.0  # Total Discount at the time of booking
+    excess_booking: float = 0.0  # excess discount at booking
+    status: str = "No Excess Discount"  # "No Excess Discount", "Excess"
     total_actual_discount: float = 0.0
     total_allowed_discount: float = 0.0
     total_excess_discount: float = 0.0
-    balance: float = 0.0
     payment_status: Optional[str] = None
 
     created_by: Optional[int] = Field(default=None, foreign_key="user.id")
@@ -369,6 +373,9 @@ class EditRequest(SQLModel, table=True):
 
 
 class DailyBooking(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("date", "outlet_id", name="uq_booking_date_outlet"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     date: date
     outlet_id: int = Field(foreign_key="outlet.id")
@@ -376,9 +383,13 @@ class DailyBooking(SQLModel, table=True):
     file_received: int
     files_pending: int
     files_verified: int
+    is_locked: bool = False
 
 
 class DailyDelivery(SQLModel, table=True):
+    __table_args__ = (
+        UniqueConstraint("date", "outlet_id", name="uq_delivery_date_outlet"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     date: date
     outlet_id: int = Field(foreign_key="outlet.id")
@@ -386,6 +397,7 @@ class DailyDelivery(SQLModel, table=True):
     file_received: int
     files_pending: int
     files_verified: int
+    is_locked: bool = False
 
 
 class Remark(SQLModel, table=True):
