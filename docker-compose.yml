@@ -3,12 +3,8 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: mydatabase
-    # ports:
-    #   - "5432:5432"
+    env_file:
+      - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -16,10 +12,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:8000:8000"
-    environment:
-      - DATABASE_URL=postgresql+psycopg2://myuser:mypassword@postgres:5432/mydatabase
+    env_file:
+      - .env
     depends_on:
       - postgres
     restart: unless-stopped
@@ -28,10 +22,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:3000:3000"
-    environment:
-      - API_URL=http://backend:8000
+    env_file:
+      - .env
     depends_on:
       - backend
     restart: unless-stopped
