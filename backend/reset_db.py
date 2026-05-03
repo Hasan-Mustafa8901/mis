@@ -64,8 +64,8 @@ def seed_masters():
                         "address": "Lucknow, Uttar Pradesh",
                     },
                     {
-                        "name": "SRM Motors – SRM RLB",
-                        "code": "SRM RLB",
+                        "name": "SRM Motors – SRM RBL",
+                        "code": "SRM RBL",
                         "address": "Raebareli, Uttar Pradesh",
                     },
                 ],
@@ -76,14 +76,12 @@ def seed_masters():
                 "showrooms": [
                     {
                         "name": "Beeaar TATA – BR GC",
-                        "code": "BA-GN",
+                        "code": "BR-GN",
                         "address": "Lucknow, Uttar Pradesh",
                     },
                 ],
             },
         ]
-
-        last_outlet = None
         for d_data in dealership_data:
             dealership = Dealership(name=d_data["name"], code=d_data["code"])
             session.add(dealership)
@@ -100,25 +98,6 @@ def seed_masters():
                 session.add(outlet)
                 session.commit()
                 session.refresh(outlet)
-                last_outlet = outlet
-
-        # ── 2. Sample Employees (assigned to the last seeded outlet) ──
-        if last_outlet and last_outlet.id:
-            session.add(
-                Employee(
-                    name="John Doe",
-                    outlet_id=last_outlet.id,
-                    designation="Sales Executive",
-                )
-            )
-            session.add(
-                Employee(
-                    name="Jane Smith",
-                    outlet_id=last_outlet.id,
-                    designation="Team Leader",
-                )
-            )
-
         # -------------------------
         # 5. BANKS
         # -------------------------
