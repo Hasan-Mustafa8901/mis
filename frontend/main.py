@@ -16,16 +16,19 @@ from collections import defaultdict
 import calendar
 from nicegui import ui, app
 from utils_old import get_ist_today, disp_date, date_for_input
+from dotenv import load_dotenv
 
+import os
 from auth_old import get_token, clear_user, protected_page, set_user
 
 
 # ══════════════════════════════════════════════════════════════
 # CONFIG & SHARED CONSTANTS
 # ══════════════════════════════════════════════════════════════
-import os
+load_dotenv()
 
-BASE_URL = os.environ.get("API_URL", "http://localhost:8000")
+SECRET_KEY = os.getenv("SECRET_KEY")
+BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
 CONDITION_KEYS = [
     ("exchange", "Exchange"),
@@ -6597,7 +6600,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         title="AutoAudit",
         favicon="🚗",
         host="0.0.0.0",
-        storage_secret="super-secret-key",
-        reload=True,
+        storage_secret=SECRET_KEY,
+        reload=False,
         port=3000,
     )
