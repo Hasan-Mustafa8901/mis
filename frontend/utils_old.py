@@ -34,6 +34,25 @@ def get_ist_today() -> date:
     return get_ist_now().date()
 
 
+def disp_date(_date: date | str, fmt: str = r"%Y-%m-%d") -> str:
+    if not isinstance(_date, date):
+        _date = datetime.strptime(_date, fmt)
+    return _date.strftime(r"%d/%m/%Y")
+
+
+def date_for_input(date_str: str) -> date:
+    if isinstance(date_str, str):
+        return datetime.strptime(date_str, r"%d/%m/%Y")
+
+
+def is_valid_date(date_str):
+    try:
+        datetime.strptime(date_str, "%d/%m/%Y")
+        return True
+    except ValueError:
+        return False
+
+
 ALIASES = {
     "insurance_with_depreciation_cover": "insurance",
     "genuine_acc_kit": "accessories",

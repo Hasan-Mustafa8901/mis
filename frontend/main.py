@@ -15,7 +15,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
-from utils_old import get_ist_today
+from utils_old import get_ist_today, disp_date, date_for_input, is_valid_date
 
 from auth_old import get_token, clear_user, protected_page, set_user
 
@@ -65,6 +65,12 @@ BOOKING_CHECK_KEYS = [
     ("corp_id", "Corp ID"),
     ("customer_sign", "Customer Sign"),
 ]
+
+date_regex = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$")
+vin_regex = re.compile(r"^[A-HJ-NPR-Z0-9]{13}[0-9]{4}$")
+regn_regex = re.compile(r"^[A-Z]{2}\d{2}[A-Z]{2}\d{4}$")
+bharat_regex = re.compile(r"^\d{2}BH\d{4}[A-Z]{2}$")
+
 
 # ══════════════════════════════════════════════════════════════
 # SHARED CSS  (injected on both pages)
@@ -208,6 +214,7 @@ async def fetch_reference_data() -> dict:
         "executives": api_get("/sales-executives"),
         "accessories": api_get("/accessories"),
         "dealerships": api_get("/complaints/dealerships"),
+        "components": api_get("/components"),
     }
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
@@ -362,7 +369,7 @@ def render_topbar(page_label: str) -> None:
         with ui.row().classes(
             "items-center gap-3 hover:bg-white/5 px-3 py-1.5 rounded-lg transition"
         ):
-            name = user.get("name") or "U"
+            name = user.get("name") or "User"
             role = user.get("role") or []
             role_d = ", ".join(role) if role else "-"
             # Avatar (initial)
@@ -374,11 +381,11 @@ def render_topbar(page_label: str) -> None:
 
             # User details
             with ui.column().classes("gap-0"):
-                ui.label(user.get("name", "Unknown User")).classes(
+                ui.label(name).classes(
                     "text-[12.5px] text-white font-semibold leading-tight"
                 )
-                ui.label(f"{role_d} • {user.get('showroom', '-')}").classes(
-                    "text-[10px] text-white/40 tracking-wide leading-none"
+                ui.label(f"{role_d.title()} • {user.get('showroom', '-')}").classes(
+                    "text-[10px] text-white tracking-wide leading-none"
                 )
 
 
@@ -437,58 +444,6 @@ def login_page():
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
 
-def sidebar():
-    ui.label("Quick Nav").classes(
-        "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
-    )
-
-    ui.link("📊 Dashboard", "/").classes(
-        "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] no-underline"
-    )
-    ui.link("📅 Daily Reporting", "/daily-reporting").classes(
-        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-    )
-    ui.link("📋 Booking MIS", "/booking-mis").classes(
-        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-    )
-    ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
-        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-    )
-    ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
-        "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-    )
-
-    ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
-    ui.label("Quick Actions").classes(
-        "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
-    )
-    with ui.button(on_click=open_new_entry_dialog).classes(
-        "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-    ):
-        ui.icon("add").classes("text-primary text-lg text-weight-bold")
-        ui.label("New Entry").classes("text-weight-bold pl-2")
-    with ui.link(target="/complaint-form").classes(
-        "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-    ):
-        ui.icon("insert_drive_file").classes("text-primary text-lg text-weight-bold")
-        ui.label("Complaint Form").classes("text-weight-bold pl-2")
-    with ui.link(target="settings").classes(
-        "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
-    ):
-        ui.icon("settings").classes("text-primary text-lg text-weight-bold")
-        ui.label("Settings").classes("text-weight-bold pl-2")
-    with ui.column().classes("h-full justify-between w-full p-4 bg-white shadow"):
-        with ui.column().classes("mt-auto items-center"):
-
-            def handle_logout():
-                clear_user()
-                ui.navigate.to("/login")
-
-            ui.button("Logout", on_click=handle_logout).props(
-                "color=red outline"
-            ).classes("w-full")
-
-
 # ══════════════════════════════════════════════════════════════
 # MIS TABLE RENDERING & HELPER METHODS
 # ══════════════════════════════════════════════════════════════
@@ -522,9 +477,6 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
     ordered += [k for k in keys if "_actual" in k and "Discount" in k]
 
     # 4. Allowed + diff (keep near actual)
-    # ordered += [k for k in keys if "_allowed" in k]
-    # ordered += [k for k in keys if "_diff" in k]
-    # ordered += [k for k in keys if "net_" in k]
 
     # 5. Conditions
     ordered += pick("cond_")
@@ -967,7 +919,59 @@ async def dashboard_page() -> None:
         with ui.column().classes(
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
-            sidebar()
+            ui.label("Quick Nav").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+
+            ui.link("📊 Dashboard", "/").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
+            )
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+
+            ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
+            ui.label("Quick Actions").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+            with ui.button(on_click=open_new_entry_dialog).classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("add").classes("text-primary text-lg text-weight-bold")
+                ui.label("New Entry").classes("text-weight-bold pl-2")
+            with ui.link(target="/complaint-form").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("insert_drive_file").classes(
+                    "text-primary text-lg text-weight-bold"
+                )
+                ui.label("Complaint Form").classes("text-weight-bold pl-2")
+            with ui.link(target="settings").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("settings").classes("text-primary text-lg text-weight-bold")
+                ui.label("Settings").classes("text-weight-bold pl-2")
+            with ui.column().classes(
+                "h-full justify-between w-full p-4 bg-white shadow"
+            ):
+                with ui.column().classes("mt-auto items-center"):
+
+                    def handle_logout():
+                        clear_user()
+                        ui.navigate.to("/login")
+
+                    ui.button("Logout", on_click=handle_logout).props(
+                        "color=red outline"
+                    ).classes("w-full")
 
         # ── MAIN CONTENT ─────────────────────────────────────
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
@@ -2110,7 +2114,58 @@ async def complaints_ctrl_page():
         with ui.column().classes(
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
-            sidebar()
+            ui.label("Quick Nav").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+            ui.link("📊 Dashboard", "/").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
+            )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+
+            ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
+            ui.label("Quick Actions").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+            with ui.button(on_click=open_new_entry_dialog).classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("add").classes("text-primary text-lg text-weight-bold")
+                ui.label("New Entry").classes("text-weight-bold pl-2")
+            with ui.link(target="/complaint-form").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("insert_drive_file").classes(
+                    "text-primary text-lg text-weight-bold"
+                )
+                ui.label("Complaint Form").classes("text-weight-bold pl-2")
+            with ui.link(target="settings").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("settings").classes("text-primary text-lg text-weight-bold")
+                ui.label("Settings").classes("text-weight-bold pl-2")
+            with ui.column().classes(
+                "h-full justify-between w-full p-4 bg-white shadow"
+            ):
+                with ui.column().classes("mt-auto items-center"):
+
+                    def handle_logout():
+                        clear_user()
+                        ui.navigate.to("/login")
+
+                    ui.button("Logout", on_click=handle_logout).props(
+                        "color=red outline"
+                    ).classes("w-full")
 
         # ── MAIN CONTENT ─────────────────────────────────────
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
@@ -2316,10 +2371,19 @@ async def daily_reporting_page() -> None:
             1 for t in all_transactions if (t.get(field) or "")[:10] == input_date
         )
 
-    # def incomplete_count(stage: str, input_date: str) -> int:
-    #     field = "booking_date" if stage == "booking" else "delivery_date"
-    #     num_incomp = sum(1 for t in all_transactions if )
-    #     return num_incomp
+    def incomplete_count(stage: str, input_date: str) -> int:
+        date_field = "booking_date" if stage == "booking" else "delivery_date"
+        incomplete_field = (
+            "booking_file_incomplete"
+            if stage == "booking"
+            else "delivery_file_incomplete"
+        )
+
+        return sum(
+            1
+            for t in all_transactions
+            if (t.get(date_field) or "")[:10] == input_date and t.get(incomplete_field)
+        )
 
     def get_all_txn_dates(stage: str) -> set:
         field = "booking_date" if stage == "booking" else "delivery_date"
@@ -2337,8 +2401,8 @@ async def daily_reporting_page() -> None:
         s = get_stored(stage, input_date)
         tc = int(s.get("total_count", 0) or 0)
         fr = int(s.get("files_received", 0) or 0)
-        fi = len(rstate.dialog_data.get((stage, input_date, "files_incomplete"), []))
-        fm = fm = mis_count(stage, input_date)
+        fi = incomplete_count(stage, input_date)
+        fm = mis_count(stage, input_date)
         fp = max(0, tc - fr)  # Files Pending  = Total Count - Files Received
         fv = int(s.get("files_verified", 0) or 0)
         diff = fv - fm  # Difference     = Files Verified - Files in MIS
@@ -2919,7 +2983,59 @@ async def daily_reporting_page() -> None:
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 "
             "sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
-            sidebar()
+            ui.label("Quick Nav").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+
+            ui.link("📊 Dashboard", "/").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
+            )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+
+            ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
+            ui.label("Quick Actions").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+            with ui.button(on_click=open_new_entry_dialog).classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("add").classes("text-primary text-lg text-weight-bold")
+                ui.label("New Entry").classes("text-weight-bold pl-2")
+            with ui.link(target="/complaint-form").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("insert_drive_file").classes(
+                    "text-primary text-lg text-weight-bold"
+                )
+                ui.label("Complaint Form").classes("text-weight-bold pl-2")
+            with ui.link(target="settings").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("settings").classes("text-primary text-lg text-weight-bold")
+                ui.label("Settings").classes("text-weight-bold pl-2")
+            with ui.column().classes(
+                "h-full justify-between w-full p-4 bg-white shadow"
+            ):
+                with ui.column().classes("mt-auto items-center"):
+
+                    def handle_logout():
+                        clear_user()
+                        ui.navigate.to("/login")
+
+                    ui.button("Logout", on_click=handle_logout).props(
+                        "color=red outline"
+                    ).classes("w-full")
 
         # ── Main content ──────────────────────────────────────
         with ui.column().classes(
@@ -2954,6 +3070,7 @@ async def daily_reporting_page() -> None:
                         ui.label("From:").classes(
                             "text-[12px] text-gray-500 whitespace-nowrap"
                         )
+
                         from_inp = (
                             ui.input(label="", value=today_str)
                             .props('type="date" outlined dense')
@@ -3733,6 +3850,9 @@ class FormState:
         if not _val(self.cust_name):
             return False, "Customer name is required."
 
+        if len(_val(self.model_year)) > 4:
+            return False, "Invalid Model Year."
+
         mob = _val(self.cust_mobile)
         if not re.fullmatch(r"[6-9]\d{9}", mob):
             return False, "Mobile must be 10 digits starting with 6–9."
@@ -4147,14 +4267,8 @@ def build_vehicle_section(state: FormState) -> None:
                 .props("outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
-            state.booking_date = (
-                ui.input(
-                    label="Booking Date*",
-                    value=str(date.today()),
-                    on_change=lambda _: _fs_try_price_preload(state),
-                )
-                .classes("w-full")
-                .props('type="date" outlined dense')
+            state.car_color = (
+                ui.input(label="Car Colour").classes("w-full").props("outlined dense")
             )
             state.exec_select = (
                 ui.select(
@@ -4175,12 +4289,17 @@ def build_vehicle_section(state: FormState) -> None:
                 state.model_year = (
                     ui.input(
                         label="Model Year *",
-                        value=2026,
+                        value="2026",
                         placeholder="e.g. 2024",
                         on_change=lambda _: _fs_try_price_preload(state),
+                        validation={
+                            "Must be 4 digits": lambda value: (
+                                len(value) == 4 and value.isdigit()
+                            )
+                        },
                     )
                     .classes("w-full")
-                    .props('outlined dense type="number"')
+                    .props("outlined dense")
                     .on_value_change(
                         lambda _: _fs_revalidate(state),
                     )
@@ -4196,38 +4315,76 @@ def build_vehicle_section(state: FormState) -> None:
                 )
             if state.stage == "delivery":
                 state.vin_no = (
-                    ui.input(label="VIN Number *")
+                    ui.input(
+                        label="VIN Number *",
+                        placeholder="MALB000CLSM000000",
+                        validation={
+                            "Invalid VIN Number": lambda v: bool(vin_regex.match(v))
+                        },
+                    )
                     .classes("w-full uppercase")
                     .props("outlined dense")
                     .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.delivery_date = (
-                    ui.input(label="Delivery Date *")
+                    ui.input(
+                        label="Delivery Date *",
+                        validation={
+                            "Enter valid date (DD/MM/YYYY)": lambda v: (
+                                bool(v)
+                                and bool(date_regex.match(v))
+                                and is_valid_date(v)
+                            )
+                        },
+                    )
                     .classes("w-full")
                     .props('type="date" outlined dense')
                     .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.engine_no = (
-                    ui.input(label="Engine Number *")
+                    ui.input(
+                        label="Engine Number *",
+                        validation={
+                            "Enter 10–15 alphanumeric characters": lambda v: (
+                                10 <= len(v.strip()) <= 15 and v.strip().isalnum()
+                            )
+                        },
+                    )
                     .classes("w-full uppercase")
                     .props("outlined dense")
                     .on_value_change(lambda _: _fs_revalidate(state))
                 )
 
                 state.vehicle_regn_no = (
-                    ui.input(label="Vehicle Regn Number")
+                    ui.input(
+                        label="Vehicle Regn Number",
+                        placeholder="UP32AB0000 or 26BH1234AB",
+                        validation={
+                            "Invalid Registration Number": lambda v: (
+                                not v
+                                or (
+                                    bool(regn_regex.match(v.strip().upper()))
+                                    or bool(bharat_regex.match(v.strip().upper()))
+                                )
+                            )
+                        },
+                    )
                     .classes("w-full uppercase")
                     .props("outlined dense")
                 )
                 state.regn_date = (
-                    ui.input(label="Date of Registration")
+                    ui.input(
+                        label="Date of Registration",
+                        validation={
+                            "Enter valid date (DD/MM/YYYY)": lambda v: (
+                                bool(v)
+                                and bool(date_regex.match(v))
+                                and is_valid_date(v)
+                            )
+                        },
+                    )
                     .classes("w-full")
                     .props('outlined dense type="date"')
-                )
-                state.car_color = (
-                    ui.input(label="Car Colour")
-                    .classes("w-full")
-                    .props("outlined dense")
                 )
 
         if state.outlet_select and state.outlets:
@@ -4260,7 +4417,7 @@ def build_customer_section(state: FormState) -> None:
                     placeholder="10-digit",
                     validation={
                         "Must be 10 digits starting 6–9": lambda v: (
-                            not v or re.fullmatch(r"[6-9]\d{9}", v)
+                            not v or bool(re.fullmatch(r"[6-9]\d{9}", v))
                         )
                     },
                 )
@@ -4310,7 +4467,8 @@ def build_customer_section(state: FormState) -> None:
                     placeholder="ABCDE1234F",
                     validation={
                         "Invalid PAN format": lambda v: (
-                            not v or re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", v.upper())
+                            not v
+                            or bool(re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", v.upper()))
                         )
                     },
                 )
@@ -4395,11 +4553,16 @@ def build_booking_section(state: FormState):
             state.booking_date = (
                 ui.input(
                     label="Booking Date *",
-                    value=str(date.today()),
+                    value=disp_date(str(date.today())),
                     on_change=lambda _: _fs_try_price_preload(state),
+                    validation={
+                        "Enter valid date (DD/MM/YYYY)": lambda v: (
+                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                        )
+                    },
                 )
                 .classes("w-full")
-                .props('type="date" outlined dense')
+                .props('mask="##/##/####" outlined dense')
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.booking_amt = accounting_input(
@@ -4838,7 +5001,6 @@ def build_accessories_section(state: FormState) -> None:
                 state.accessory_map.get(int(i), {}).get("listed_price", 0)
                 for i in selected
             )
-
             state.acc_total_label.set_text(f"Total: ₹{total:,.0f}")
 
             # auto-fill charged if empty
@@ -4948,9 +5110,14 @@ def build_invoice_section(state: FormState) -> None:
                 .classes("uppercase")
                 .props("outlined dense")
             )
-            state.invoice_date = ui.input(label="Invoice Date").props(
-                'outlined dense type="date"'
-            )
+            state.invoice_date = ui.input(
+                label="Invoice Date",
+                validation={
+                    "Enter valid date (DD/MM/YYYY)": lambda v: (
+                        bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                    )
+                },
+            ).props('outlined dense type="date"')
 
             state.invoice_ex_showroom = accounting_input(
                 label_text="Ex-Showroom Price (From Price List)"
@@ -5160,7 +5327,14 @@ def build_complaint_quotation_section(state: FormState) -> None:
                 .props("outlined dense")
             )
             state.comp_quotation_date = (
-                ui.input(label="Quotation Date")
+                ui.input(
+                    label="Quotation Date",
+                    validation={
+                        "Enter valid date (DD/MM/YYYY)": lambda v: (
+                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                        )
+                    },
+                )
                 .classes("w-full")
                 .props('outlined dense type="date"')
             )
@@ -5206,7 +5380,14 @@ def build_complaint_booking_section(state: FormState) -> None:
                 .props("outlined dense")
             )
             state.comp_instrument_date = (
-                ui.input(label="Instrument Date")
+                ui.input(
+                    label="Instrument Date",
+                    validation={
+                        "Enter valid date (DD/MM/YYYY)": lambda v: (
+                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                        )
+                    },
+                )
                 .classes("w-full")
                 .props('outlined dense type="date"')
             )
@@ -5232,6 +5413,11 @@ def build_complaint_remarks_section(state: FormState) -> None:
                 ui.input(
                     label="Date of Complaint Raised",
                     value=str(get_ist_today()),
+                    validation={
+                        "Enter valid date (DD/MM/YYYY)": lambda v: (
+                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                        )
+                    },
                 )
                 .classes("w-full")
                 .props('outlined dense type="date"')
@@ -5947,8 +6133,8 @@ def build_payload(state: FormState) -> dict:
         payload["booking_checklist"] = {
             k: v.value for k, v in state.booking_cbs.items()
         }
-        payload["booking_file_incomplete"] = not all(
-            [v.value for v in state.booking_cbs.values()]
+        payload["booking_file_incomplete"] = any(
+            not bool(v.value) for v in state.delivery_cbs.values()
         )
         payload["discount_booking"] = intval(
             state.total_discount_booking
@@ -5965,8 +6151,8 @@ def build_payload(state: FormState) -> dict:
         payload["delivery_date"] = val(state.delivery_date)
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
-        payload["delivery_file_incomplete"] = not all(
-            v.value for v in state.delivery_cbs.values()
+        payload["delivery_file_incomplete"] = any(
+            not bool(v.value) for v in state.delivery_cbs.values()
         )
 
     return payload
