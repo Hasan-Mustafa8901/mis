@@ -15,7 +15,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
-from utils_old import get_ist_today, disp_date, date_for_input, is_valid_date
+from utils_old import get_ist_today, disp_date, date_for_input
 
 from auth_old import get_token, clear_user, protected_page, set_user
 
@@ -66,7 +66,7 @@ BOOKING_CHECK_KEYS = [
     ("customer_sign", "Customer Sign"),
 ]
 
-date_regex = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$")
+# date_regex = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\-(0[1-9]|1[0-2])\-\d{4}$")
 vin_regex = re.compile(r"^[A-HJ-NPR-Z0-9]{13}[0-9]{4}$")
 regn_regex = re.compile(r"^[A-Z]{2}\d{2}[A-Z]{2}\d{4}$")
 bharat_regex = re.compile(r"^\d{2}BH\d{4}[A-Z]{2}$")
@@ -341,6 +341,14 @@ def get_user():
     }
 
 
+def is_valid_date(v: str) -> bool:
+    try:
+        datetime.strptime(v, "%Y-%m-%d")
+        return True
+    except:
+        return False
+
+
 # ══════════════════════════════════════════════════════════════
 # TOPBAR  (shared component for both pages)
 # ══════════════════════════════════════════════════════════════
@@ -537,8 +545,15 @@ def render_table(transactions, stage: str = "booking"):
                 "font-size:12px;color:#9CA3AF;margin-top:4px"
             )
         return
+    # Add derived column
+
+    for t in transactions:
+        t["Delivered"] = "Yes" if t.get("stage") == "delivery" else "No"
 
     ordered_keys = build_ordered_columns(transactions[0], stage=stage)
+
+    if "Delivered" not in ordered_keys:
+        ordered_keys.insert(6, "Delivered")
 
     NUMERIC_KEYS = {
         k
@@ -567,6 +582,7 @@ def render_table(transactions, stage: str = "booking"):
         "variant_name",
         "booking_date",
         "delivery_date",
+        "Delivered",
     }
 
     # Define custom widths for specific columns (optional)
@@ -577,6 +593,7 @@ def render_table(transactions, stage: str = "booking"):
         "variant_name": 100,
         "booking_date": 100,
         "delivery_date": 100,
+        "Delivered": 90,
     }
 
     col_defs = []
@@ -1757,9 +1774,15 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
     # Split logic
     if stage == "booking":
-        transactions = [t for t in all_transactions if t.get("stage") == "booking"]
+        transactions = all_transactions
     else:
-        transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
+        transactions = [t for t in all_transactions if t.get("delivery_date")]
+
+    # # Split logic
+    # if stage == "booking":
+    #     transactions = [t for t in all_transactions if t.get("stage") == "booking"]
+    # else:
+    #     transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
 
     # Get months for sidebar grouping (from the filtered set)
     month_map = defaultdict(list)
@@ -3995,6 +4018,8 @@ def populate_from_booking(state: FormState, data: dict):
 
     if state.regn_date:
         state.regn_date.set_value(data.get("registration_date", ""))
+    if state.model_year:
+        state.model_year.set_value(data.get("model_year", ""))
 
     # ── Variant / Car ────────────
     _map_car_and_variant(state, data)
@@ -4319,7 +4344,9 @@ def build_vehicle_section(state: FormState) -> None:
                         label="VIN Number *",
                         placeholder="MALB000CLSM000000",
                         validation={
-                            "Invalid VIN Number": lambda v: bool(vin_regex.match(v))
+                            "Invalid VIN Number": lambda v: (
+                                bool(v) and bool(vin_regex.match(v))
+                            )
                         },
                     )
                     .classes("w-full uppercase")
@@ -4331,9 +4358,7 @@ def build_vehicle_section(state: FormState) -> None:
                         label="Delivery Date *",
                         validation={
                             "Enter valid date (DD/MM/YYYY)": lambda v: (
-                                bool(v)
-                                and bool(date_regex.match(v))
-                                and is_valid_date(v)
+                                bool(v) and is_valid_date(v)
                             )
                         },
                     )
@@ -4346,7 +4371,9 @@ def build_vehicle_section(state: FormState) -> None:
                         label="Engine Number *",
                         validation={
                             "Enter 10–15 alphanumeric characters": lambda v: (
-                                10 <= len(v.strip()) <= 15 and v.strip().isalnum()
+                                bool(v)
+                                and 10 <= len(v.strip()) <= 15
+                                and v.strip().isalnum()
                             )
                         },
                     )
@@ -4375,11 +4402,10 @@ def build_vehicle_section(state: FormState) -> None:
                 state.regn_date = (
                     ui.input(
                         label="Date of Registration",
+                        placeholder="DD/MM/YYYY",
                         validation={
                             "Enter valid date (DD/MM/YYYY)": lambda v: (
-                                bool(v)
-                                and bool(date_regex.match(v))
-                                and is_valid_date(v)
+                                bool(v) and is_valid_date(v)
                             )
                         },
                     )
@@ -4553,16 +4579,16 @@ def build_booking_section(state: FormState):
             state.booking_date = (
                 ui.input(
                     label="Booking Date *",
-                    value=disp_date(str(date.today())),
+                    value=str(date.today()),
                     on_change=lambda _: _fs_try_price_preload(state),
                     validation={
-                        "Enter valid date (DD/MM/YYYY)": lambda v: (
-                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                        "Enter valid date (DD-MM-YYYY)": lambda v: (
+                            bool(v) and is_valid_date(v)
                         )
                     },
                 )
                 .classes("w-full")
-                .props('mask="##/##/####" outlined dense')
+                .props("type='date' outlined dense")
                 .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.booking_amt = accounting_input(
@@ -5113,8 +5139,8 @@ def build_invoice_section(state: FormState) -> None:
             state.invoice_date = ui.input(
                 label="Invoice Date",
                 validation={
-                    "Enter valid date (DD/MM/YYYY)": lambda v: (
-                        bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                    "Enter valid date (DD-MM-YYYY)": lambda v: (
+                        bool(v) and is_valid_date(v)
                     )
                 },
             ).props('outlined dense type="date"')
@@ -5331,7 +5357,7 @@ def build_complaint_quotation_section(state: FormState) -> None:
                     label="Quotation Date",
                     validation={
                         "Enter valid date (DD/MM/YYYY)": lambda v: (
-                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                            bool(v) and is_valid_date(v)
                         )
                     },
                 )
@@ -5384,7 +5410,7 @@ def build_complaint_booking_section(state: FormState) -> None:
                     label="Instrument Date",
                     validation={
                         "Enter valid date (DD/MM/YYYY)": lambda v: (
-                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                            bool(v) and is_valid_date(v)
                         )
                     },
                 )
@@ -5415,7 +5441,7 @@ def build_complaint_remarks_section(state: FormState) -> None:
                     value=str(get_ist_today()),
                     validation={
                         "Enter valid date (DD/MM/YYYY)": lambda v: (
-                            bool(v) and bool(date_regex.match(v)) and is_valid_date(v)
+                            bool(v) and is_valid_date(v)
                         )
                     },
                 )
@@ -5645,7 +5671,8 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 timeout=2500,
             )
 
-    except Exception:
+    except Exception as e:
+        print(e)
         pass  # best-effort; silently skip if endpoint missing
 
 
