@@ -2383,7 +2383,7 @@ async def daily_reporting_page() -> None:
             print(str(e))
             ui.notify("Failed to save", type="negative")
 
-    today_str = date.today().isoformat()
+    today_str = get_ist_today().isoformat()
 
     def mis_count(stage: str, input_date: str) -> int:
         field = "booking_date" if stage == "booking" else "delivery_date"
@@ -2954,7 +2954,7 @@ async def daily_reporting_page() -> None:
         recompute_totals(stage, dates)
 
     # ── Date range helpers ────────────────────────────────────
-    _today = date.today()
+    _today = get_ist_today()
     _yester = _today - timedelta(days=1)
 
     _RANGE_OPTIONS = {
@@ -3412,7 +3412,7 @@ async def settings_page():
                     valid_from = (
                         ui.date_input(
                             label="Valid From",
-                            value=date.today().isoformat(),
+                            value=get_ist_today().isoformat(),
                         )
                         .props("outlined dense")
                         .classes("w-1/3")
@@ -4657,7 +4657,7 @@ def build_booking_section(state: FormState):
             state.booking_date = (
                 ui.input(
                     label="Booking Date *",
-                    value=str(date.today()),
+                    value=str(get_ist_today()),
                     on_change=lambda _: _fs_try_price_preload(state),
                     validation={
                         "Enter valid date (DD-MM-YYYY)": lambda v: (
