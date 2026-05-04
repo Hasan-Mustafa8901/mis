@@ -58,6 +58,7 @@ class TransactionService:
         """
 
         actual_amounts = payload.get("actual_amounts", {})
+        allowed_amounts = payload.get("allowed_amounts", {})
 
         # DELETE existing items (important for override case)
         existing_items = session.exec(
@@ -86,9 +87,9 @@ class TransactionService:
                 component_id=comp.id,
                 component_name=comp.name,
                 component_type=comp.type,
-                actual_amount=float(actual),
-                allowed_amount=0,
-                difference=0,
+                actual_amount=int(actual),
+                allowed_amount=int(allowed_amounts.get(name, 0)),
+                difference=int(allowed_amounts.get(name, 0) - actual),
             )
             session.add(item)
 

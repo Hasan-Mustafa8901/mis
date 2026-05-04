@@ -4107,7 +4107,7 @@ def populate_price_and_discount(
             state.listed_prices[name] = listed_val
             lbl = state.price_listed_labels.get(name)
             if lbl:
-                lbl.set_text(f"₹{float(listed_val):,.2f}")
+                lbl.set_text(f"₹{float(listed_val):,}")
 
         # Fill the charged input:
         #   edit_mode  → restore what the auditor entered previously (actual)
@@ -4127,7 +4127,7 @@ def populate_price_and_discount(
             state.listed_prices[name] = listed_val
             a_lbl = state.discount_listed_labels.get(name)
             if a_lbl:
-                a_lbl.set_text(f"₹{float(listed_val):,.2f}")
+                a_lbl.set_text(f"₹{float(listed_val):,}")
 
         if edit_mode and charged_val is not None:
             inp.set_value(format_num_inr(charged_val))
@@ -5079,11 +5079,11 @@ def build_prices_section(state: FormState) -> None:
                     ui.label("Discount given minus allowed limit").classes(
                         "text-[10px] text-gray-400"
                     )
-                state.lbl_excess_discount = ui.label("₹0.00").classes(
+                state.lbl_excess_discount = ui.label("₹0").classes(
                     "text-[18px] font-bold font-mono text-gray-400"
                 )
                 # lbl_excess is the compact version used in the live bar elsewhere
-                state.lbl_excess = state.lbl_excess_discount
+                state.lbl_excess_lv = state.lbl_excess_discount
     _fs_update_live(state)
 
 
@@ -6181,6 +6181,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
         )
         # ── Store listed prices (source of truth) ──
         state.listed_prices = preview or {}
+        print(json.dumps(preview, indent=4))
         filled = 0
 
         for name, value in state.listed_prices.items():
@@ -6503,12 +6504,12 @@ async def _fs_handle_submit(state: FormState) -> None:
 
 def build_payload(state: FormState) -> dict:
 
-    def val(x):
+    def v(x):
         return x.value if x else None
 
     def lbl_val(x, chr_slice=1):
         val = x.text[chr_slice:].strip().replace(",", "").replace(".", "")
-        return int(val)
+        return int(val) if val else None
 
     def intval(x):
         if not x:
@@ -6540,15 +6541,6 @@ def build_payload(state: FormState) -> dict:
         else:
             actual_amounts[name] = intval(inp)
 
-    for name, inp in state.listed_prices.items():
-        row = state.price_rows.get(name)
-        if row is not None and not row.visible:
-            allowed_amounts[name] = 0
-        else:
-            allowed_amounts[name] = inp
-
-    print("before loop", json.dumps(allowed_amounts, indent=4))
-    # print("bfore loop", json.dumps(actual_amounts, indent=4))
     # Discount components
     for name, row in state.discount_rows.items():
         if row.visible:
@@ -6557,15 +6549,36 @@ def build_payload(state: FormState) -> dict:
         else:
             actual_amounts[name] = 0
 
-    for name, i in state.listed_prices.items():
-        row = state.discount_rows.get(name)
-        if row is not None and not row.visible:
-            allowed_amounts[name] = 0
-        else:
-            allowed_amounts[name] = i
+    for name, val in state.listed_prices.items():
+        price_row = state.price_rows.get(name)
+        discount_row = state.discount_rows.get(name)
 
-    print("after loop", json.dumps(allowed_amounts, indent=4))
-    # print("After loop", json.dumps(actual_amounts, indent=4))
+        # ── PRICE COMPONENT ─────────────────────────
+        if price_row:
+            if price_row.visible:
+                allowed_amounts[name] = val  # ALWAYS include
+            else:
+                allowed_amounts[name] = 0
+
+        # ── DISCOUNT COMPONENT ─────────────────────
+        elif discount_row:
+            if not discount_row.visible:
+                allowed_amounts[name] = 0
+            else:
+                toggle = state.discount_match_toggles.get(name)
+                inp = state.discount_inputs.get(name)
+
+                is_applied = (toggle and toggle.value) or (
+                    inp and str(inp.value).strip()
+                )
+
+                allowed_amounts[name] = val if is_applied else 0
+
+        # ── SAFETY (unknown component) ──────────────
+        else:
+            allowed_amounts[name] = val
+
+    print("allowed_amounts", json.dumps(allowed_amounts, indent=4))
     # ─────────────────────────────
     # CONDITIONS
     # ─────────────────────────────
@@ -6607,8 +6620,8 @@ def build_payload(state: FormState) -> dict:
     # INVOICE
     # ─────────────────────────────
     invoice_details = {
-        "invoice_number": val(state.invoice_number),
-        "invoice_date": val(state.invoice_date),
+        "invoice_number": v(state.invoice_number),
+        "invoice_date": v(state.invoice_date),
         "ex_showroom_price": intval(state.invoice_ex_showroom),
         "discount": intval(state.invoice_discount),
         "taxable_value": intval(state.invoice_taxable_value),
@@ -6635,31 +6648,31 @@ def build_payload(state: FormState) -> dict:
     payload = {
         # ── REQUIRED ──
         "variant_id": state.variant_id,
-        "booking_date": val(state.booking_date),
+        "booking_date": v(state.booking_date),
         "booking_amt": intval(state.booking_amt),
-        "booking_receipt_num": val(state.booking_receipt_num),
+        "booking_receipt_num": v(state.booking_receipt_num),
         "outlet_id": state.outlet_id,
         "sales_executive_id": state.executive_id,
         # ── CUSTOMER ──
         "customer": {
-            "name": val(state.cust_name),
-            "mobile_number": val(state.cust_mobile),
-            "email": val(state.cust_email),
-            "pan_number": val(state.cust_pan),
-            "aadhar_number": val(state.cust_aadhar),
-            "address": val(state.cust_address),
-            "city": val(state.cust_city),
-            "pin_code": val(state.cust_pincode),
+            "name": v(state.cust_name),
+            "mobile_number": v(state.cust_mobile),
+            "email": v(state.cust_email),
+            "pan_number": v(state.cust_pan),
+            "aadhar_number": v(state.cust_aadhar),
+            "address": v(state.cust_address),
+            "city": v(state.cust_city),
+            "pin_code": v(state.cust_pincode),
         },
         # ── VEHICLE ──
-        "customer_file_number": val(state.cust_file_no),
-        "vin_number": val(state.vin_no),
-        "color": val(state.car_color),
-        "engine_number": val(state.engine_no),
-        "model_year": val(state.model_year),
-        "registration_number": val(state.vehicle_regn_no),
-        "registration_date": val(state.regn_date),
-        "price_adjustment": val(state.adjustment_input),
+        "customer_file_number": v(state.cust_file_no),
+        "vin_number": v(state.vin_no),
+        "color": v(state.car_color),
+        "engine_number": v(state.engine_no),
+        "model_year": v(state.model_year),
+        "registration_number": v(state.vehicle_regn_no),
+        "registration_date": v(state.regn_date),
+        "price_adjustment": v(state.adjustment_input),
         # ── CORE LOGIC ──
         "actual_amounts": actual_amounts,
         "allowed_amounts": allowed_amounts,
@@ -6675,8 +6688,8 @@ def build_payload(state: FormState) -> dict:
         "exchange_details": {},
         # ── AUDIT INFO ──
         "audit_info": {
-            "observations": val(state.audit_obs),
-            "actions": val(state.audit_action),
+            "observations": v(state.audit_obs),
+            "actions": v(state.audit_action),
         },
     }
 
@@ -6693,12 +6706,12 @@ def build_payload(state: FormState) -> dict:
             state.lbl_discount_lv
         )  # after adding differences and subtracting price adjustment
         payload["price_offered_booking"] = lbl_val(state.lbl_total_offered_price)
-        payload["excess_booking"] = lbl_val(state.lbl_excess_lv)
+        payload["excess_booking"] = lbl_val(state.lbl_excess_discount)
 
     elif state.stage == "delivery":
         payload["stage"] = "delivery"
         payload["booking_id"] = state.booking_id
-        payload["delivery_date"] = val(state.delivery_date)
+        payload["delivery_date"] = v(state.delivery_date)
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
         payload["delivery_file_incomplete"] = any(
@@ -7123,6 +7136,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY,
-        reload=True,  # make false at the time of deployement
+        reload=False,  # make false at the time of deployement
         port=3000,
     )
