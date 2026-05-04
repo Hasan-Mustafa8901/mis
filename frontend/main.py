@@ -7,15 +7,17 @@ Two-page architecture:
 Backend: FastAPI at http://localhost:8000
 """
 
+import json
 import asyncio
 import re
-from utils_old import build_component_map_from_booking
+
+# from utils_old import build_component_map_from_booking
 import httpx
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
-from utils_old import get_ist_today, disp_date, date_for_input
+from utils_old import get_ist_today  # , disp_date, date_for_input
 from dotenv import load_dotenv
 
 import os
@@ -228,21 +230,6 @@ async def fetch_reference_data() -> dict:
         else:
             final[key] = result
     return final
-    # for key, path, fallback in [
-    #     ("cars", "/cars", []),
-    #     ("variants", "/variants", []),
-    #     ("components", "/components", []),
-    #     ("outlets", "/outlets", [{"id": 1, "name": "Main Outlet"}]),
-    #     ("executives", "/sales-executives", [{"id": 1, "name": "Default SE"}]),
-    #     ("accessories", "/accessories", []),
-    #     ("dealerships", "/complaints/dealerships", []),
-    # ]:
-    #     try:
-    #         result[key] = await api_get(path)
-    #     except Exception:
-    #         result[key] = fallback
-
-    # return result
 
 
 # ══════════════════════════════════════════════════════════════
@@ -250,7 +237,7 @@ async def fetch_reference_data() -> dict:
 # ══════════════════════════════════════════════════════════════
 def format_num_inr(num_val):
     """Format float into standard accounting formatting, e.g. 1,000.00"""
-    return f"{float(num_val):,.2f}"
+    return f"{int(num_val):,}"
 
 
 def get_eval_math(val_str):
@@ -264,7 +251,7 @@ def get_eval_math(val_str):
     return None
 
 
-def parsed_val(ui_input_element) -> float | int:
+def parsed_val(ui_input_element) -> int:
     """Safe evaluation helper to get the numeric underlying float value from accounting_input or ui.number"""
     if not ui_input_element:
         return 0
@@ -273,14 +260,14 @@ def parsed_val(ui_input_element) -> float | int:
         return 0
     try:
         if isinstance(v, (int, float)):
-            return float(v)
+            return int(v)
         v_str = str(v).replace(",", "").strip()
         import re
 
         if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
             res = float(eval(v_str))
-            return int(res) if res.is_integer() else res
-        return float(v_str) if "." in v_str else int(v_str)
+            return int(res)
+        return int(v_str)
     except Exception:
         return 0
 
@@ -288,14 +275,17 @@ def parsed_val(ui_input_element) -> float | int:
 def accounting_input(
     label_text: str, placeholder: str = "", container_classes: str = "w-full"
 ) -> ui.input:
+    """Text input with inline math evaluation and blur-collapse."""
     with ui.column().classes(f"gap-0 {container_classes} mb-1"):
         inp = (
             ui.input(label=label_text, placeholder=placeholder)
-            .props("outlined dense")
+            .props(
+                "outlined dense input-class='text-right' input-style='text-align: right;"
+            )
             .classes("w-full")
         )
         hint = ui.label("").classes(
-            "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2"
+            "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2 text-right"
         )
 
     def handle_eval(e):
@@ -306,13 +296,12 @@ def accounting_input(
         try:
             res = get_eval_math(val)
             if res is not None:
-                res_str = format_num_inr(res)
                 val_clean = str(val).replace(",", "").strip()
                 if val_clean != str(res) and not val_clean.replace(".", "").isdigit():
-                    hint.set_text(f"= {res_str}")
-                else:
-                    hint.set_text("")
-                hint.classes(replace="text-red-500", add="text-green-600")
+                    hint.set_text(f"= {format_num_inr(res)}")
+                    hint.classes(replace="text-red-500", add="text-green-600")
+                    return
+                hint.set_text("")
                 return
         except Exception:
             pass
@@ -505,6 +494,10 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
 
     # 9. Totals
     ordered += [
+        "discount_booking",
+        "total_discount_booking",
+        "price_offered_booking",
+        "excess_booking",
         "net_receivable",
         "total_received",
         "balance_amount",
@@ -712,7 +705,7 @@ def render_table(transactions, stage: str = "booking"):
 
 
 def render_line_chart(
-    series_data: list[tuple[str, list[float]]],
+    series_data: list[tuple[str, list[int]]],
     categories: list[str],
     colors: list[str] | None = None,
     height: int = 240,
@@ -783,7 +776,7 @@ def render_line_chart(
 
 
 def render_bar_chart(
-    items: list[tuple[str, float]],
+    items: list[tuple[str, int]],
     color: str = "#6366F1",
     value_fmt: str = "K",  # "K"→₹XK  "N"→count  "raw"→₹X,000
     height: int = 240,
@@ -804,13 +797,13 @@ def render_bar_chart(
     if value_fmt == "K":
 
         def label_fmt(v):
-            return f"₹{v / 1000:.1f}K"
+            return f"₹{v / 1000}K"
 
         tt_fmt = "{b}: ₹{c}"  # ECharts template — {b}=category {c}=value
     elif value_fmt == "raw":
 
         def label_fmt(v):
-            return f"₹{v:,.0f}"
+            return f"₹{v:,}"
 
         tt_fmt = "{b}: ₹{c}"
     else:  # N — plain count
@@ -1036,6 +1029,9 @@ async def dashboard_page() -> None:
                 total_discount = sum(
                     t.get("total_allowed_discount", 0) or 0 for t in txns
                 )
+                total_discount_booking = sum(
+                    t.get("total_allowed_discount", 0) or 0 for t in txns
+                )
                 total_actual_discount = sum(
                     t.get("total_actual_discount", 0) or 0 for t in txns
                 )
@@ -1220,12 +1216,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{booking_analytics['total_actual_discount']:,.0f}"
+                                f"₹{booking_analytics['total_actual_discount']:,}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{booking_analytics['avg_actual_discount']:,.0f} / transaction"
+                                f"Avg ₹{booking_analytics['avg_actual_discount']:,} / transaction"
                             ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
@@ -1238,12 +1234,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{booking_analytics['total_discount']:,.0f}"
+                                f"₹{booking_analytics['total_discount']:,}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{booking_analytics['avg_discount']:,.0f} / transaction"
+                                f"Avg ₹{booking_analytics['avg_discount']:,} / transaction"
                             ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
@@ -1256,9 +1252,7 @@ async def dashboard_page() -> None:
                             ui.label("Total Excess Discount").classes(
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
-                            ui.label(
-                                f"₹{booking_analytics['total_excess']:,.0f}"
-                            ).classes(
+                            ui.label(f"₹{booking_analytics['total_excess']:,}").classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
                             )
                             ui.label(
@@ -1326,12 +1320,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_actual_discount']:,.0f}"
+                                f"₹{delivery_analytics['total_actual_discount']:,}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{delivery_analytics['avg_actual_discount']:,.0f} / transaction"
+                                f"Avg ₹{delivery_analytics['avg_actual_discount']:,} / transaction"
                             ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
@@ -1344,12 +1338,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_discount']:,.0f}"
+                                f"₹{delivery_analytics['total_discount']:,}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{delivery_analytics['avg_discount']:,.0f} / transaction"
+                                f"Avg ₹{delivery_analytics['avg_discount']:,} / transaction"
                             ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
@@ -1363,7 +1357,7 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_excess']:,.0f}"
+                                f"₹{delivery_analytics['total_excess']:,}"
                             ).classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
                             )
@@ -1656,7 +1650,7 @@ async def dashboard_page() -> None:
                                             ui.label(f"{var} · {bd}").classes(
                                                 "text-[10.5px] text-gray-400"
                                             )
-                                        ui.label(f"₹{ex:,.0f}").classes(
+                                        ui.label(f"₹{ex:,}").classes(
                                             "text-[13px] font-bold text-red-600 mono"
                                         )
                             else:
@@ -1781,12 +1775,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     else:
         transactions = [t for t in all_transactions if t.get("delivery_date")]
 
-    # # Split logic
-    # if stage == "booking":
-    #     transactions = [t for t in all_transactions if t.get("stage") == "booking"]
-    # else:
-    #     transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
-
     # Get months for sidebar grouping (from the filtered set)
     month_map = defaultdict(list)
     for t in transactions:
@@ -1870,9 +1858,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     ui.label(title).classes(
                         "text-[18px] font-bold text-gray-900 leading-none"
                     )
-                    exc_txt = (
-                        f" · ₹{total_excess:,.0f} excess" if total_excess > 0 else ""
-                    )
+                    exc_txt = f" · ₹{total_excess:,} excess" if total_excess > 0 else ""
                     ui.label(f"{total_entries} records{exc_txt}").classes(
                         "text-[12px] text-gray-400"
                     )
@@ -2344,6 +2330,9 @@ async def complaints_ctrl_page():
 
 class ReportingState:
     def __init__(self):
+        self.all_transactions: list[
+            dict
+        ] = []  # store all the transaction data in the state.
         self.row_data: dict = {}  # (tt, date) → {total_count, files_received, file_incomplete, files_in_mis}
         self.dialog_data: dict = {}  # (tt, date, col) → [{date, name, pan, remarks}, …]
         self.label_refs: dict = {}  # (tt, date, col) → ui.label  for computed cells
@@ -2361,12 +2350,17 @@ class ReportingState:
 @ui.page("/daily-reporting")
 @protected_page
 async def daily_reporting_page() -> None:
+
+    def to_iso(date_str):
+        return datetime.strptime(date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+
     rstate = ReportingState()
     render_topbar("Daily Reporting")
 
     # ── Transactions ─────────────────────────────────────────
     try:
         all_transactions: list = await api_get("/transactions")
+        rstate.all_transactions = all_transactions
     except Exception:
         all_transactions = []
 
@@ -2638,12 +2632,15 @@ async def daily_reporting_page() -> None:
                 ).classes("bg-[#E8402A] text-white text-[13px] px-5")
 
     async def _fetch_and_show_dialog() -> None:
-        """Fetch records from backend and populate the dialog."""
+        """Populate dialog using already fetched transactions (no API call).
+        This method is buggy, Make this for different stages and different columns, this is incomplete, incorrect.
+        """
+
         tt = _dlg_state["tt"]
         d = _dlg_state["d"]
         col = _dlg_state["col"]
 
-        # Show loading state immediately
+        # Show loading state
         _dlg_state["body_el"].clear()
         with _dlg_state["body_el"]:
             with ui.row().classes("w-full justify-center items-center gap-3 py-10"):
@@ -2651,29 +2648,42 @@ async def daily_reporting_page() -> None:
                 ui.label("Loading records…").style("color:#9CA3AF;font-size:13px")
 
         try:
-            # ── API endpoint — adjust the path to match your backend ──────────
-            # Expected response: list of dicts with keys:
-            #   date, customer_name, pan_number, remarks
-            # col == "files_pending"    → fetch pending files for that date
-            # col == "files_incomplete" → fetch incomplete files for that date
-            endpoint = (
-                f"/daily-report/pending?type={tt}&date={d}"
-                if col == "files_pending"
-                else f"/daily-report/incomplete?type={tt}&date={d}"
-            )
-            rows: list = await api_get(endpoint)
-        except Exception:
-            rows = []
+            data = rstate.all_transactions  # ✅ reuse cached data
 
+            d = to_iso(d)
+            # print("raw transaction data:", data)
+
+            # 🔥 filter instead of API call
+            if col == "files_pending":
+                rows = [
+                    t
+                    for t in data
+                    if t.get("stage") == tt
+                    and t.get("booking_date") == d
+                    and t.get("booking_file_incomplete") is True
+                ]
+            else:  # files_incomplete
+                rows = [
+                    t
+                    for t in data
+                    if t.get("stage") == tt
+                    and t.get("booking_date") == d
+                    and t.get("booking_file_incomplete") is True
+                ]
+
+        except Exception as e:
+            print(e)
+            rows = []
         # Update count label
         count_lbl = _dlg_state.get("count_label")
         if count_lbl:
             count_lbl.set_text(f"{len(rows)} record{'s' if len(rows) != 1 else ''}")
 
-        # Update the cell count label and recompute totals for incomplete column
+        # Store + refresh (same as before)
         if col == "files_incomplete":
             k = (tt, d, "files_incomplete")
-            rstate.dialog_data[k] = rows  # store so compute_row can read len()
+            rstate.dialog_data[k] = rows
+
             refresh_computed_row(tt, d, _dlg_state["dates"])
 
         refresh_detail_dialog(rows)
@@ -2688,7 +2698,7 @@ async def daily_reporting_page() -> None:
         _dlg_state["title_el"].set_text(f"📋 {col_label} — {d}  ({ttype})")
         detail_dlg.open()
         # Schedule async fetch after dialog is open
-        ui.timer(0.05, _fetch_and_show_dialog, once=True)
+        asyncio.create_task(_fetch_and_show_dialog())
 
     # ── Shared cell styles ───────────────────────────────────
     TH_S = (
@@ -2848,13 +2858,14 @@ async def daily_reporting_page() -> None:
                                 )
 
                             # ── Files Incomplete (clickable label → opens dialog, count = dialog rows) ──
-                            fi_color = "#92400E" if r["fi"] > 0 else "#10B981"
-                            fi_weight = "700" if r["fi"] > 0 else "600"
+                            fi_count = r["fi"]
+                            fi_color = "#92400E" if fi_count > 0 else "#10B981"
+                            fi_weight = "700" if fi_count > 0 else "600"
                             with (
                                 ui.element("td")
                                 .style(
                                     TD_S + ";cursor:pointer;background:#FFF7ED"
-                                    if r["fi"] > 0
+                                    if fi_count > 0
                                     else TD_S + ";cursor:pointer"
                                 )
                                 .on(
@@ -2866,7 +2877,7 @@ async def daily_reporting_page() -> None:
                                     ),
                                 )
                             ):
-                                fi_lbl = ui.label(str(r["fi"])).style(
+                                fi_lbl = ui.label(str(fi_count)).style(
                                     f"font-family:monospace;font-size:15px;"
                                     f"font-weight:{fi_weight};color:{fi_color};text-align:center"
                                 )
@@ -3478,53 +3489,6 @@ async def settings_page():
             ui.label("Only .xlsx files are supported").classes(
                 "text-xs text-gray-400 mt-3 text-center"
             )
-    # with ui.column().classes("w-full"):
-    #     with ui.card().classes(
-    #         "max-w-[1100px] mx-auto p-8 w-full shadow-sm rounded-xl mt-6"
-    #     ):
-    #         # 🔹 Default today
-    #         today = date.today().isoformat()
-    #         with ui.row().classes("justify-end"):
-    #             # 🔹 REQUIRED: valid_from
-    #             valid_from = ui.date_input(
-    #                 label="Valid From (Required)", value=today
-    #             ).classes("w-64")
-
-    #             # 🔹 OPTIONAL: valid_to
-    #             valid_to = ui.date_input(label="Valid To (Optional)").classes("w-64")
-    #             # 🔹 OPTIONAL: valid_to
-    #             model_year = ui.number(label="Model Year").classes("w-64")
-
-    #             status_label = ui.label("").classes("text-sm mt-2")
-
-    #             async def handle_upload(e):
-    #                 try:
-    #                     if not valid_from.value:
-    #                         status_label.text = "❌ Valid From date is required"
-    #                         status_label.classes("text-red-600")
-    #                         return
-
-    #                     payload = {
-    #                         "valid_from": valid_from.value,
-    #                         "model_year": model_year.value,
-    #                         "sheet_name": "0",
-    #                     }
-    #                     if valid_to.value:
-    #                         payload["valid_to"] = valid_to.value
-
-    #                     await api_post_file("/price-list/upload", e, payload)
-
-    #                     status_label.text = "✅ Price list uploaded successfully"
-    #                     status_label.classes("text-green-600")
-
-    #                 except Exception as ex:
-    #                     status_label.text = f"❌ {str(ex)}"
-    #                     status_label.classes("text-red-600")
-
-    #             ui.upload(on_upload=handle_upload, auto_upload=True).classes("")
-    #             ui.label("Upload Excel file (.xlsx)").classes(
-    #                 "text-xs text-gray-400 mt-2"
-    #             )
     with ui.column().classes("w-full items-center gap-6"):
         # ─────────────────────────────────────────────
         # 🏢 DEALERSHIP CARD
@@ -3732,6 +3696,9 @@ class FormState:
         self.listed_prices: dict[str, int] = {}
         self.price_listed_labels: dict[str, ui.label] = {}
         self.discount_listed_labels: dict[str, ui.label] = {}
+        self.discount_inputs = {}
+        self.discount_match_toggles = {}
+        self.discount_given_labels = {}  # already used elsewhere
 
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
@@ -3774,13 +3741,19 @@ class FormState:
         self.lbl_excess_discount: ui.label | None = None
 
         # Live calc labels
-        self.lbl_allowed: ui.label | None = None
-        self.lbl_discount: ui.label | None = None
-        self.lbl_excess: ui.label | None = None
+        self.lbl_allowed_lv: ui.label | None = None
+        self.lbl_discount_lv: ui.label | None = None
+        self.lbl_excess_lv: ui.label | None = None
+        self.total_given: ui.label | None = None
+        self.total_allowed: ui.label | None = None
         self.lbl_total_listed_price: ui.label | None = None  # a
         self.lbl_total_offered_price: ui.label | None = None  # b
         self.lbl_total_diff_price: ui.label | None = None  # = a-b
         self.lbl_total_listed_discount: ui.label | None = None
+
+        # new one
+        self.discount_given_labels: ui.label | dict = {}
+        self.discount_diff_labels: ui.label | dict = {}
         self.adjustment_input: ui.input | None = None
         self.stage_toggle = None
         self.delivery_mode = None
@@ -3966,9 +3939,11 @@ def _map_car_and_variant(state, data):
 
 
 def populate_from_booking(state: FormState, data: dict):
+    import json
 
     if not data:
         return
+    print(json.dumps(data, indent=4))
 
     # ── Booking ──────────────────
     if state.booking_date:
@@ -4019,9 +3994,17 @@ def populate_from_booking(state: FormState, data: dict):
     if state.vehicle_regn_no:
         state.vehicle_regn_no.set_value(data.get("registration_number", ""))
 
+    if state.car_color:
+        print(state.car_color.value)
+        print(data.get("color", ""))
+        state.car_color.set_value(data.get("color", ""))
+
     if state.regn_date:
         state.regn_date.set_value(data.get("registration_date", ""))
+
     if state.model_year:
+        print(state.model_year.value)
+        print(data.get("model_year", ""))
         state.model_year.set_value(data.get("model_year", ""))
 
     # ── Variant / Car ────────────
@@ -4041,7 +4024,6 @@ def populate_from_booking(state: FormState, data: dict):
         "Shield Of Trust",
     ]
     for key, cb in zip(disp_key, state.condition_cbs.values()):
-        print(f"From populate_booking: {key}")
         cb.set_value(conditions.get(key, False))
 
     # ── Trigger recalculation ────
@@ -4049,25 +4031,117 @@ def populate_from_booking(state: FormState, data: dict):
     _fs_revalidate(state)
 
 
-def populate_price_and_discount(state, booking_data: dict):
-    component_map = build_component_map_from_booking(booking_data)
+def populate_price_and_discount(
+    state,
+    booking_data: dict,
+    *,
+    edit_mode: bool = False,
+) -> None:
+    """
+    Auto-fill all price and discount inputs from booking_data.
 
-    # Prices
-    for name, inp in state.price_inputs.items():
-        val = component_map.get(name)
+    Args:
+        state:        FormState with price_inputs / discount_inputs populated.
+        booking_data: Raw dict from the API — may contain both list prices and
+                      actual (charged) amounts under different key patterns.
+        edit_mode:    When True (editing an existing transaction), the "charged"
+                      column is filled from *_actual keys so the auditor sees
+                      what was entered previously, not the price list defaults.
 
+    Populates:
+        state.listed_prices          : price-list reference values (always)
+        state.price_listed_labels    : the ₹ display in the Listed column
+        state.discount_listed_labels : allowed amount display
+        state.discount_given_labels  : given amount display (read-only)
+        state.discount_diff_labels   : per-row difference display
+        Price and discount inputs    : filled with listed OR actual values
+    """
+    if not booking_data:
+        return
+
+    # ── Build two maps: listed (price list) and actual (what was charged) ────
+    # listed_map:  component name → price-list value
+    # charged_map: component name → what was actually charged/given
+    listed_map: dict = {}
+    charged_map: dict = {}
+
+    for raw_key, val in booking_data.items():
         if val is None:
-            norm_name = re.sub(r"[^a-z0-9]", "", name.lower())
-            val = component_map.get(norm_name)
+            continue
+        is_actual = raw_key.endswith("_actual")
+        is_allowed = raw_key.endswith("_allowed") or raw_key.endswith("_listed")
+        clean = re.sub(r"_(actual|allowed|listed)$", "", raw_key).strip()
+        norm = re.sub(r"[^a-z0-9]", "", clean.lower())
 
-        if val is not None:
-            inp.set_value(format_num_inr(val))
+        if is_actual:
+            charged_map[clean] = val
+            charged_map[norm] = val
+        elif is_allowed:
+            listed_map[clean] = val
+            listed_map[norm] = val
+        else:
+            # Plain key — treat as both listed and charged default
+            listed_map[clean] = val
+            listed_map[norm] = val
+            # Only use as charged default if edit_mode not explicitly set;
+            # in edit_mode we prefer *_actual keys.
+            if not edit_mode:
+                charged_map.setdefault(clean, val)
+                charged_map.setdefault(norm, val)
 
-    # Discounts
+    def _resolve_listed(name: str):
+        norm = re.sub(r"[^a-z0-9]", "", name.lower())
+        return listed_map.get(name) or listed_map.get(norm)
+
+    def _resolve_charged(name: str):
+        norm = re.sub(r"[^a-z0-9]", "", name.lower())
+        return charged_map.get(name) or charged_map.get(norm)
+
+    # ── Price inputs ──────────────────────────────────────────────────────────
+    for name, inp in state.price_inputs.items():
+        listed_val = _resolve_listed(name)
+        charged_val = _resolve_charged(name) if edit_mode else listed_val
+
+        # Always store and display the listed price
+        if listed_val is not None:
+            state.listed_prices[name] = listed_val
+            lbl = state.price_listed_labels.get(name)
+            if lbl:
+                lbl.set_text(f"₹{float(listed_val):,.2f}")
+
+        # Fill the charged input:
+        #   edit_mode  → restore what the auditor entered previously (actual)
+        #   new entry  → pre-fill with listed price so auditor can match/deviate
+        fill_val = (
+            charged_val if (edit_mode and charged_val is not None) else listed_val
+        )
+        if fill_val is not None:
+            inp.set_value(format_num_inr(fill_val))
+
+    # ── Discount inputs + read-only displays ──────────────────────────────────
     for name, inp in state.discount_inputs.items():
-        val = component_map.get(name)
-        if val is not None:
-            inp.set_value(format_num_inr(val))
+        listed_val = _resolve_listed(name)
+        charged_val = _resolve_charged(name)
+
+        if listed_val is not None:
+            state.listed_prices[name] = listed_val
+            a_lbl = state.discount_listed_labels.get(name)
+            if a_lbl:
+                a_lbl.set_text(f"₹{float(listed_val):,.2f}")
+
+        if edit_mode and charged_val is not None:
+            inp.set_value(format_num_inr(charged_val))
+
+        # Update the read-only Given label
+        g_lbl = state.discount_given_labels.get(name)
+        if g_lbl:
+            booking_actuals: dict = getattr(state, "booking_discount_actuals", {}) or {}
+            display_val = booking_actuals.get(name, charged_val)
+            if display_val is not None:
+                g_lbl.set_text(f"₹{float(display_val):,.2f}")
+
+    # Recalculate everything with the populated values
+    _fs_update_live(state)
 
 
 def populate_from_delivery(state: FormState, delivery: dict):
@@ -4262,8 +4336,16 @@ FORM_COLUMNS = 3
 
 
 def build_vehicle_section(state: FormState) -> None:
-    car_opts = {car["id"]: car["name"] for car in state.cars}
-    outlet_opts = {outlet["id"]: outlet["name"] for outlet in state.outlets}
+
+    car_opts = {
+        car["id"]: car["name"]
+        for car in sorted(state.cars, key=lambda x: x["name"].lower())
+    }
+    outlet_opts = {
+        outlet["id"]: outlet["name"]
+        for outlet in sorted(state.outlets, key=lambda x: x["name"].lower())
+    }
+
     exec_opts = {executive["id"]: executive["name"] for executive in state.executives}
 
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6 w-full"):
@@ -4301,7 +4383,7 @@ def build_vehicle_section(state: FormState) -> None:
             state.exec_select = (
                 ui.select(
                     options=exec_opts,
-                    label="Sales Executive",
+                    label="Sales Executive *",
                     on_change=lambda e: setattr(state, "executive_id", e.value),
                 )
                 .classes("w-full")
@@ -4322,7 +4404,7 @@ def build_vehicle_section(state: FormState) -> None:
                         on_change=lambda _: _fs_try_price_preload(state),
                         validation={
                             "Must be 4 digits": lambda value: (
-                                len(value) == 4 and value.isdigit()
+                                len(str(value)) == 4 and str(value).isdigit()
                             )
                         },
                     )
@@ -4347,8 +4429,8 @@ def build_vehicle_section(state: FormState) -> None:
                         label="VIN Number *",
                         placeholder="MALB000CLSM000000",
                         validation={
-                            "Invalid VIN Number": lambda v: (
-                                bool(v) and bool(vin_regex.match(v))
+                            "Invalid VIN Number": lambda v: bool(
+                                vin_regex.match(str(v))
                             )
                         },
                     )
@@ -4360,9 +4442,9 @@ def build_vehicle_section(state: FormState) -> None:
                     ui.input(
                         label="Delivery Date *",
                         validation={
-                            "Enter valid date (DD/MM/YYYY)": lambda v: (
-                                bool(v) and is_valid_date(v)
-                            )
+                            "Enter valid date": lambda v: bool(
+                                v
+                            )  # browser already validates
                         },
                     )
                     .classes("w-full")
@@ -4374,9 +4456,8 @@ def build_vehicle_section(state: FormState) -> None:
                         label="Engine Number *",
                         validation={
                             "Enter 10–15 alphanumeric characters": lambda v: (
-                                bool(v)
-                                and 10 <= len(v.strip()) <= 15
-                                and v.strip().isalnum()
+                                10 <= len(str(v).strip()) <= 15
+                                and str(v).strip().isalnum()
                             )
                         },
                     )
@@ -4384,7 +4465,6 @@ def build_vehicle_section(state: FormState) -> None:
                     .props("outlined dense")
                     .on_value_change(lambda _: _fs_revalidate(state))
                 )
-
                 state.vehicle_regn_no = (
                     ui.input(
                         label="Vehicle Regn Number",
@@ -4405,12 +4485,7 @@ def build_vehicle_section(state: FormState) -> None:
                 state.regn_date = (
                     ui.input(
                         label="Date of Registration",
-                        placeholder="DD/MM/YYYY",
-                        validation={
-                            "Enter valid date (DD/MM/YYYY)": lambda v: (
-                                bool(v) and is_valid_date(v)
-                            )
-                        },
+                        validation={"Enter valid date": lambda v: not v or bool(v)},
                     )
                     .classes("w-full")
                     .props('outlined dense type="date"')
@@ -4562,7 +4637,7 @@ def build_booking_checklist_section(state: FormState) -> None:
         with ui.grid(columns=FORM_COLUMNS + 2).classes("w-full"):
             for key, label in BOOKING_CHECK_KEYS:
                 state.booking_cbs[key] = (
-                    ui.checkbox(label)
+                    ui.checkbox(label, value=False)
                     .props("dense color=primary")
                     .classes("text-gray-700 font-medium")
                     .on_value_change(lambda _: _fs_revalidate(state))
@@ -4607,406 +4682,409 @@ def build_booking_section(state: FormState):
             )
 
 
-def _build_delivery_prices_section(state: FormState) -> None:
+# ─────────────────────────────────────────────────────────────────────────────
+# build_prices_section  — the single UI entry-point
+# ─────────────────────────────────────────────────────────────────────────────
+def build_prices_section(state: FormState) -> None:
+    """
+    Render the unified Price, Discount, and Accessories card.
+
+    Reads from state:
+        stage ("booking" | "delivery")
+        is_direct_delivery (bool)
+        components (list of component dicts from /components API)
+        booking_data (dict | None) — for delivery stage reference column
+        conditions (dict) — current sale conditions (exchange, corporate…)
+    """
+    stage = getattr(state, "stage", "booking")
+    is_delivery = stage == "delivery"
+    is_direct = getattr(state, "is_direct_delivery", True)
+    booking_data = getattr(state, "booking_data", None) or {}
+    conditions = getattr(state, "conditions", {}) or {}
+
     price_comps = sorted(
         [c for c in state.components if c.get("type") == "price"],
         key=lambda x: x.get("order", 99),
     )
 
-    booking_map = {
-        k.replace("_actual", "").strip(): v
-        for k, v in (state.booking_data or {}).items()
-        if k.endswith("_actual")
-    }
-
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        ui.label("💰 Price Comparison (Booking vs Delivery)").classes(
-            "text-[15px] font-bold mb-2"
-        )
-
-        if price_comps:
-            with ui.column().classes("w-full gap-2"):
-                for comp in price_comps:
-                    name = comp["name"]
-
-                    with ui.row().classes("w-full items-center h-10 gap-2"):
-                        # ── Label
-                        ui.label(name).classes("w-52 text-sm")
-
-                        # ── Listed Price
-                        listed_label = ui.label("₹—").classes(
-                            "w-28 text-gray-500 text-sm"
-                        )
-                        state.price_listed_labels[name] = listed_label
-
-                        # ── Booking Price (READ ONLY)
-                        booking_val = booking_map.get(name)
-
-                        booking_input = (
-                            ui.input(
-                                value=format_num_inr(booking_val) if booking_val else ""
-                            )
-                            .props("readonly dense")
-                            .classes("w-36")
-                        )
-
-                        # ── Toggle (Match Booking)
-                        toggle = ui.switch("Same as Booking").props("dense color=green")
-
-                        # ── Delivery Input (editable)
-                        inp = accounting_input(
-                            "",
-                            placeholder="Delivery Price",
-                            container_classes="w-36",
-                        ).props("dense")
-
-                        state.price_inputs[name] = inp
-
-                        # ── Toggle Logic
-                        def on_toggle(_, name=name, inp=inp, toggle=toggle):
-                            if toggle.value:
-                                val = booking_map.get(name, 0)
-                                inp.set_value(format_num_inr(val))
-                                inp.set_enabled(False)
-                            else:
-                                inp.set_enabled(True)
-
-                            _fs_update_live(state)
-
-                        toggle.on("update:model-value", on_toggle)
-
-                        # Trigger calc
-                        inp.on_value_change(lambda _: _fs_update_live(state))
-
-        else:
-            ui.label("No price components found").classes("text-xs text-gray-400")
-
-
-def _build_direct_delivery_prices_section(state: FormState) -> None:
-    """
-    Price & Discount section for Direct Delivery.
-    Shows manual inputs for both prices and discounts.
-    """
-    price_comps = sorted(
-        [
-            price_comp
-            for price_comp in state.components
-            if price_comp.get("type") == "price"
-        ],
-        key=lambda x: x.get("order", 99),
-    )
     discount_comps = sorted(
-        [
-            discount_comp
-            for discount_comp in state.components
-            if discount_comp.get("type") == "discount"
-        ],
+        [c for c in state.components if c.get("type") == "discount"],
         key=lambda x: x.get("order", 99),
     )
 
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 pb-2 border-b border-gray-100"
-        ):
-            ui.label("💰").classes("text-lg select-none")
-            ui.label("Price & Discounts (Direct Delivery)").classes(
-                "text-[15px] font-bold text-gray-900"
-            )
+    # For delivery stage, build a lookup of booking actuals for the ref column
+    booking_actual_map: dict = {}
+    if is_delivery and booking_data:
+        booking_actual_map = {
+            k.replace("_actual", "").strip(): v
+            for k, v in booking_data.items()
+            if k.endswith("_actual")
+        }
 
-        # ── PRICE SECTION ──
-        ui.label("Price Charged as per Books of Accounts").classes(
-            "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mt-4"
-        )
-        ui.separator().classes("mt-0")
-        if price_comps:
-            with ui.grid(columns=1).classes("w-full align-center"):
-                for comp in price_comps:
-                    name = comp["name"]
-                    with ui.row().classes("w-full items-center h-10") as row_element:
-                        state.price_rows[name] = row_element
-                        ui.label(name).classes("w-60 text-sm")
-                        listed_label = ui.label("₹—").classes(
-                            "w-32 text-gray-500 text-sm"
-                        )
-                        state.price_listed_labels[name] = listed_label
+    def _update(_=None):
+        _fs_update_live(state)
 
-                        toggle = ui.switch("Match Listed Price").props(
-                            'dense icon="check" color="green"'
-                        )
-                        inp = accounting_input(
-                            "",
-                            placeholder="Enter Charged Price",
-                            container_classes="w-60",
-                        ).props("dense")
-
-                        state.price_inputs[name] = inp
-                        state.price_match_toggles[name] = toggle
-
-                        diff_label = ui.label("₹0").classes(
-                            "w-32 text-gray-500 text-sm ml-2"
-                        )
-                        state.price_diff_labels[name] = diff_label
-
-                        def on_toggle(_, name=name, inp=inp, toggle=toggle):
-                            if toggle.value:
-                                val = state.listed_prices.get(name, 0)
-                                inp.set_value(format_num_inr(val))
-                                inp.set_enabled(False)
-                            else:
-                                inp.set_enabled(True)
-                                inp.set_value(None)
-                            _fs_update_live(state)
-
-                        toggle.on("update:model-value", on_toggle)
-                        inp.on_value_change(lambda _: _fs_update_live(state))
-
-        # ── DISCOUNT SECTION ──
-        ui.label("Discounts Allowed as per Books of Accounts").classes(
-            "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mt-6"
-        )
-        ui.separator().classes("mt-0")
-        if discount_comps:
-            with ui.grid(columns=1).classes("w-full align-center"):
-                for comp in discount_comps:
-                    name = comp["name"]
-
-                    # Default visible rows
-                    is_default = name in [
-                        "Cash Discount All Customers",
-                        "Additional Discount From Dealer",
-                        "Maximum benefit due to price increase",
-                    ]
-
-                    with ui.row().classes("w-full items-center h-10") as row_element:
-                        state.discount_rows[name] = row_element
-                        row_element.set_visibility(is_default)
-
-                        ui.label(name).classes("w-60 text-sm")
-                        listed_label = ui.label("₹—").classes(
-                            "w-32 text-gray-500 text-sm"
-                        )
-                        state.discount_listed_labels[name] = listed_label
-
-                        toggle = ui.switch("Match Listed Discount").props(
-                            'dense icon="check" color="green"'
-                        )
-                        inp = accounting_input(
-                            "",
-                            placeholder="Enter Discount",
-                            container_classes="w-60",
-                        ).props("dense")
-
-                        state.discount_inputs[name] = inp
-                        state.discount_match_toggles[name] = toggle
-
-                        def on_toggle_disc(_, name=name, inp=inp, toggle=toggle):
-                            if toggle.value:
-                                val = state.listed_prices.get(name, 0)
-                                inp.set_value(format_num_inr(val))
-                                inp.set_enabled(False)
-                            else:
-                                inp.set_enabled(True)
-                                inp.set_value(None)
-                            _fs_update_live(state)
-
-                        toggle.on("update:model-value", on_toggle_disc)
-                        inp.on_value_change(lambda _: _fs_update_live(state))
-                with ui.column().classes("w-full"):
-                    with ui.row().classes("w-full mb-0"):
-                        ui.label("Price Adjustment").classes(
-                            "w-146 text-lg font-bold tracking-[0.9px] uppercase vertical-align-center"
-                        )
-                        state.adjustment_input = accounting_input(
-                            "Price Adjustment",
-                            placeholder="Enter Adjustment",
-                            container_classes="w-[250px]",
-                        )
-                        state.adjustment_input.on_value_change(
-                            lambda _: _fs_update_live(state)
-                        )
-        # ── SUMMARY LABELS ──
-        with ui.grid(columns=1).classes("w-full align-center mt-4 pt-4 border-t"):
-            with ui.row().classes("w-full items-center h-10"):
-                ui.label("Totals").classes(
-                    "text-lg font-bold tracking-[0.9px] uppercase"
+    # ── OUTER CARD ────────────────────────────────────────────────────────────
+    with ui.card().classes("w-full rounded-xl shadow-sm mb-4"):
+        with ui.column().classes("w-full gap-0 p-5"):
+            # ── CARD HEADER ───────────────────────────────────────────────────
+            with ui.row().classes(
+                "w-full items-center gap-2 pb-3 border-b border-gray-100"
+            ):
+                ui.label("Price & Discounts").classes(
+                    "text-[15px] font-bold text-gray-900 flex-1"
                 )
-                state.lbl_total_listed_price = ui.label("₹—").classes("w-32 text-lg")
-                state.lbl_total_offered_price = ui.label("₹—").classes("w-32 text-lg")
-                state.lbl_total_diff_price = ui.label("₹—").classes("w-32 text-lg ml-2")
-                state.lbl_excess_discount = ui.label("₹0").classes(
-                    "ml-auto text-lg font-bold"
+                if is_delivery and not is_direct:
+                    ui.badge("Delivery Stage", color="blue").props("outline")
+                elif is_direct:
+                    ui.badge("Direct Delivery", color="purple").props("outline")
+                else:
+                    ui.badge("Booking Stage", color="green").props("outline")
+
+            # ══════════════════════════════════════════════════════════════════
+            # SECTION 1 — PRICE CHARGED AS PER BOOKS
+            # ══════════════════════════════════════════════════════════════════
+            ui.label("Price charged as per books of accounts").classes(
+                "text-[14px] font-semibold tracking-[0.9px] uppercase text-black mt-4 mb-1"
+            )
+
+            if not price_comps:
+                ui.label("No price components — check /components API.").classes(
+                    "text-xs text-gray-400 italic"
                 )
-
-
-def _build_booking_prices_section(state: FormState) -> None:
-    price_comps = sorted(
-        [
-            price_comp
-            for price_comp in state.components
-            if price_comp.get("type") == "price"
-        ],
-        key=lambda x: x.get("order", 99),
-    )
-    discount_comps = sorted(
-        [
-            discount_comp
-            for discount_comp in state.components
-            if discount_comp.get("type") == "discount"
-        ],
-        key=lambda x: x.get("order", 99),
-    )
-
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 pb-2 border-b border-gray-100"
-        ):
-            ui.label("💰").classes("text-lg select-none")
-            ui.label("Price & Discounts").classes("text-[15px] font-bold text-gray-900")
-
-        ui.label("Price Charged as per Books of Accounts").classes(
-            "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 "
-        )
-        ui.separator().classes("mt-0")
-        if price_comps:
-            with ui.grid(columns=1).classes("w-full align-center"):
-                for comp in price_comps:
-                    name = comp["name"]
-
-                    with ui.row().classes("w-full items-center h-10") as row_element:
-                        state.price_rows[name] = row_element
-                        # Label
-                        ui.label(name).classes("w-60 text-sm")
-
-                        # Listed price display
-                        listed_label = ui.label("₹—").classes(
-                            "w-32 text-gray-500 text-sm"
-                        )
-                        state.price_listed_labels[name] = listed_label
-
-                        # Toggle (Match Listed Price)
-                        toggle = (
-                            ui.switch("Match Listed Price")
-                            # .classes("m-10")
-                            .props('dense icon="check" color="green"')
-                        )
-
-                        # Input
-                        inp = (
-                            accounting_input(
-                                "",
-                                placeholder="Enter Charged Price",
-                                container_classes="w-60",
-                            )
-                        ).props("dense")
-
-                        state.price_inputs[name] = inp
-                        state.price_match_toggles[name] = toggle
-
-                        diff_label = ui.label("₹0").classes(
-                            "w-32 text-gray-500 text-sm ml-2"
-                        )
-                        state.price_diff_labels[name] = diff_label
-
-                        def on_toggle(_, name=name, inp=inp, toggle=toggle):
-                            if toggle.value:
-                                val = state.listed_prices.get(name, 0)
-                                inp.set_value(format_num_inr(val))
-                                inp.set_enabled(False)  # disable input
-                            else:
-                                inp.set_enabled(True)  # re-enable input
-                                inp.set_value(None)  # optional: clear
-                            _fs_update_live(state)
-
-                        toggle.on("update:model-value", on_toggle)
-                        inp.on_value_change(lambda _: _fs_update_live(state))
-
-        else:
-            ui.label("No price components — check /components endpoint.").classes(
-                "text-xs text-gray-400"
-            )
-        with ui.grid(columns=1).classes("w-full align-center"):
-            with ui.row().classes("w-full items-center h-10"):
-                ui.label("Total On-Road Price").classes(
-                    "text-lg font-bold tracking-[0.9px] uppercase mb-1 mt-1 pt-1"
-                )
-                total_listed_price = ui.label("₹—").classes("w-32 text-lg")
-                total_offered_price = ui.label("₹—").classes("w-32 text-lg")
-                total_diff_price = ui.label("₹—").classes("w-32 text-lg ml-2")
-                state.lbl_total_listed_price = total_listed_price
-                state.lbl_total_offered_price = total_offered_price
-                state.lbl_total_diff_price = total_diff_price
-
-        ui.label("Discounts Offered as per Books of Accounts").classes(
-            "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mb-1 mt-1 pt-1"
-        )
-        ui.separator().classes("mt-0 my-2")
-        with ui.row().classes("w-full items-center pt-2 border-t border-gray-100"):
-            ui.label("Total Discount as per booking file").classes(
-                "text-sm font-bold tracking-[0.9px]"
-            )
-            state.total_discount_booking = accounting_input(
-                label_text="",
-                placeholder="₹0",
-                container_classes="w-60",
-            )
-            state.total_discount_booking.on_value_change(
-                lambda _: _fs_update_live(state)
-            )
-
-        if discount_comps:
-            with ui.grid(columns=1).classes("w-full align-center"):
-                for comp in discount_comps:
-                    name = comp["name"]
-
-                    with ui.row().classes("w-full align-center h-10") as row_element:
-                        ui.label(name).classes("w-60 text-sm")
-
-                        listed_label = ui.label("₹—").classes(
-                            "w-32 text-gray-500 text-sm"
-                        )
-                        state.discount_listed_labels[name] = listed_label
-                        state.discount_rows[name] = row_element
-
-                # ── Excess Discount Row ─────────────────────────────
+            else:
+                # ── Column headers ────────────────────────────────────────────
                 with ui.row().classes(
-                    "w-full items-center h-12 mt-2 pt-2 border-t border-gray-100"
+                    "w-full items-center gap-2 pb-1 border-b border-gray-200"
                 ):
-                    ui.label("Price Adjustment").classes(
-                        "w-60 text-lg font-bold tracking-[0.9px] uppercase"
+                    ui.label("Particular").classes(f"{_HDR} flex-1 text-left")
+                    ui.label("Price list").classes(f"{_HDR} w-28")
+                    if is_delivery and not is_direct:
+                        ui.label("Booking").classes(f"{_HDR} w-28")
+                    ui.label("Match").classes(f"{_HDR} w-20 text-center")
+                    ui.label("Charged").classes(f"{_HDR} w-36")
+                    ui.label("Difference").classes(f"{_HDR} w-24")
+
+                # ── One row per price component ───────────────────────────────
+                for comp in price_comps:
+                    name = comp["name"]
+
+                    with ui.row().classes(
+                        "w-full items-center gap-2 py-1.5 border-b border-gray-50"
+                    ) as row_el:
+                        state.price_rows[name] = row_el
+
+                        # Particular label
+                        ui.label(name).classes(f"{_LABEL} flex-1")
+
+                        # Listed price (populated later by populate_price_and_discount)
+                        listed_lbl = ui.label("₹—").classes(f"{_MONO} w-28")
+                        state.price_listed_labels[name] = listed_lbl
+
+                        # Booking reference column (delivery only)
+                        if is_delivery and not is_direct:
+                            bk_val = booking_actual_map.get(name)
+                            bk_txt = (
+                                format_num_inr(bk_val) if bk_val is not None else "—"
+                            )
+                            ui.label(f"₹{bk_txt}").classes(
+                                f"{_MONO} w-28 text-blue-400"
+                            )
+
+                        # Match toggle
+                        with ui.element("div").classes("w-20 flex justify-center"):
+                            toggle = (
+                                ui.switch("").props("dense color=green").classes("m-0")
+                            )
+                            state.price_match_toggles[name] = toggle
+                            toggle.on_value_change(_update)
+
+                        # Charged input
+                        inp = accounting_input(
+                            "", placeholder="₹0", container_classes="w-36"
+                        ).props("dense")
+                        state.price_inputs[name] = inp
+                        inp.on_value_change(_update)
+
+                        # Difference label
+                        diff_lbl = ui.label("—").classes(
+                            f"{_MONO_SM} w-24 text-gray-400"
+                        )
+                        state.price_diff_labels[name] = diff_lbl
+
+                    # Toggle handler — fills input from listed or booking source
+                    def _on_price_toggle(
+                        _,
+                        _name=name,
+                        _inp=inp,
+                        _toggle=toggle,
+                        _is_delivery=is_delivery,
+                        _is_direct=is_direct,
+                        _bmap=booking_actual_map,
+                    ):
+                        if _toggle.value:
+                            if _is_delivery and not _is_direct:
+                                # Match booking value
+                                src_val = _bmap.get(_name, 0)
+                            else:
+                                # Match listed price
+                                src_val = state.listed_prices.get(_name, 0)
+                            _inp.set_value(format_num_inr(src_val))
+                            _inp.set_enabled(False)
+                        else:
+                            _inp.set_enabled(True)
+                            _inp.set_value(None)
+
+                    toggle.on("update:model-value", _on_price_toggle)
+                    # _fs_update_live(state)
+
+            with ui.row().classes(
+                "w-full items-center gap-3 mt-3 pt-3 border-t-2 border-gray-200"
+            ):
+                ui.label("Total on-road price").classes(
+                    "text-[12px] font-bold uppercase tracking-wide text-gray-700 flex-1"
+                )
+                with ui.row().classes("items-baseline gap-1"):
+                    ui.label("Listed").classes("text-[13px] text-black text-left")
+                    state.lbl_total_listed_price = ui.label("₹—").classes(
+                        "text-[13px] font-mono text-black-500 w-28 text-right"
+                    )
+                with ui.row().classes("items-baseline gap-1"):
+                    ui.label("Charged").classes("text-[13px] text-black text-left")
+                    state.lbl_total_charged_price = ui.label("₹—").classes(
+                        "text-[13px] font-mono font-semibold text-black w-28 text-right"
+                    )
+                with ui.row().classes("items-baseline gap-1"):
+                    ui.label("Diff").classes("text-[10px] text-black text-left")
+                    state.lbl_total_diff_price = ui.label("₹—").classes(
+                        "text-[13px] font-mono w-24 text-right text-black"
                     )
 
-                    state.adjustment_input = accounting_input(
-                        label_text="",
-                        placeholder="₹0",
-                        container_classes="w-60",
-                    )
-                    state.adjustment_input.on_value_change(
-                        lambda _: _fs_update_live(state)
-                    )
-                    ui.label("Excess Discount").classes(
-                        "w-60 text-lg font-bold tracking-[0.9px] uppercase"
-                    )
-                    # Placeholder for the spacing matching the listed_label above
-                    ui.label("").classes("w-32")
+            # Note: lbl_total_offered_price kept as alias so _fs_update_live
+            # doesn't crash if called from old code referencing that attribute.
+            state.lbl_total_offered_price = state.lbl_total_charged_price
 
-                    state.lbl_excess_discount = ui.label("₹0").classes(
-                        "text-lg font-bold ml-2"
-                    )
-
-        else:
-            ui.label("No discount components — check /components endpoint.").classes(
-                "text-xs text-gray-400"
+            # ══════════════════════════════════════════════════════════════════
+            # SECTION 2 — DISCOUNTS
+            # ══════════════════════════════════════════════════════════════════
+            ui.label("Discounts offered as per books of accounts").classes(
+                "text-[14px] font-bold tracking-[0.9px] uppercase text-black mt-6 mb-1"
             )
 
+            # ── [A] Non-direct delivery: show booking-time discounts read-only ─
+            # Auditors need to see what was agreed at booking without being able
+            # to accidentally edit it during the delivery audit.
+            if is_delivery or is_direct:
+                booking_disc_map: dict = {}
+                if booking_data:
+                    # Pull Discount actuals from booking data.
+                    for raw_k, raw_v in booking_data.items():
+                        if raw_v is None:
+                            continue
+                        clean = raw_k.replace("_actual", "").strip()
+                        # only keep keys that match a discount component name
+                        for dc in discount_comps:
+                            if dc["name"].lower() == clean.lower() or re.sub(
+                                r"[^a-z0-9]", "", dc["name"].lower()
+                            ) == re.sub(r"[^a-z0-9]", "", clean.lower()):
+                                booking_disc_map[dc["name"]] = raw_v
+                                break
 
-def build_prices_section(state: FormState) -> None:
-    if state.stage == "delivery":
-        if state.is_direct_delivery:
-            _build_direct_delivery_prices_section(state)
-        else:
-            _build_delivery_prices_section(state)
-    else:
-        _build_booking_prices_section(state)
+                state.booking_discounts_actuals = booking_disc_map
+
+                with ui.element("div").classes(
+                    "w-full rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 mb-3"
+                ):
+                    ui.label("Discounts at time of booking").classes(
+                        "text-[10px] font-bold uppercase tracking-wide text-blue-500 mb-2"
+                    )
+                    if booking_disc_map:
+                        for disc_name, disc_val in booking_disc_map.items():
+                            cond_key = _condition_badge(disc_name, conditions)
+                            with ui.row().classes(
+                                "w-full items-center py-1 border-b border-blue-100"
+                            ):
+                                with ui.row().classes(
+                                    "flex-1 items-center gap-2 min-w-0"
+                                ):
+                                    ui.label(disc_name).classes(
+                                        "text-[13px] text-blue-800 truncate"
+                                    )
+                                    if cond_key:
+                                        ui.badge(
+                                            cond_key.replace("_", "").title()
+                                        ).props("outline").classes(
+                                            "text-[9px] shrink-0 text-blue-600"
+                                        )
+                                    ui.label(f"₹{int(disc_val):,}").classes(
+                                        "text-[13px] font-mono font-semibold text-blue-700 w-28 text-right"
+                                    )
+
+                        # Total of booking discounts
+                        booking_disc_total = sum(
+                            int(v or 0) for v in booking_disc_map.values()
+                        )
+                        with ui.row().classes("w-full items-center pt-2 mt-1"):
+                            ui.label("Total booking discount").classes(
+                                "flex-1 text-[12px] font-bold text-blue-700 uppercase tracking-wide"
+                            )
+                            ui.label(f"₹{booking_disc_total:,}").classes(
+                                "text-[14px] font-mono font-bold text-blue-700 w-28 text-right"
+                            )
+                    else:
+                        ui.label("No discount data from booking.").classes(
+                            "text-[12px] text-blue-400 italic"
+                        )
+            # ── [B] Booking-file total row — shown on booking + direct delivery ─
+            if not is_delivery:
+                with ui.row().classes(
+                    "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200"
+                ):
+                    ui.label("Total discount as per booking file").classes(
+                        f"{_LABEL} flex-1 font-medium"
+                    )
+                    # Allowed placeholder — aligns with the discount table below
+                    ui.label("—").classes(f"{_MONO} w-28")
+                    state.total_discount_booking = accounting_input(
+                        "", placeholder="₹0", container_classes="w-36"
+                    ).props("dense")
+                    state.total_discount_booking.on_value_change(_update)
+
+            # ── [C] Delivery-note total row — shown on all delivery modes ─────
+            if is_delivery:
+                with ui.row().classes(
+                    "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200"
+                ):
+                    ui.label("Total discount as per delivery note").classes(
+                        f"{_LABEL} flex-1 font-medium"
+                    )
+                    ui.label("—").classes(f"{_MONO} w-28")
+                    state.total_discount_delivery = accounting_input(
+                        "", placeholder="₹0", container_classes="w-36"
+                    ).props("dense")
+                    state.total_discount_delivery.on_value_change(_update)
+
+            with ui.row().classes(
+                "w-full items-center gap-2 py-1 border-b border-gray-200 mt-2"
+            ):
+                ui.label("Particular").classes(f"{_HDR} flex-1 text-left")
+                ui.label("Allowed").classes(f"{_HDR} w-28")
+                ui.label("Match").classes(f"{_HDR} w-20 text-center")
+                ui.label("Given").classes(f"{_HDR} w-36")
+                ui.label("Difference").classes(f"{_HDR} w-24")
+
+            for comp in discount_comps:
+                name = comp["name"]
+                is_default = name in _DEFAULT_DISC
+                cond_key = _condition_badge(name, conditions)
+
+                initially_visible = is_default or (
+                    cond_key is not None and bool(conditions.get(cond_key))
+                )
+
+                with ui.row().classes(
+                    "w-full items-center gap-2 py-1.5 border-b border-gray-50"
+                ) as disc_row_el:
+                    state.discount_rows[name] = disc_row_el
+                    disc_row_el.set_visibility(initially_visible)
+
+                    # ── Particular
+                    with ui.row().classes("flex-1 items-center gap-2 min-w-0"):
+                        ui.label(name).classes(f"{_LABEL} truncate")
+                        if cond_key and not is_default:
+                            ui.badge(cond_key.replace("_", " ").title()).props(
+                                "outline"
+                            ).classes("text-[9px] shrink-0")
+
+                    # ── Allowed
+                    allowed_lbl = ui.label("₹—").classes(f"{_MONO} w-28")
+                    state.discount_listed_labels[name] = allowed_lbl
+
+                    # ── Match toggle
+                    with ui.element("div").classes("w-20 flex justify-center"):
+                        toggle = ui.switch("").props("dense color=green").classes("m-0")
+                        state.discount_match_toggles[name] = toggle
+                        toggle.on_value_change(_update)
+
+                    # ── Given input
+                    inp = accounting_input(
+                        "", placeholder="₹0", container_classes="w-36"
+                    ).props("dense")
+                    state.discount_inputs[name] = inp
+                    inp.on_value_change(_update)
+
+                    # ── Difference
+                    diff_lbl = ui.label("—").classes(
+                        "text-[11px] font-mono w-24 text-right text-gray-400"
+                    )
+                    state.discount_diff_labels[name] = diff_lbl
+
+                def on_toggle(_, name=name, inp=inp, toggle=toggle):
+                    if toggle.value:
+                        val = state.listed_prices.get(name, 0)
+                        inp.set_value(format_num_inr(val))
+                        inp.set_enabled(False)  # disable input
+                    else:
+                        inp.set_enabled(True)  # re-enable input
+                        inp.set_value(None)  # optional: clear
+                    _fs_update_live(state)
+
+                toggle.on("update:model-value", on_toggle)
+                inp.on_value_change(_update)
+
+            # ── [D] Adjustment Row ─────────────────────────────────────
+            with ui.row().classes(
+                "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
+            ):
+                ui.label("Adjustment").classes(f"{_LABEL} flex-1 font-medium")
+
+                # spacer to align with table
+                ui.label("—").classes(f"{_MONO} w-28")
+
+                state.adjustment_input = accounting_input(
+                    "", placeholder="₹0", container_classes="w-48"
+                ).props("dense")
+
+                state.adjustment_input.on_value_change(_update)
+
+            # ══════════════════════════════════════════════════════════════════
+            # SECTION 3 — DISCOUNT SUMMARY BAR
+            # ══════════════════════════════════════════════════════════════════
+            with ui.row().classes(
+                "w-full items-center gap-4 mt-3 pt-3 border-t-2 border-gray-200"
+            ):
+                ui.label("Discount summary").classes(
+                    "text-[12px] font-bold uppercase tracking-wide text-gray-700 flex-1"
+                )
+                with ui.row().classes("items-baseline gap-1"):
+                    ui.label("Allowed").classes("text-[10px] text-gray-400")
+                    state.total_allowed = ui.label("₹0").classes(
+                        "text-[13px] font-mono text-gray-600 w-28 text-right"
+                    )
+                with ui.row().classes("items-baseline gap-1"):
+                    ui.label("Given").classes("text-[10px] text-gray-400")
+                    state.total_given = ui.label("₹0").classes(
+                        "text-[13px] font-mono text-gray-600 w-28 text-right"
+                    )
+
+            # ── EXCESS DISCOUNT CALLOUT ───────────────────────────────────────
+            with ui.row().classes(
+                "w-full items-center justify-between mt-2 px-4 py-2.5 "
+                "rounded-lg bg-gray-50 border border-gray-200"
+            ) as _excess_bar:
+                with ui.column().classes("gap-0"):
+                    ui.label("Excess discount").classes(
+                        "text-[11px] font-bold uppercase tracking-wide text-gray-500"
+                    )
+                    ui.label("Discount given minus allowed limit").classes(
+                        "text-[10px] text-gray-400"
+                    )
+                state.lbl_excess_discount = ui.label("₹0.00").classes(
+                    "text-[18px] font-bold font-mono text-gray-400"
+                )
+                # lbl_excess is the compact version used in the live bar elsewhere
+                state.lbl_excess = state.lbl_excess_discount
+    _fs_update_live(state)
 
 
 def build_accessories_section(state: FormState) -> None:
@@ -5030,7 +5108,7 @@ def build_accessories_section(state: FormState) -> None:
                 state.accessory_map.get(int(i), {}).get("listed_price", 0)
                 for i in selected
             )
-            state.acc_total_label.set_text(f"Total: ₹{total:,.0f}")
+            state.acc_total_label.set_text(f"Total: ₹{total:,}")
 
             # auto-fill charged if empty
             if not state.acc_charged.value:
@@ -5065,7 +5143,7 @@ def build_accessories_section(state: FormState) -> None:
             ).on_value_change(lambda _: _fs_update_live(state))
 
 
-def build_delivery_section(state: FormState) -> None:
+def build_delivery_checklist_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -5076,7 +5154,7 @@ def build_delivery_section(state: FormState) -> None:
             )
         with ui.grid(columns=5).classes("w-full gap-y-2"):
             for key, label in DELIVERY_CHECK_KEYS:
-                state.delivery_cbs[key] = ui.checkbox(label).props("dense")
+                state.delivery_cbs[key] = ui.checkbox(label, value=False).props("dense")
 
 
 def build_audit_section(state: FormState) -> None:
@@ -5229,6 +5307,481 @@ def build_payment_section(state: FormState) -> None:
                 )
 
         toggle_fields()
+
+
+# def _build_delivery_prices_section(state: FormState) -> None:
+#     price_comps = sorted(
+#         [c for c in state.components if c.get("type") == "price"],
+#         key=lambda x: x.get("order", 99),
+#     )
+
+#     booking_map = {
+#         k.replace("_actual", "").strip(): v
+#         for k, v in (state.booking_data or {}).items()
+#         if k.endswith("_actual")
+#     }
+
+#     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+#         ui.label("💰 Price Comparison (Booking vs Delivery)").classes(
+#             "text-[15px] font-bold mb-2"
+#         )
+
+#         if price_comps:
+#             with ui.column().classes("w-full gap-2"):
+#                 for comp in price_comps:
+#                     name = comp["name"]
+
+#                     with ui.row().classes("w-full items-center h-10 gap-2"):
+#                         # ── Label
+#                         ui.label(name).classes("w-52 text-sm")
+
+#                         # ── Listed Price
+#                         listed_label = ui.label("₹—").classes(
+#                             "w-28 text-gray-500 text-sm"
+#                         )
+#                         state.price_listed_labels[name] = listed_label
+
+#                         # ── Booking Price (READ ONLY)
+#                         booking_val = booking_map.get(name)
+
+#                         booking_input = (
+#                             ui.input(
+#                                 value=format_num_inr(booking_val) if booking_val else ""
+#                             )
+#                             .props("readonly dense")
+#                             .classes("w-36")
+#                         )
+
+#                         # ── Toggle (Match Booking)
+#                         toggle = ui.switch("Same as Booking").props("dense color=green")
+
+#                         # ── Delivery Input (editable)
+#                         inp = accounting_input(
+#                             "",
+#                             placeholder="Delivery Price",
+#                             container_classes="w-36",
+#                         ).props("dense")
+
+#                         state.price_inputs[name] = inp
+
+#                         # ── Toggle Logic
+#                         def on_toggle(_, name=name, inp=inp, toggle=toggle):
+#                             if toggle.value:
+#                                 val = booking_map.get(name, 0)
+#                                 inp.set_value(format_num_inr(val))
+#                                 inp.set_enabled(False)
+#                             else:
+#                                 inp.set_enabled(True)
+
+#                             _fs_update_live(state)
+
+#                         toggle.on("update:model-value", on_toggle)
+
+#                         # Trigger calc
+#                         inp.on_value_change(lambda _: _fs_update_live(state))
+
+#         else:
+#             ui.label("No price components found").classes("text-xs text-gray-400")
+
+
+# def _build_direct_delivery_prices_section(state: FormState) -> None:
+#     """
+#     Price & Discount section for Direct Delivery.
+#     Shows manual inputs for both prices and discounts.
+#     """
+#     price_comps = sorted(
+#         [
+#             price_comp
+#             for price_comp in state.components
+#             if price_comp.get("type") == "price"
+#         ],
+#         key=lambda x: x.get("order", 99),
+#     )
+#     discount_comps = sorted(
+#         [
+#             discount_comp
+#             for discount_comp in state.components
+#             if discount_comp.get("type") == "discount"
+#         ],
+#         key=lambda x: x.get("order", 99),
+#     )
+
+#     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+#         with ui.row().classes(
+#             "w-full items-center gap-2 pb-2 border-b border-gray-100"
+#         ):
+#             ui.label("💰").classes("text-lg select-none")
+#             ui.label("Price & Discounts (Direct Delivery)").classes(
+#                 "text-[15px] font-bold text-gray-900"
+#             )
+
+#         # ── PRICE SECTION ──
+#         ui.label("Price Charged as per Books of Accounts").classes(
+#             "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mt-4"
+#         )
+#         ui.separator().classes("mt-0")
+#         if price_comps:
+#             with ui.grid(columns=1).classes("w-full align-center"):
+#                 for comp in price_comps:
+#                     name = comp["name"]
+#                     with ui.row().classes("w-full items-center h-10") as row_element:
+#                         state.price_rows[name] = row_element
+#                         ui.label(name).classes("w-60 text-sm")
+#                         listed_label = ui.label("₹—").classes(
+#                             "w-32 text-gray-500 text-sm"
+#                         )
+#                         state.price_listed_labels[name] = listed_label
+
+#                         toggle = ui.switch("Match Listed Price").props(
+#                             'dense icon="check" color="green"'
+#                         )
+#                         inp = accounting_input(
+#                             "",
+#                             placeholder="Enter Charged Price",
+#                             container_classes="w-60",
+#                         ).props("dense")
+
+#                         state.price_inputs[name] = inp
+#                         state.price_match_toggles[name] = toggle
+
+#                         diff_label = ui.label("₹0").classes(
+#                             "w-32 text-gray-500 text-sm ml-2"
+#                         )
+#                         state.price_diff_labels[name] = diff_label
+
+#                         def on_toggle(_, name=name, inp=inp, toggle=toggle):
+#                             if toggle.value:
+#                                 val = state.listed_prices.get(name, 0)
+#                                 inp.set_value(format_num_inr(val))
+#                                 inp.set_enabled(False)
+#                             else:
+#                                 inp.set_enabled(True)
+#                                 inp.set_value(None)
+#                             _fs_update_live(state)
+
+#                         toggle.on("update:model-value", on_toggle)
+#                         inp.on_value_change(lambda _: _fs_update_live(state))
+
+#         # ── DISCOUNT SECTION ──
+#         ui.label("Discounts Allowed as per Books of Accounts").classes(
+#             "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mt-6"
+#         )
+#         ui.separator().classes("mt-0")
+#         if discount_comps:
+#             with ui.grid(columns=1).classes("w-full align-center"):
+#                 for comp in discount_comps:
+#                     name = comp["name"]
+
+#                     # Default visible rows
+#                     is_default = name in [
+#                         "Cash Discount All Customers",
+#                         "Additional Discount From Dealer",
+#                         "Maximum benefit due to price increase",
+#                     ]
+
+#                     with ui.row().classes("w-full items-center h-10") as row_element:
+#                         state.discount_rows[name] = row_element
+#                         row_element.set_visibility(is_default)
+
+#                         ui.label(name).classes("w-60 text-sm")
+#                         listed_label = ui.label("₹—").classes(
+#                             "w-32 text-gray-500 text-sm"
+#                         )
+#                         state.discount_listed_labels[name] = listed_label
+
+#                         toggle = ui.switch("Match Listed Discount").props(
+#                             'dense icon="check" color="green"'
+#                         )
+#                         inp = accounting_input(
+#                             "",
+#                             placeholder="Enter Discount",
+#                             container_classes="w-60",
+#                         ).props("dense")
+
+#                         state.discount_inputs[name] = inp
+#                         state.discount_match_toggles[name] = toggle
+
+#                         def on_toggle_disc(_, name=name, inp=inp, toggle=toggle):
+#                             if toggle.value:
+#                                 val = state.listed_prices.get(name, 0)
+#                                 inp.set_value(format_num_inr(val))
+#                                 inp.set_enabled(False)
+#                             else:
+#                                 inp.set_enabled(True)
+#                                 inp.set_value(None)
+#                             _fs_update_live(state)
+
+#                         toggle.on("update:model-value", on_toggle_disc)
+#                         inp.on_value_change(lambda _: _fs_update_live(state))
+#                 with ui.column().classes("w-full"):
+#                     with ui.row().classes("w-full mb-0"):
+#                         ui.label("Price Adjustment").classes(
+#                             "w-146 text-lg font-bold tracking-[0.9px] uppercase vertical-align-center"
+#                         )
+#                         state.adjustment_input = accounting_input(
+#                             "Price Adjustment",
+#                             placeholder="Enter Adjustment",
+#                             container_classes="w-[250px]",
+#                         )
+#                         state.adjustment_input.on_value_change(
+#                             lambda _: _fs_update_live(state)
+#                         )
+#         # ── SUMMARY LABELS ──
+#         with ui.grid(columns=1).classes("w-full align-center mt-4 pt-4 border-t"):
+#             with ui.row().classes("w-full items-center h-10"):
+#                 ui.label("Totals").classes(
+#                     "text-lg font-bold tracking-[0.9px] uppercase"
+#                 )
+#                 state.lbl_total_listed_price = ui.label("₹—").classes("w-32 text-lg")
+#                 state.lbl_total_offered_price = ui.label("₹—").classes("w-32 text-lg")
+#                 state.lbl_total_diff_price = ui.label("₹—").classes("w-32 text-lg ml-2")
+#                 state.lbl_excess_discount = ui.label("₹0").classes(
+#                     "ml-auto text-lg font-bold"
+#                 )
+
+
+# def _build_booking_prices_section(state: FormState) -> None:
+#     price_comps = sorted(
+#         [
+#             price_comp
+#             for price_comp in state.components
+#             if price_comp.get("type") == "price"
+#         ],
+#         key=lambda x: x.get("order", 99),
+#     )
+#     discount_comps = sorted(
+#         [
+#             discount_comp
+#             for discount_comp in state.components
+#             if discount_comp.get("type") == "discount"
+#         ],
+#         key=lambda x: x.get("order", 99),
+#     )
+
+#     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+#         with ui.row().classes(
+#             "w-full items-center gap-2 pb-2 border-b border-gray-100"
+#         ):
+#             ui.label("💰").classes("text-lg select-none")
+#             ui.label("Price & Discounts").classes("text-[15px] font-bold text-gray-900")
+
+#         ui.label("Price Charged as per Books of Accounts").classes(
+#             "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 "
+#         )
+#         ui.separator().classes("mt-0")
+#         if price_comps:
+#             with ui.grid(columns=1).classes("w-full align-center"):
+#                 for comp in price_comps:
+#                     name = comp["name"]
+
+#                     with ui.row().classes("w-full items-center h-10") as row_element:
+#                         state.price_rows[name] = row_element
+#                         # Label
+#                         ui.label(name).classes("w-60 text-sm")
+
+#                         # Listed price display
+#                         listed_label = ui.label("₹—").classes(
+#                             "w-32 text-gray-500 text-sm"
+#                         )
+#                         state.price_listed_labels[name] = listed_label
+
+#                         # Toggle (Match Listed Price)
+#                         toggle = (
+#                             ui.switch("Match Listed Price")
+#                             # .classes("m-10")
+#                             .props('dense icon="check" color="green"')
+#                         )
+
+#                         # Input
+#                         inp = (
+#                             accounting_input(
+#                                 "",
+#                                 placeholder="Enter Charged Price",
+#                                 container_classes="w-60",
+#                             )
+#                         ).props("dense")
+
+#                         state.price_inputs[name] = inp
+#                         state.price_match_toggles[name] = toggle
+
+#                         diff_label = ui.label("₹0").classes(
+#                             "w-32 text-gray-500 text-sm ml-2"
+#                         )
+#                         state.price_diff_labels[name] = diff_label
+
+#
+
+#         else:
+#             ui.label("No price components — check /components endpoint.").classes(
+#                 "text-xs text-gray-400"
+#             )
+#         with ui.grid(columns=1).classes("w-full align-center"):
+#             with ui.row().classes("w-full items-center h-10"):
+#                 ui.label("Total On-Road Price").classes(
+#                     "text-lg font-bold tracking-[0.9px] uppercase mb-1 mt-1 pt-1"
+#                 )
+#                 total_listed_price = ui.label("₹—").classes("w-32 text-lg")
+#                 total_offered_price = ui.label("₹—").classes("w-32 text-lg")
+#                 total_diff_price = ui.label("₹—").classes("w-32 text-lg ml-2")
+#                 state.lbl_total_listed_price = total_listed_price
+#                 state.lbl_total_offered_price = total_offered_price
+#                 state.lbl_total_diff_price = total_diff_price
+
+#         ui.label("Discounts Offered as per Books of Accounts").classes(
+#             "text-sm font-bold tracking-[0.9px] uppercase text-gray-400 mb-1 mt-1 pt-1"
+#         )
+#         ui.separator().classes("mt-0 my-2")
+#         with ui.row().classes("w-full items-center pt-2 border-t border-gray-100"):
+#             ui.label("Total Discount as per booking file").classes(
+#                 "text-sm font-bold tracking-[0.9px]"
+#             )
+#             state.total_discount_booking = accounting_input(
+#                 label_text="",
+#                 placeholder="₹0",
+#                 container_classes="w-60",
+#             )
+#             state.total_discount_booking.on_value_change(
+#                 lambda _: _fs_update_live(state)
+#             )
+
+#         if discount_comps:
+#             with ui.grid(columns=1).classes("w-full align-center"):
+#                 for comp in discount_comps:
+#                     name = comp["name"]
+
+#                     with ui.row().classes("w-full align-center h-10") as row_element:
+#                         ui.label(name).classes("w-60 text-sm")
+
+#                         listed_label = ui.label("₹—").classes(
+#                             "w-32 text-gray-500 text-sm"
+#                         )
+#                         state.discount_listed_labels[name] = listed_label
+#                         state.discount_rows[name] = row_element
+
+#                 # ── Excess Discount Row ─────────────────────────────
+#                 with ui.row().classes(
+#                     "w-full items-center h-12 mt-2 pt-2 border-t border-gray-100"
+#                 ):
+#                     ui.label("Price Adjustment").classes(
+#                         "w-60 text-lg font-bold tracking-[0.9px] uppercase"
+#                     )
+
+#                     state.adjustment_input = accounting_input(
+#                         label_text="",
+#                         placeholder="₹0",
+#                         container_classes="w-60",
+#                     )
+#                     state.adjustment_input.on_value_change(
+#                         lambda _: _fs_update_live(state)
+#                     )
+#                     ui.label("Excess Discount").classes(
+#                         "w-60 text-lg font-bold tracking-[0.9px] uppercase"
+#                     )
+#                     # Placeholder for the spacing matching the listed_label above
+#                     ui.label("").classes("w-32")
+
+#                     state.lbl_excess_discount = ui.label("₹0").classes(
+#                         "text-lg font-bold ml-2"
+#                     )
+
+#         else:
+#             ui.label("No discount components — check /components endpoint.").classes(
+#                 "text-xs text-gray-400"
+#             )
+
+
+# def build_prices_section(state: FormState) -> None:
+#     if state.stage == "delivery":
+#         if state.is_direct_delivery:
+#             _build_direct_delivery_prices_section(state)
+#         else:
+#             _build_delivery_prices_section(state)
+#     else:
+#         _build_booking_prices_section(state)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal CSS helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+_HDR = "text-[12px] font-semibold tracking-[0.9px] uppercase text-black-400 text-center"
+_LABEL = "text-[13px] text-black-700 truncate"
+_MONO = "text-[13px] font-mono text-black-500 text-center"
+_MONO_SM = "text-[11px] font-mono text-center"
+
+# Discount names that are always visible regardless of conditions
+_DEFAULT_DISC = {
+    "Cash Discount All Customers",
+    "Additional Discount From Dealer",
+    "Maximum benefit due to price increase",
+}
+
+# Condition key → discount component name substring mapping
+# Add more mappings as your domain grows
+_CONDITION_DISC_MAP: dict[str, list[str]] = {
+    "exchange": ["Exchange Bonus", "Exchange", "Green Bonus"],
+    "corporate": ["Corporate"],
+    "scrap": ["Scrappage", "Scrap"],
+    "upgrade": ["Loyalty", "Upgrade"],
+    "govt_employee": ["Govt", "Government"],
+    "tr_case": ["TR Case", "TR"],
+}
+
+
+def _condition_badge(name: str, conditions: dict) -> str | None:
+    """Return the condition key that controls this discount row, or None."""
+    for cond_key, substrings in _CONDITION_DISC_MAP.items():
+        if any(s.lower() in name.lower() for s in substrings):
+            return cond_key
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# populate_price_and_discount  — auto-fill from API data
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _build_component_map(booking_data: dict) -> dict:
+    """
+    Flatten booking_data into a name → value dict that tolerates:
+    • raw component names           {"Ex Showroom Price": 629990}
+    • _actual suffix keys           {"Ex Showroom Price_actual": 629990}
+    • normalized (lowercase, no punctuation) fallback keys
+    """
+    component_map: dict = {}
+    for raw_key, val in booking_data.items():
+        clean_key = raw_key.replace("_actual", "").strip()
+        component_map[clean_key] = val
+        # Also store a normalized version for fuzzy matching
+        norm_key = re.sub(r"[^a-z0-9]", "", clean_key.lower())
+        component_map[norm_key] = val
+    return component_map
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# update_discount_visibility  — called when sale conditions change
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def update_discount_visibility(state, conditions: dict) -> None:
+    """
+    Show or hide conditional discount rows based on active sale conditions.
+    Call this whenever a condition checkbox changes.
+
+    Also refreshes per-row Given/Diff labels so newly-visible rows show correct
+    values immediately.
+
+    Args:
+        state:      FormState with discount_rows populated.
+        conditions: dict of {condition_key: bool}, e.g. {"exchange": True}
+    """
+    for name, row in state.discount_rows.items():
+        if name in _DEFAULT_DISC:
+            row.set_visibility(True)
+            continue
+        cond_key = _condition_badge(name, conditions)
+        if cond_key is not None:
+            row.set_visibility(bool(conditions.get(cond_key, False)))
+    _fs_update_live(state)
 
 
 def build_complaint_dealership_section(state: FormState) -> None:
@@ -5481,19 +6034,19 @@ def build_live_bar(state: FormState) -> None:
             ui.label("Allowable Discount (As per Price List):").classes(
                 "text-[11px] text-white/50"
             )
-            state.lbl_allowed = ui.label("₹0").classes(
+            state.lbl_allowed_lv = ui.label("₹0").classes(
                 "text-[16px] font-bold text-white mono"
             )
 
         with ui.row().classes("items-center gap-2"):
             ui.label("Discount Given:").classes("text-[11px] text-white/50")
-            state.lbl_discount = ui.label("₹0").classes(
+            state.lbl_discount_lv = ui.label("₹0").classes(
                 "text-[16px] font-bold text-white mono"
             )
 
         with ui.row().classes("items-center gap-2"):
             ui.label("Excess Discount:").classes("text-[11px] text-white/50")
-            state.lbl_excess = ui.label("—").classes(
+            state.lbl_excess_lv = ui.label("—").classes(
                 "text-[16px] font-bold text-white/30 mono"
             )
 
@@ -5587,7 +6140,10 @@ async def _fs_on_car_change(car_id, state: FormState) -> None:
     try:
         variants = await api_get(f"/cars/{car_id}/variants")
         state.variant_select.options = {
-            v["id"]: v["full_variant_name"] for v in variants
+            v["id"]: v["full_variant_name"]
+            for v in sorted(
+                variants, key=lambda x: (x.get("full_variant_name") or "").lower()
+            )
         }
         state.variant_select.update()
     except Exception as ex:
@@ -5679,215 +6235,160 @@ async def _fs_try_price_preload(state: FormState) -> None:
         pass  # best-effort; silently skip if endpoint missing
 
 
-def _fs_update_live(state: FormState) -> None:
-    # 1. Sync Ex-showroom from Prices Section (if match exists)
-    # Match main.py line 1574
-    found_ex = None
-    if "Ex Showroom Price" in state.price_inputs:
-        found_ex = state.price_inputs["Ex Showroom Price"]
-    elif "Ex-Showroom Price" in state.price_inputs:
-        found_ex = state.price_inputs["Ex-Showroom Price"]
+def _fs_update_live(state) -> None:
+    # ── 1. PRICE TOTALS ─────────────────────────────────────────────
 
-    if state.invoice_ex_showroom and found_ex:
-        price_val = int(parsed_val(found_ex))
-        if parsed_val(state.invoice_ex_showroom) != price_val:
-            state.invoice_ex_showroom.set_value(format_num_inr(price_val))
-
-    # 2. Sync Total Discount from Components -> Invoice Discount field
-    total_comp_discount = 0
-    if state.stage == "delivery" and state.is_direct_delivery:
-        # Sum manual inputs
-        for name, inp in state.discount_inputs.items():
-            row = state.discount_rows.get(name)
-            if row and row.visible:
-                total_comp_discount += int(parsed_val(inp))
-    else:
-        # Use automated property
-        total_comp_discount = state.live_discount
-
-    if (
-        state.invoice_discount
-        and parsed_val(state.invoice_discount) != total_comp_discount
-    ):
-        state.invoice_discount.set_value(format_num_inr(total_comp_discount))
-
-    # 3. Read current values for labels
-    allowed_discount = state.live_discount
-
-    # Discount Given (Actual)
-    discount_given = total_comp_discount
-
-    # 4. Update Labels
-    if hasattr(state, "lbl_allowed") and state.lbl_allowed:
-        state.lbl_allowed.set_text(f"₹{allowed_discount:,.0f}")
-
-    if state.lbl_discount:
-        state.lbl_discount.set_text(f"₹{discount_given:,.0f}")
-
-    # 5. Update Total Price Labels (Sum of Prices section)
     total_listed = 0
-    total_offered = 0
+    total_charged = 0
+
     for name, inp in state.price_inputs.items():
-        # Skip if row is hidden
         row = state.price_rows.get(name)
+
         if row is not None and not row.visible:
-            diff_label = state.price_diff_labels.get(name)
-            if diff_label:
-                diff_label.set_text("")
+            dl = state.price_diff_labels.get(name)
+            if dl:
+                dl.set_text("—")
+                dl.style("color:#9CA3AF")
             continue
 
         toggle = state.price_match_toggles.get(name)
-        is_toggled = toggle.value if toggle else False
-        is_entered = bool(inp.value and str(inp.value).strip())
+        is_active = (toggle.value if toggle else False) or bool(
+            inp.value and str(inp.value).strip()
+        )
 
-        # Sum listed price ONLY IF toggled or entered
-        if is_toggled or is_entered:
-            listed_price = int(state.listed_prices.get(name) or 0)
-            total_listed += listed_price
-        else:
-            listed_price = 0
+        listed_val = int(state.listed_prices.get(name) or 0)
+        charged_val = int(parsed_val(inp))
 
-        # Sum offered price (from input)
-        offered_price = 0
-        try:
-            offered_price = parsed_val(inp)
-        except Exception:
-            pass
-        total_offered += offered_price
+        if is_active:
+            total_listed += listed_val
 
-        # Update Difference Label
-        diff_label = state.price_diff_labels.get(name)
-        if diff_label:
-            if not is_toggled and not is_entered:
-                diff_label.set_text("")
-                diff_label.style("color: #9CA3AF")
+        total_charged += charged_val
+
+        dl = state.price_diff_labels.get(name)
+        if dl:
+            if not is_active:
+                dl.set_text("—")
+                dl.style("color:#9CA3AF")
             else:
-                diff = listed_price - offered_price
+                diff = listed_val - charged_val
                 if diff > 0:
-                    diff_label.set_text(f"₹{diff:,.2f}")
-                    diff_label.style("color: #D41717")
-                elif diff < 0:
-                    diff_label.set_text("₹ 0")
-                    diff_label.style("color: #1CC722")
+                    dl.set_text(f"₹{diff:,}")
+                    dl.style("color:#DC2626; font-weight:600")
                 else:
-                    diff_label.set_text("₹0")
-                    diff_label.style("color: #9CA3AF")
+                    dl.set_text("₹0")
+                    dl.style("color:#9CA3AF")
 
-    total_diff = total_listed - total_offered
+    total_diff = total_listed - total_charged
 
-    if state.lbl_total_listed_price:
-        state.lbl_total_listed_price.set_text(f"₹{total_listed:,.2f}")
-    if state.lbl_total_offered_price:
-        state.lbl_total_offered_price.set_text(f"₹{total_offered:,.2f}")
-    if state.lbl_total_diff_price:
+    if getattr(state, "lbl_total_listed_price", None):
+        state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
+
+    if getattr(state, "lbl_total_charged_price", None):
+        state.lbl_total_charged_price.set_text(f"₹{total_charged:,}")
+
+    if getattr(state, "lbl_total_diff_price", None):
         if total_diff > 0:
-            state.lbl_total_diff_price.set_text(f"₹{abs(total_diff):,.2f}")
-            state.lbl_total_diff_price.style("color: #D41717")
-        elif total_diff < 0:
-            state.lbl_total_diff_price.set_text(f"-₹{total_diff:,.2f}")
-            state.lbl_total_diff_price.style("color: #1CC722")
+            state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
+            state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
         else:
             state.lbl_total_diff_price.set_text("₹0")
-            state.lbl_total_diff_price.style("color: #9CA3AF")
+            state.lbl_total_diff_price.style("color:#9CA3AF")
 
-    acc_listed, acc_charged = 0, 0
-    if (
-        hasattr(state, "acc_total_label")
-        and hasattr(state, "acc_charged")
-        and state.acc_charged
-        and state.acc_total_label
-    ):
+    # ── 2. ACCESSORIES ──────────────────────────────────────────────
+    acc_listed = 0
+    acc_charged = 0
+
+    if getattr(state, "acc_total_label", None) and getattr(state, "acc_charged", None):
         try:
-            acc_listed = float(state.acc_total_label.text[8:].replace(",", ""))
-
-            acc_charged = parsed_val(state.acc_charged)
+            raw = state.acc_total_label.text
+            acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
         except Exception:
-            pass
+            # log error
+            acc_listed = 0
+
+        acc_charged = int(parsed_val(state.acc_charged))
+
     acc_diff = acc_listed - acc_charged
-    # ── Excess Discount Calculation ─────────────────
-    # Formula: max(0, total_diff - allowed_discount)
-    if hasattr(state, "lbl_excess_discount") and state.lbl_excess_discount:
-        # Recalculate allowed discount directly to be safe
-        current_allowed = 0
-        if hasattr(state, "listed_prices") and state.listed_prices:
-            for name, row in state.discount_rows.items():
-                if row.visible:
-                    val = state.listed_prices.get(name)
-                    if val is not None:
-                        current_allowed += int(val)
-        total_discount_given = (
-            total_diff
-            + acc_diff
-            + parsed_val(state.total_discount_booking)
-            - parsed_val(state.adjustment_input)
+
+    # ── 3. DISCOUNT TOTALS (LIKE PRICE) ─────────────────────────
+
+    total_allowed_discount = 0
+    total_given_discount = 0
+
+    for name, inp in state.discount_inputs.items():
+        row = state.discount_rows.get(name)
+
+        if row is not None and not row.visible:
+            dl = state.discount_diff_labels.get(name)
+            if dl:
+                dl.set_text("—")
+                dl.style("color:#9CA3AF")
+            continue
+
+        toggle = state.discount_match_toggles.get(name)
+        is_active = (toggle.value if toggle else False) or bool(
+            inp.value and str(inp.value).strip()
         )
-        excess_val = total_discount_given - current_allowed
 
-        if excess_val < 0:
-            excess_val = 0
+        allowed_val = int(state.listed_prices.get(name) or 0)
+        given_val = int(parsed_val(inp))
 
-        state.lbl_excess_discount.set_text(f"₹{excess_val:,.2f}")
-        state.lbl_allowed.set_text(f"₹{current_allowed:,.2f}")
-        state.lbl_discount.set_text(f"₹{total_discount_given:,.2f}")
+        if is_active:
+            total_allowed_discount += allowed_val
 
-        if excess_val > 0:
-            state.lbl_excess_discount.style("color: #D41717")  # Red
-        else:
-            state.lbl_excess_discount.style("color: #9CA3AF")  # Gray
+        total_given_discount += given_val
 
-        if state.lbl_excess:
-            state.lbl_excess.set_text(f"₹{excess_val:,.0f}")
-        # Color coding: Green if actual <= allowed (good), Red if actual > allowed (bad)
-        if excess_val <= 0:
-            state.lbl_excess.style("color:#6EE7B7")  # Soft green
-        else:
-            state.lbl_excess.style("color:#F87171")  # Soft red
+        # ── per-row diff
+        dl = state.discount_diff_labels.get(name)
+        if dl:
+            if not is_active:
+                dl.set_text("—")
+                dl.style("color:#9CA3AF")
+            else:
+                diff = allowed_val - given_val
+                if diff > 0:
+                    dl.set_text(f"₹{diff:,}")
+                    dl.style("color:#DC2626; font-weight:600")
+                else:
+                    dl.set_text("₹0")
+                    dl.style("color:#9CA3AF")
 
+    # ── 4. EXCESS CALCULATION ───────────────────────────────────────
+    adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
 
-# def _fs_validate_mobile(state: FormState) -> None:
-#     if state.cust_mobile is None:
-#         return
-#     mob = (state.cust_mobile.value or "").strip()
-#     if mob and not re.fullmatch(r"[6-9]\d{9}", mob):
-#         state.cust_mobile.props(
-#             "error error-message='Must be 10 digits starting 6 to 9'"
-#         )
-#     else:
-#         state.cust_mobile.props(remove="error")
-#     _fs_revalidate(state)
+    total_discount_given = int(
+        total_diff
+        + acc_diff
+        + int(parsed_val(getattr(state, "total_discount_booking", None)))
+        + total_given_discount
+        + int(parsed_val(getattr(state, "total_discount_delivery", None)))
+        - adjustment
+    )
 
+    excess = int(max(0, total_discount_given - total_allowed_discount))
 
-# def _fs_validate_pincode(state: FormState) -> None:
-#     if state.cust_pincode is None:
-#         return
-#     val = (state.cust_pincode.value or "").strip()
-#     if not re.fullmatch(r"\d{6}", val):
-#         state.cust_pincode.props("error error-message='Must be 6 digits'")
-#     else:
-#         state.cust_pincode.props(remove="error")
-#     _fs_revalidate(state)
+    # ── 5. UPDATE LABELS ────────────────────────────────────────────
+    if state.total_allowed:
+        state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
 
+    if state.total_given:
+        state.total_given.set_text(f"₹{total_discount_given:,}")
 
-# def _fs_validate_pan(state: FormState) -> None:
-#     if state.cust_pan is None:
-#         return
-#     val = (state.cust_pan.value or "").strip().upper()
-#     if not re.fullmatch(r"[A-Z]{5}[0-9]{4}[A-Z]", val):
-#         state.cust_pan.props("error error-message='Invalid PAN format'")
-#     else:
-#         state.cust_pan.props(remove="error")
-#     _fs_revalidate(state)
+    if state.lbl_allowed_lv:
+        state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
 
+    if state.lbl_discount_lv:
+        state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
 
-# def _fs_validate_aadhar(state: FormState) -> None:
-#     if state.cust_aadhar is None:
-#         return
-#     val = (state.cust_aadhar.value or "").strip()
-#     if not re.fullmatch(r"\d{12}", val):
-#         state.cust_aadhar.props("error error-message='Must be 12 digits'")
-#     else:
-#         state.cust_aadhar.props(remove="error")
-#     _fs_revalidate(state)
+    if getattr(state, "lbl_excess_discount", None):
+        state.lbl_excess_discount.set_text(f"₹{excess:,}")
+        state.lbl_excess_discount.style(
+            "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
+        )
+
+    if getattr(state, "lbl_excess", None):
+        state.lbl_excess.set_text(f"₹{excess:,}")
+        state.lbl_excess.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
 
 
 def _fs_update_visibility(state: FormState) -> None:
@@ -5916,7 +6417,7 @@ def _fs_update_visibility(state: FormState) -> None:
         norm("FasTag"): is_checked("fastag"),
         norm("Extended Warranty"): is_checked("ext_warr"),
         norm("AMC"): is_checked("amc"),
-        norm("TCS"): is_checked("tcs"),
+        # norm("TCS"): is_checked("tcs"),
         norm("Insurance (With Depreciation Cover)"): not is_checked("self_insurance"),
         norm("Insurance"): not is_checked("self_insurance"),
     }
@@ -6001,12 +6502,13 @@ async def _fs_handle_submit(state: FormState) -> None:
 
 
 def build_payload(state: FormState) -> dict:
+
     def val(x):
         return x.value if x else None
 
     def lbl_val(x, chr_slice=1):
-        val = x.text[chr_slice:].strip().replace(",", "")
-        return float(val)
+        val = x.text[chr_slice:].strip().replace(",", "").replace(".", "")
+        return int(val)
 
     def intval(x):
         if not x:
@@ -6019,8 +6521,8 @@ def build_payload(state: FormState) -> dict:
             import re
 
             if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
-                return int(float(eval(v_str)))
-            return int(float(v_str))
+                return int(eval(v_str))
+            return int(v_str)
         except Exception:
             return 0
 
@@ -6028,6 +6530,7 @@ def build_payload(state: FormState) -> dict:
     # COMPONENTS (CRITICAL)
     # ─────────────────────────────
     actual_amounts = {}
+    allowed_amounts = {}
 
     # Price components
     for name, inp in state.price_inputs.items():
@@ -6037,16 +6540,32 @@ def build_payload(state: FormState) -> dict:
         else:
             actual_amounts[name] = intval(inp)
 
+    for name, inp in state.listed_prices.items():
+        row = state.price_rows.get(name)
+        if row is not None and not row.visible:
+            allowed_amounts[name] = 0
+        else:
+            allowed_amounts[name] = inp
+
+    print("before loop", json.dumps(allowed_amounts, indent=4))
+    # print("bfore loop", json.dumps(actual_amounts, indent=4))
     # Discount components
     for name, row in state.discount_rows.items():
         if row.visible:
-            if state.stage == "delivery" and state.is_direct_delivery:
-                actual_amounts[name] = intval(state.discount_inputs.get(name))
-            else:
-                actual_amounts[name] = state.listed_prices.get(name, 0)
+            inp = state.discount_inputs.get(name)
+            actual_amounts[name] = intval(inp) if inp else 0
         else:
             actual_amounts[name] = 0
 
+    for name, i in state.listed_prices.items():
+        row = state.discount_rows.get(name)
+        if row is not None and not row.visible:
+            allowed_amounts[name] = 0
+        else:
+            allowed_amounts[name] = i
+
+    print("after loop", json.dumps(allowed_amounts, indent=4))
+    # print("After loop", json.dumps(actual_amounts, indent=4))
     # ─────────────────────────────
     # CONDITIONS
     # ─────────────────────────────
@@ -6058,6 +6577,8 @@ def build_payload(state: FormState) -> dict:
     delivery_checks = {
         key: (cb.value or False) for key, cb in state.delivery_cbs.items()
     }
+
+    booking_checks = {key: (cb.value or False) for key, cb in state.booking_cbs.items()}
 
     # ─────────────────────────────
     # ACCESSORIES
@@ -6141,6 +6662,7 @@ def build_payload(state: FormState) -> dict:
         "price_adjustment": val(state.adjustment_input),
         # ── CORE LOGIC ──
         "actual_amounts": actual_amounts,
+        "allowed_amounts": allowed_amounts,
         "conditions": conditions,
         "delivery_checks": delivery_checks,
         # ── JSON SECTIONS ──
@@ -6160,20 +6682,18 @@ def build_payload(state: FormState) -> dict:
 
     if state.stage == "booking":
         payload["stage"] = "booking"
-        payload["booking_checklist"] = {
-            k: v.value for k, v in state.booking_cbs.items()
-        }
+        payload["booking_checklist"] = booking_checks
         payload["booking_file_incomplete"] = any(
-            not bool(v.value) for v in state.delivery_cbs.values()
+            v is not True for v in booking_checks.values()
         )
         payload["discount_booking"] = intval(
             state.total_discount_booking
         )  # discount as per booking file
         payload["total_discount_booking"] = lbl_val(
-            state.lbl_discount
+            state.lbl_discount_lv
         )  # after adding differences and subtracting price adjustment
         payload["price_offered_booking"] = lbl_val(state.lbl_total_offered_price)
-        payload["excess_booking"] = lbl_val(state.lbl_excess)
+        payload["excess_booking"] = lbl_val(state.lbl_excess_lv)
 
     elif state.stage == "delivery":
         payload["stage"] = "delivery"
@@ -6182,7 +6702,7 @@ def build_payload(state: FormState) -> dict:
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
         payload["delivery_file_incomplete"] = any(
-            not bool(v.value) for v in state.delivery_cbs.values()
+            v is not True for v in delivery_checks.values()
         )
 
     return payload
@@ -6361,15 +6881,16 @@ async def form_page(
         if state.form_mode == "booking_create":
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
-                ui.checkbox("Is File Incomplete?").classes("text-bold ml-auto")
+                # ui.checkbox("Is File Incomplete?").classes("text-bold ml-auto")
 
             build_vehicle_section(state)
             build_booking_section(state)
             build_customer_section(state)
             build_conditions_section(state)
-            build_prices_section(state)
             build_accessories_section(state)
+            build_prices_section(state)
             build_booking_checklist_section(state)
+            build_audit_section(state)
 
         elif state.form_mode == "booking_edit":
             with ui.row().classes("w-full justify-between items-center"):
@@ -6380,9 +6901,10 @@ async def form_page(
             build_booking_section(state)
             build_customer_section(state)
             build_conditions_section(state)
-            build_prices_section(state)
             build_accessories_section(state)
+            build_prices_section(state)
             build_booking_checklist_section(state)
+            build_audit_section(state)
 
         elif state.form_mode == "delivery_direct_create":
             ui.label("Direct Delivery MIS Form").classes("text-2xl text-bold mb-5")
@@ -6391,9 +6913,9 @@ async def form_page(
             build_booking_section(state)
             build_customer_section(state)
             build_conditions_section(state)
-            build_prices_section(state)
             build_accessories_section(state)
-            build_delivery_section(state)
+            build_prices_section(state)
+            build_delivery_checklist_section(state)
             build_invoice_section(state)
             build_payment_section(state)
             build_audit_section(state)
@@ -6405,11 +6927,11 @@ async def form_page(
             build_booking_section(state)
             build_customer_section(state)
             build_conditions_section(state)
-            build_prices_section(state)
+            build_accessories_section(state)
 
             # Only delivery additions
-            build_accessories_section(state)
-            build_delivery_section(state)
+            build_prices_section(state)
+            build_delivery_checklist_section(state)
             build_invoice_section(state)
             build_payment_section(state)
             build_audit_section(state)
@@ -6421,9 +6943,9 @@ async def form_page(
             build_booking_section(state)
             build_customer_section(state)
             build_conditions_section(state)
-            build_prices_section(state)
             build_accessories_section(state)
-            build_delivery_section(state)
+            build_prices_section(state)
+            build_delivery_checklist_section(state)
             build_invoice_section(state)
             build_payment_section(state)
             build_audit_section(state)
@@ -6465,8 +6987,8 @@ def build_complaint_payload(state: FormState) -> dict:
             import re
 
             if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
-                return int(float(eval(v_str)))
-            return int(float(v_str))
+                return int(eval(v_str))
+            return int(v_str)
         except Exception:
             return 0
 
@@ -6601,6 +7123,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY,
-        reload=False,
+        reload=True,  # make false at the time of deployement
         port=3000,
     )

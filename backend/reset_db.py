@@ -21,14 +21,14 @@ from db.session import engine
 # -------------------------
 # RESET DB
 # -------------------------
-def reset_db():
-    print("Dropping all tables...")
-    SQLModel.metadata.drop_all(engine)
+# def reset_db():
+#     print("Dropping all tables...")
+#     SQLModel.metadata.drop_all(engine)
 
-    print("Creating all tables...")
-    SQLModel.metadata.create_all(engine)
+#     print("Creating all tables...")
+#     SQLModel.metadata.create_all(engine)
 
-    print("Database reset complete.")
+#     print("Database reset complete.")
 
 
 # -------------------------
@@ -186,5 +186,5 @@ def seed_masters():
 # RUN
 # -------------------------
 if __name__ == "__main__":
-    reset_db()
+    # reset_db()
     seed_masters()

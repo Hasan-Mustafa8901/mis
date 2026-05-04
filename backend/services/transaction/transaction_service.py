@@ -369,7 +369,9 @@ class TransactionService:
             TransactionService.create_transaction_items(
                 session, transaction.id, payload
             )
-
+        transaction.booking_file_incomplete = payload.get(
+            "booking_file_incomplete", False
+        )
         transaction.discount_booking = payload.get("discount_booking", 0.0)
         transaction.total_discount_booking = payload.get("total_discount_booking", 0.0)
         transaction.price_offered_booking = payload.get("price_offered_booking", 0.0)
@@ -421,20 +423,26 @@ class TransactionService:
             sales_executive_id=payload["sales_executive_id"],
             created_by=payload.get("user_id", None),
             stage=payload.get("stage", "booking"),
-            booking_date=payload["booking_date"],
+            booking_date=payload.get("booking_date"),
             booking_amt=payload.get("booking_amt", 0.0),
             booking_receipt_num=payload.get("booking_receipt_num", None),
             delivery_date=payload.get("delivery_date", None),
+            delivery_file_incomplete=payload.get("delivery_file_incomplete"),
             # VEHICLE
             customer_file_number=payload.get("customer_file_number"),
-            vin_number=payload["vin_number"],
+            vin_number=payload.get("vin_number"),
             engine_number=payload.get("engine_number", None),
             registration_number=payload.get("registration_number"),
             registration_date=payload.get("registration_date"),
+            color=payload.get("color"),
+            model_year=int(payload.get("model_year", ""))
+            if payload.get("model_year")
+            else None,
             # CONDITIONS
             conditions=payload.get("conditions", {}),
             # JSON SECTIONS
             invoice_details=payload.get("invoice_details", {}),
+            invoice_number=payload.get("invoice_details", {}).get("invoice_number"),
             payment_details=payload.get("payment_details", {}),
             finance_details=payload.get("finance_details", {}),
             exchange_details=payload.get("exchange_details", {}),
@@ -442,8 +450,6 @@ class TransactionService:
         )
         session.add(transaction)
         session.flush()
-
-        session.commit()
         session.refresh(transaction)
         print(f"DEBUG: create_transaction_raw - Transaction: \n{transaction}")
 
@@ -464,6 +470,7 @@ class TransactionService:
             else None
         )
         if not transaction:
+            print()
             return {}
 
         # 1. Start with metadata
@@ -508,6 +515,7 @@ class TransactionService:
                 "registration_date": transaction.registration_date.isoformat()
                 if transaction.registration_date
                 else None,
+                "model_year": transaction.model_year,
             }
         )
 
@@ -523,6 +531,8 @@ class TransactionService:
                 "delivery_date": transaction.delivery_date.isoformat()
                 if transaction.delivery_date
                 else None,
+                "booking_file_incomplete": transaction.booking_file_incomplete,
+                "delivery_file_incomplete": transaction.delivery_file_incomplete,
                 "invoice_number": transaction.invoice_number,
                 "showroom_id": transaction.outlet_id,
                 "sales_executive_id": transaction.sales_executive_id,
@@ -588,6 +598,14 @@ class TransactionService:
                 "balance_amount": transaction.balance,
             }
         )
+        data.update(
+            {
+                "discount_booking": transaction.discount_booking,  # Discount Quoted on the Booking File
+                "total_discount_booking": transaction.total_discount_booking,
+                "price_offered_booking": transaction.price_offered_booking,
+                "excess_booking": transaction.excess_booking,
+            }
+        )
 
         # 8. Totals
         data.update(
@@ -597,6 +615,7 @@ class TransactionService:
                 "total_excess_discount": transaction.total_excess_discount,
             }
         )
+        print("From Transaction Reconstruction: ", data)
 
         return data
 
@@ -695,51 +714,3 @@ class TransactionService:
         print(f"{balance=}\n{payment_status=}")
         session.add(transaction)
         session.flush()
-
-    # @staticmethod
-    # def update_transaction_with_audit(
-    #     session: Session, transaction_id: int, audit_result: dict
-    # ):
-
-    #     from db.models import Transaction, TransactionItem
-    #     from sqlmodel import select
-
-    #     # ─────────────────────────────
-    #     # 1. FETCH TRANSACTION
-    #     # ─────────────────────────────
-    #     transaction = session.get(Transaction, transaction_id)
-    #     if not transaction:
-    #         raise ValueError("Transaction not found")
-
-    #     # ─────────────────────────────
-    #     # 2. UPDATE TOTALS
-    #     # ─────────────────────────────
-    #     transaction.total_actual_discount = audit_result["invoice_discount"]
-    #     transaction.total_allowed_discount = audit_result["pricelist_discount"]
-    #     transaction.total_excess_discount = audit_result["excess_discount"]
-    #     transaction.status = audit_result["status"]
-    #     # ─────────────────────────────
-    #     # 3. FETCH EXISTING ITEMS
-    #     # ─────────────────────────────
-    #     items = session.exec(
-    #         select(TransactionItem).where(
-    #             TransactionItem.transaction_id == transaction_id
-    #         )
-    #     ).all()
-
-    #     item_map = {item.component_id: item for item in items}
-
-    #     # ─────────────────────────────
-    #     # 4. UPDATE ITEMS FROM AUDIT
-    #     # ─────────────────────────────
-    #     transaction.total_actual_discount = audit_result["invoice_discount"]
-    #     transaction.total_allowed_discount = audit_result["pricelist_discount"]
-    #     transaction.total_excess_discount = audit_result["excess_discount"]
-    #     transaction.status = audit_result["status"]
-
-    #     # ─────────────────────────────
-    #     # 5. SAVE
-    #     # ─────────────────────────────
-    #     session.add(transaction)
-    #     session.flush()
-    #     return transaction

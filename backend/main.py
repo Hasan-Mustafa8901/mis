@@ -20,6 +20,7 @@ from services.ingestion.price_seed_service import PriceListIngestionService
 from services.discount.discount_service import DiscountService
 from services.transaction.transaction_service import TransactionService
 from services.price_list.price_list_service import PriceListService
+from services.auth.dependencies import get_current_user
 
 from schemas.mis import DealershipCreate, EmployeeCreate, OutletCreate
 
@@ -27,6 +28,7 @@ from routes.edit_routes import router as edit_requests_router
 from routes.auth_routes import router as auth_router
 from routes.complaint_routes import router as complaints_router
 from routes.daily_reporting_routes import router as daily_reporting_router
+
 from rich import print
 
 
@@ -240,11 +242,6 @@ def api_create_transaction(
 ):
 
     stage = payload.get("stage", "booking")
-    # print("From API - Create Transaction")
-    # print("Payload: \n", payload)
-    # print("Stage: ", stage)
-    # print("\n\n")
-    # print("-" * 20, "END OF PAYLOAD", "-" * 20)
 
     if stage == "booking":
         return TransactionService.create_booking_transaction(session, payload)
@@ -263,9 +260,6 @@ def api_update_transaction(
     session: Session = Depends(get_session),
 ):
     stage = payload.get("stage", "booking")
-    print("Update Payload: \n", payload)
-    print("Stage: ", stage)
-    print("\n\n")
 
     if stage == "delivery":
         return TransactionService.convert_to_delivery(session, transaction_id, payload)
