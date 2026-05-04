@@ -560,6 +560,7 @@ class TransactionService:
             item = item_map.get(comp.id)
             # prefix = ""  # Could use section prefix if desired, but user wants MIS names
             data[f"{comp.name}_actual"] = item.actual_amount if item else 0.0
+            data[f"{comp.name}_allowed"] = item.allowed_amount if item else 0.0
 
         # 6. Section 5: Conditions
         for cond, val in transaction.conditions.items():

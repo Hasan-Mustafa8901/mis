@@ -3309,7 +3309,6 @@ async def settings_page():
                         .props("outlined dense")
                         .classes("w-[500px]")
                     )
-                    print("user register", outlet.value)
                     # ── ACTIONS ────────────────────────────────────
                     with ui.row().classes("gap-3 mt-4"):
 
@@ -3531,7 +3530,6 @@ async def settings_page():
             o_name = ui.input("Outlet Name").props("outlined dense").classes("w-full")
             o_code = ui.input("Outlet Code").props("outlined dense").classes("w-full")
             o_address = ui.input("Address").props("outlined dense").classes("w-full")
-            print(dealer_names)
             dealership_select = (
                 ui.select(options=dealer_names, label="Dealership", value=None)
                 .props("outlined dense")
@@ -3561,10 +3559,6 @@ async def settings_page():
                 except Exception as e:
                     ui.notify(str(e), type="negative")
 
-            print("name", o_name.value)
-            print("code", o_code.value)
-            print("address", o_address.value)
-            print("Showroom", dealership_select.value)
             ui.button("Create Outlet", on_click=create_outlet).classes(
                 "mt-3 bg-[#E8402A] text-white"
             )
@@ -3588,7 +3582,6 @@ async def settings_page():
                 .props("outlined dense")
                 .classes("w-full")
             )
-            print("Employee", outlet_select.value)
 
             async def create_employee():
                 try:
@@ -3939,11 +3932,8 @@ def _map_car_and_variant(state, data):
 
 
 def populate_from_booking(state: FormState, data: dict):
-    import json
-
     if not data:
         return
-    print(json.dumps(data, indent=4))
 
     # ── Booking ──────────────────
     if state.booking_date:
@@ -3995,16 +3985,12 @@ def populate_from_booking(state: FormState, data: dict):
         state.vehicle_regn_no.set_value(data.get("registration_number", ""))
 
     if state.car_color:
-        print(state.car_color.value)
-        print(data.get("color", ""))
         state.car_color.set_value(data.get("color", ""))
 
     if state.regn_date:
         state.regn_date.set_value(data.get("registration_date", ""))
 
     if state.model_year:
-        print(state.model_year.value)
-        print(data.get("model_year", ""))
         state.model_year.set_value(data.get("model_year", ""))
 
     # ── Variant / Car ────────────
@@ -4898,6 +4884,16 @@ def build_prices_section(state: FormState) -> None:
                     ui.label("Discounts at time of booking").classes(
                         "text-[10px] font-bold uppercase tracking-wide text-blue-500 mb-2"
                     )
+                    # merge discount_booking into map (without mutating original)
+                    booking_disc_map_ui = dict(booking_disc_map or {})
+                    discount_booking_val = int(
+                        state.listed_prices.get("discount_booking") or 0
+                    )
+
+                    if discount_booking_val:
+                        booking_disc_map_ui["Discount (Booking File)"] = (
+                            discount_booking_val
+                        )
                     if booking_disc_map:
                         for disc_name, disc_val in booking_disc_map.items():
                             cond_key = _condition_badge(disc_name, conditions)
@@ -4920,9 +4916,9 @@ def build_prices_section(state: FormState) -> None:
                                         "text-[13px] font-mono font-semibold text-blue-700 w-28 text-right"
                                     )
 
-                        # Total of booking discounts
+                        # total INCLUDING booking file discount
                         booking_disc_total = sum(
-                            int(v or 0) for v in booking_disc_map.values()
+                            int(v or 0) for v in booking_disc_map_ui.values()
                         )
                         with ui.row().classes("w-full items-center pt-2 mt-1"):
                             ui.label("Total booking discount").classes(
@@ -6181,7 +6177,6 @@ async def _fs_try_price_preload(state: FormState) -> None:
         )
         # ── Store listed prices (source of truth) ──
         state.listed_prices = preview or {}
-        print(json.dumps(preview, indent=4))
         filled = 0
 
         for name, value in state.listed_prices.items():
@@ -6578,7 +6573,6 @@ def build_payload(state: FormState) -> dict:
         else:
             allowed_amounts[name] = val
 
-    print("allowed_amounts", json.dumps(allowed_amounts, indent=4))
     # ─────────────────────────────
     # CONDITIONS
     # ─────────────────────────────
@@ -6830,21 +6824,25 @@ async def form_page(
     state.mode = mode
     state.txn_id = transaction_id
     state.is_direct_delivery = mode == "direct"
-
+    print("hello, world")
     txn_data = None
 
     if transaction_id and stage == "delivery":
+        print("hello, world 2")
         state.booking_id = transaction_id
         state.edit_mode = True
     if transaction_id and stage == "booking":
         state.form_mode = "booking_edit"
 
         try:
+            print("hello, world 3", transaction_id)
             txn_data = await api_get(f"/transactions/{transaction_id}")
             state.booking_data = txn_data
-        except Exception:
-            ui.notify("Failed to load booking data", type="negative")
 
+        except Exception as e:
+            print(str(e))
+            ui.notify("Failed to load booking data", type="negative")
+        print("DEBUG: ", state.booking_data)
     # Detect edit mode from query param
     if state.booking_id:
         pass
@@ -7136,6 +7134,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY,
-        reload=False,  # make false at the time of deployement
+        reload=True,  # make false at the time of deployement
         port=3000,
     )
