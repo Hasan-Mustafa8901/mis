@@ -134,10 +134,10 @@ def get_auth_headers():
     }
 
 
-async def api_get(path: str):
+async def api_get(path: str, params=None):
     async with httpx.AsyncClient() as client:
         r = await client.get(
-            f"{BASE_URL}{path}", headers=get_auth_headers(), timeout=10
+            f"{BASE_URL}{path}", headers=get_auth_headers(), params=params, timeout=10
         )
         r.raise_for_status()
         return r.json()
@@ -593,6 +593,16 @@ def render_table(transactions, stage: str = "booking"):
     }
 
     col_defs = []
+    col_defs.insert(
+        0,
+        {
+            "headerCheckboxSelection": True,
+            "checkboxSelection": True,
+            "width": 10,
+            "pinned": "left",
+            "filter": False,
+        },
+    )
     for key in ordered_keys:
         is_num = key in NUMERIC_KEYS
         is_status = key == "status"
@@ -644,7 +654,8 @@ def render_table(transactions, stage: str = "booking"):
                 "animateRows": True,
                 "pagination": True,
                 "paginationPageSize": 25,
-                "rowSelection": "single",
+                "rowSelection": "multiple",
+                "suppressRowClickSelection": True,
                 "rowHeight": 30,
                 "suppressCellFocus": True,
             },
@@ -919,6 +930,20 @@ async def dashboard_page() -> None:
         except Exception:
             return ym
 
+    DISCOUNT_KEYS = {
+        "Cash Discount All Customers",
+        "Additional Discount From Dealer",
+        "Additional for POI /Corporate Customers",
+        "Additional for Exchange Customers",
+        "Additional for Scrappage Customers",
+        "Additional Loyalty (EV TO EV)",
+        "Additional Loyalty (ICE TO EV)",
+        "Maximum benefit due to price increase",
+    }
+
+    def get_allowed_discount(t: dict) -> float:
+        return sum(float(t.get(f"{k}_allowed", 0) or 0) for k in DISCOUNT_KEYS)
+
     # Build month map over ALL transactions (for sidebar + filter options)
     all_month_map: dict = defaultdict(list)
     for txn in all_transactions:
@@ -1023,24 +1048,44 @@ async def dashboard_page() -> None:
             booking_content_area = ui.element("div").classes("w-full")
             delivery_content_area = ui.element("div").classes("w-full")
 
-            def compute_analytics(txns: list) -> dict:
-                """Compute all dashboard metrics from a transaction list."""
-                total_entries = len(txns)
-                total_discount = sum(
-                    t.get("total_allowed_discount", 0) or 0 for t in txns
-                )
-                total_discount_booking = sum(
-                    t.get("total_allowed_discount", 0) or 0 for t in txns
-                )
-                total_actual_discount = sum(
-                    t.get("total_actual_discount", 0) or 0 for t in txns
-                )
-                total_excess = sum(t.get("total_excess_discount", 0) or 0 for t in txns)
-                excess_cases = sum(1 for t in txns if t.get("status") == "Excess")
+            def compute_analytics(txns: list, stage: str = "delivery") -> dict:
+                """
+                mode = "delivery" | "booking"
+                """
+
+                # ─────────────────────────────
+                # FILTER DATA
+                # ─────────────────────────────
+                if stage == "delivery":
+                    data = [t for t in txns if t.get("stage") == "delivery"]
+
+                    get_allowed = lambda t: t.get("total_allowed_discount", 0) or 0
+                    get_actual = lambda t: t.get("total_actual_discount", 0) or 0
+                    get_excess = lambda t: t.get("total_excess_discount", 0) or 0
+
+                else:  # booking
+                    data = txns  # ALL transactions
+
+                    get_allowed = get_allowed_discount
+                    get_actual = lambda t: t.get("total_discount_booking", 0) or 0
+                    get_excess = lambda t: t.get("excess_booking", 0) or 0
+
+                # ─────────────────────────────
+                # CORE METRICS
+                # ─────────────────────────────
+                total_entries = len(data)
+
+                total_discount = sum(get_allowed(t) for t in data)
+                total_actual_discount = sum(get_actual(t) for t in data)
+                total_excess = sum(get_excess(t) for t in data)
+
+                excess_cases = sum(1 for t in data if get_excess(t) > 0)
                 ok_cases = total_entries - excess_cases
+
                 compliance_pct = round(
                     (ok_cases / total_entries * 100) if total_entries else 100, 1
                 )
+
                 avg_discount = (
                     round(total_discount / total_entries) if total_entries else 0
                 )
@@ -1048,36 +1093,41 @@ async def dashboard_page() -> None:
                     round(total_actual_discount / total_entries) if total_entries else 0
                 )
 
-                # Time series (month-on-month)
+                # ─────────────────────────────
+                # TIME SERIES (based on booking date)
+                # ─────────────────────────────
+                from collections import defaultdict
+
                 t_month_map: dict = defaultdict(list)
-                for t in txns:
+
+                for t in data:
                     bd = t.get("booking_date", "")
                     if bd and len(bd) >= 7:
                         t_month_map[bd[:7]].append(t)
+
                 chrono = sorted(t_month_map.keys())
+
                 ts_lbl = [month_label(ym) for ym in chrono]
+
                 ts_disc = [
-                    sum(
-                        t.get("total_allowed_discount", 0) or 0 for t in t_month_map[ym]
-                    )
-                    for ym in chrono
-                ]
-                ts_exc = [
-                    sum(t.get("total_excess_discount", 0) or 0 for t in t_month_map[ym])
-                    for ym in chrono
+                    sum(get_allowed(t) for t in t_month_map[ym]) for ym in chrono
                 ]
 
-                # Sales analytics
-                model_sales: dict = defaultdict(int)
-                model_discount: dict = defaultdict(int)
-                model_excess: dict = defaultdict(int)
-                variant_excess: dict = defaultdict(int)
-                outlet_sales: dict = defaultdict(int)
-                outlet_disc: dict = defaultdict(int)
-                outlet_excess: dict = defaultdict(int)
-                condition_cnt: dict = defaultdict(int)
+                ts_exc = [sum(get_excess(t) for t in t_month_map[ym]) for ym in chrono]
 
-                for t in txns:
+                # ─────────────────────────────
+                # SALES ANALYTICS
+                # ─────────────────────────────
+                model_sales = defaultdict(int)
+                model_discount = defaultdict(int)
+                model_excess = defaultdict(int)
+                variant_excess = defaultdict(int)
+                outlet_sales = defaultdict(int)
+                outlet_disc = defaultdict(int)
+                outlet_excess = defaultdict(int)
+                condition_cnt = defaultdict(int)
+
+                for t in data:
                     model = (
                         t.get("car_name")
                         or t.get("car")
@@ -1087,14 +1137,16 @@ async def dashboard_page() -> None:
                             else "Unknown"
                         )
                     )
+
                     outlet = t.get("outlet_name") or t.get("outlet") or "Unknown"
                     vname = t.get("variant_name") or t.get("variant") or "Unknown"
-                    actual_discount = t.get("total_actual_discount", 0) or 0
-                    ex = t.get("total_excess_discount", 0) or 0
-                    disc = t.get("total_allowed_discount", 0) or 0
+
+                    disc = get_allowed(t)
+                    ex = get_excess(t)
 
                     model_sales[model] += 1
                     model_discount[model] += disc
+
                     if ex > 0:
                         model_excess[model] += ex
                         variant_excess[vname] += ex
@@ -1108,20 +1160,23 @@ async def dashboard_page() -> None:
                             condition_cnt[k.replace("_", " ").title()] += 1
 
                 top_excess_txns = sorted(
-                    [t for t in txns if (t.get("total_excess_discount", 0) or 0) > 0],
-                    key=lambda x: -(x.get("total_excess_discount", 0) or 0),
+                    [t for t in data if get_excess(t) > 0],
+                    key=lambda x: -get_excess(x),
                 )[:6]
 
+                # ─────────────────────────────
+                # RETURN
+                # ─────────────────────────────
                 return dict(
-                    total_entries=total_entries,
-                    total_discount=total_discount,
-                    total_actual_discount=total_actual_discount,
-                    total_excess=total_excess,
-                    excess_cases=excess_cases,
+                    total_entries=int(total_entries),
+                    total_discount=int(float(total_discount)),
+                    total_actual_discount=int(float(total_actual_discount)),
+                    total_excess=int(float(total_excess)),
+                    excess_cases=int(float(excess_cases)),
                     ok_cases=ok_cases,
-                    compliance_pct=compliance_pct,
-                    avg_discount=avg_discount,
-                    avg_actual_discount=avg_actual_discount,
+                    compliance_pct=int(float(compliance_pct)),
+                    avg_discount=int(float(avg_discount)),
+                    avg_actual_discount=int(float(avg_actual_discount)),
                     ts_labels=ts_lbl,
                     ts_discount=ts_disc,
                     ts_excess=ts_exc,
@@ -1153,13 +1208,143 @@ async def dashboard_page() -> None:
                     month_map_local=t_month_map,
                 )
 
+            # def compute_analytics(txns: list) -> dict:
+            #     """Compute all dashboard metrics from a transaction list."""
+            #     total_entries = len(txns)
+            #     total_discount = sum(
+            #         t.get("total_allowed_discount", 0) or 0 for t in txns
+            #     )
+            #     total_discount_booking = sum(
+            #         t.get("total_allowed_discount", 0) or 0 for t in txns
+            #     )
+            #     total_actual_discount = sum(
+            #         t.get("total_actual_discount", 0) or 0 for t in txns
+            #     )
+            #     total_excess = sum(t.get("total_excess_discount", 0) or 0 for t in txns)
+            #     excess_cases = sum(1 for t in txns if t.get("status") == "Excess")
+            #     ok_cases = total_entries - excess_cases
+            #     compliance_pct = round(
+            #         (ok_cases / total_entries * 100) if total_entries else 100, 1
+            #     )
+            #     avg_discount = (
+            #         round(total_discount / total_entries) if total_entries else 0
+            #     )
+            #     avg_actual_discount = (
+            #         round(total_actual_discount / total_entries) if total_entries else 0
+            #     )
+
+            #     # Time series (month-on-month)
+            #     t_month_map: dict = defaultdict(list)
+            #     for t in txns:
+            #         bd = t.get("booking_date", "")
+            #         if bd and len(bd) >= 7:
+            #             t_month_map[bd[:7]].append(t)
+            #     chrono = sorted(t_month_map.keys())
+            #     ts_lbl = [month_label(ym) for ym in chrono]
+            #     ts_disc = [
+            #         sum(
+            #             t.get("total_allowed_discount", 0) or 0 for t in t_month_map[ym]
+            #         )
+            #         for ym in chrono
+            #     ]
+            #     ts_exc = [
+            #         sum(t.get("total_excess_discount", 0) or 0 for t in t_month_map[ym])
+            #         for ym in chrono
+            #     ]
+
+            #     # Sales analytics
+            #     model_sales: dict = defaultdict(int)
+            #     model_discount: dict = defaultdict(int)
+            #     model_excess: dict = defaultdict(int)
+            #     variant_excess: dict = defaultdict(int)
+            #     outlet_sales: dict = defaultdict(int)
+            #     outlet_disc: dict = defaultdict(int)
+            #     outlet_excess: dict = defaultdict(int)
+            #     condition_cnt: dict = defaultdict(int)
+
+            #     for t in txns:
+            #         model = (
+            #             t.get("car_name")
+            #             or t.get("car")
+            #             or (
+            #                 t.get("variant_name", "").split(" ")[0]
+            #                 if t.get("variant_name")
+            #                 else "Unknown"
+            #             )
+            #         )
+            #         outlet = t.get("outlet_name") or t.get("outlet") or "Unknown"
+            #         vname = t.get("variant_name") or t.get("variant") or "Unknown"
+            #         actual_discount = t.get("total_actual_discount", 0) or 0
+            #         ex = t.get("total_excess_discount", 0) or 0
+            #         disc = t.get("total_allowed_discount", 0) or 0
+
+            #         model_sales[model] += 1
+            #         model_discount[model] += disc
+            #         if ex > 0:
+            #             model_excess[model] += ex
+            #             variant_excess[vname] += ex
+
+            #         outlet_sales[outlet] += 1
+            #         outlet_disc[outlet] += disc
+            #         outlet_excess[outlet] += ex
+
+            #         for k, v in (t.get("conditions", {}) or {}).items():
+            #             if v:
+            #                 condition_cnt[k.replace("_", " ").title()] += 1
+
+            #     top_excess_txns = sorted(
+            #         [t for t in txns if (t.get("total_excess_discount", 0) or 0) > 0],
+            #         key=lambda x: -(x.get("total_excess_discount", 0) or 0),
+            #     )[:6]
+
+            #     return dict(
+            #         total_entries=total_entries,
+            #         total_discount=total_discount,
+            #         total_actual_discount=total_actual_discount,
+            #         total_excess=total_excess,
+            #         excess_cases=excess_cases,
+            #         ok_cases=ok_cases,
+            #         compliance_pct=compliance_pct,
+            #         avg_discount=avg_discount,
+            #         avg_actual_discount=avg_actual_discount,
+            #         ts_labels=ts_lbl,
+            #         ts_discount=ts_disc,
+            #         ts_excess=ts_exc,
+            #         chrono_months=chrono,
+            #         top_model_sales=sorted(model_sales.items(), key=lambda x: -x[1])[
+            #             :8
+            #         ],
+            #         top_model_disc=sorted(model_discount.items(), key=lambda x: -x[1])[
+            #             :8
+            #         ],
+            #         top_model_excess=sorted(model_excess.items(), key=lambda x: -x[1])[
+            #             :8
+            #         ],
+            #         top_variants=sorted(variant_excess.items(), key=lambda x: -x[1])[
+            #             :8
+            #         ],
+            #         outlets_sorted_sales=sorted(
+            #             outlet_sales.items(), key=lambda x: -x[1]
+            #         )[:8],
+            #         outlets_sorted_disc=sorted(
+            #             outlet_disc.items(), key=lambda x: -x[1]
+            #         )[:8],
+            #         outlet_excess=outlet_excess,
+            #         outlet_sales=outlet_sales,
+            #         outlet_discount=outlet_disc,
+            #         sorted_conds=sorted(condition_cnt.items(), key=lambda x: -x[1]),
+            #         top_excess_txns=top_excess_txns,
+            #         sorted_months_local=sorted(t_month_map.keys(), reverse=True),
+            #         month_map_local=t_month_map,
+            #     )
+
             def render_dashboard(all_txns: list) -> None:
                 """Build the full dashboard UI splitting by booking vs delivery."""
-                booking_txns = [t for t in all_txns if t.get("stage") == "booking"]
-                delivery_txns = [t for t in all_txns if t.get("stage") == "delivery"]
+                # booking_txns = [t for t in all_txns if t.get("stage") == "booking"]
+                # delivery_txns = [t for t in all_txns if t.get("stage") == "delivery"]
 
-                booking_analytics = compute_analytics(booking_txns)
-                delivery_analytics = compute_analytics(delivery_txns)
+                booking_analytics = compute_analytics(all_txns, "booking")
+                delivery_analytics = compute_analytics(all_txns, "delivery")
                 booking_content_area.clear()
                 delivery_content_area.clear()
 
@@ -1756,6 +1941,30 @@ async def dashboard_page() -> None:
             month_select.on_value_change(on_month_change)
 
 
+class MISState:
+    def __init__(self) -> None:
+        self.selected_dealer: int | None
+        self.selected_outlet: int | None
+        self.dealer_select: ui.select | None
+        self.outlet_select: ui.select | None
+        self.dealerships: list = []
+        self.outlets: list = []
+        self._load_tasks = None
+        self._debounce = None
+
+        self.stage: str = "booking"
+        self.month: str | None = None
+
+
+def delete_entry(txn_ids: list) -> None:
+    pass
+
+
+async def load_master_data(mstate):
+    mstate.dealerships = await api_get("/dealerships")
+    mstate.outlets = await api_get("/outlets")
+
+
 # ══════════════════════════════════════════════════════════════
 #                   PAGE: MIS TABLES (Booking & Delivery)
 # ══════════════════════════════════════════════════════════════
@@ -1763,6 +1972,21 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
     label = "Booking MIS" if stage == "booking" else "Delivery MIS"
     render_topbar(label)
+    mstate = MISState()
+
+    mstate.selected_dealer = None
+    mstate.selected_outlet = None
+    mstate.stage = stage
+    mstate.month = month
+
+    def reset_filters():
+        mstate.selected_dealer = None
+        mstate.selected_outlet = None
+
+        mstate.dealer_select.set_value(None)
+        mstate.outlet_select.set_value(None)
+
+        schedule_load()
 
     try:
         all_transactions: list = await api_get("/transactions")
@@ -1850,6 +2074,52 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                         "text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
                     )
 
+        async def load_data():
+            if mstate._load_tasks and not mstate._load_tasks.done():
+                mstate._load_tasks.cancel()
+
+            async def _run():
+                params = {}
+
+                if mstate.selected_outlet:
+                    params["showroom_id"] = mstate.selected_outlet
+                elif mstate.selected_dealer:
+                    params["dealership_id"] = mstate.selected_dealer
+
+                data = await api_get("/transactions", params=params)
+
+                # existing logic
+                if mstate.stage == "delivery":
+                    data = [t for t in data if t.get("delivery_date")]
+
+                if mstate.month:
+                    data = [
+                        t
+                        for t in data
+                        if (t.get("booking_date", "") or "").startswith(mstate.month)
+                    ]
+
+                with mstate.table_container:
+                    mstate.table_container.clear()
+                    render_table(data, stage=mstate.stage)
+
+            mstate._load_tasks = asyncio.create_task(_run())
+
+            try:
+                await mstate._load_tasks
+            except asyncio.CancelledError:
+                pass
+
+        def schedule_load():
+            if mstate._debounce:
+                mstate._debounce.cancel()
+
+            mstate._debounce = ui.timer(
+                0.3,
+                lambda: load_data(),
+                once=True,
+            )
+
         # ── MAIN CONTENT ─────────────────────────────────────
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
             with ui.row().classes("w-full items-center justify-between mb-5"):
@@ -1863,6 +2133,66 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                         "text-[12px] text-gray-400"
                     )
 
+                await load_master_data(mstate)
+                dealer_opts = {d["id"]: d["name"] for d in mstate.dealerships}
+                outlet_opts = {o["id"]: o["name"] for o in mstate.outlets}
+
+                with ui.row().classes("items-center gap-3 mb-3"):
+                    mstate.dealer_select = (
+                        ui.select(options=dealer_opts, label="Dealership")
+                        .props("outlined dense clearable")
+                        .classes("w-64")
+                        .on_value_change(lambda e: on_dealer_change(e.value))
+                    )
+
+                    mstate.outlet_select = (
+                        ui.select(options=outlet_opts, label="Showroom")
+                        .props("outlined dense clearable")
+                        .classes("w-64")
+                        .on_value_change(lambda e: on_outlet_change(e.value))
+                    )
+
+                    ui.button("Reset", on_click=reset_filters).props("outline dense")
+
+                def on_dealer_change(val):
+                    mstate.selected_dealer = int(val) if val else None
+
+                    # filter outlets by dealer
+                    filtered = (
+                        [
+                            o
+                            for o in mstate.outlets
+                            if o["dealership_id"] == mstate.selected_dealer
+                        ]
+                        if val
+                        else mstate.outlets
+                    )
+
+                    mstate.outlet_select.options = {
+                        o["id"]: o["name"] for o in filtered
+                    }
+
+                    mstate.outlet_select.set_value(None)
+                    mstate.selected_outlet = None
+
+                    schedule_load()
+
+                def on_outlet_change(val):
+                    mstate.selected_outlet = int(val) if val else None
+                    schedule_load()
+
+                ## Delete Button
+                with (
+                    ui.button()
+                    .classes(
+                        "bg-[#FF0000] text-white font-semibold text-[13px] px-4.5 py-2 rounded-[7px] shadow-sm ml-auto"
+                    )
+                    .props("no-caps unelevated")
+                ):
+                    ui.icon("delete").classes("text-white text-lg text-weight-bold")
+                    ui.label("Delete").classes("text-weight-bold pl-2")
+
+                ## New Entry Button
                 with (
                     ui.button(on_click=open_new_entry_dialog)
                     .classes(
@@ -1873,8 +2203,11 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     ui.icon("add").classes("text-white text-lg text-weight-bold")
                     ui.label("New Entry").classes("text-weight-bold pl-2")
 
-            with ui.card().classes("w-full p-0 shadow-sm rounded-xl mb-8"):
-                render_table(transactions, stage=stage)
+            with ui.card().classes(
+                "w-full p-0 shadow-sm rounded-xl mb-8"
+            ) as table_container:
+                mstate.table_container = table_container
+                await load_data()
 
 
 @ui.page("/booking-mis")
@@ -4370,10 +4703,10 @@ def build_vehicle_section(state: FormState) -> None:
                 ui.select(
                     options=exec_opts,
                     label="Sales Executive *",
-                    on_change=lambda e: setattr(state, "executive_id", e.value),
                 )
                 .classes("w-full")
                 .props("outlined dense")
+                .on_value_change(lambda v: setattr(state, "executive_id", v.value))
             )
             if state.form_mode not in ["complaint_create", "complaint_edit"]:
                 state.cust_file_no = (
@@ -4404,11 +4737,12 @@ def build_vehicle_section(state: FormState) -> None:
                     ui.select(
                         options=outlet_opts,
                         label="Outlet",
-                        on_change=lambda e: setattr(state, "outlet_id", e.value),
                     )
                     .classes("w-full")
                     .props("outlined dense")
+                    .on_value_change(lambda e: setattr(state, "outlet_id", e.value))
                 )
+
             if state.stage == "delivery":
                 state.vin_no = (
                     ui.input(
@@ -4476,13 +4810,6 @@ def build_vehicle_section(state: FormState) -> None:
                     .classes("w-full")
                     .props('outlined dense type="date"')
                 )
-
-        if state.outlet_select and state.outlets:
-            state.outlet_select.set_value(state.outlets[0]["id"])
-            state.outlet_id = state.outlets[0]["id"]
-        if state.exec_select and state.executives:
-            state.exec_select.set_value(state.executives[0]["id"])
-            state.executive_id = state.executives[0]["id"]
 
 
 def build_customer_section(state: FormState) -> None:
@@ -6499,7 +6826,7 @@ async def _fs_handle_submit(state: FormState) -> None:
 
 def build_payload(state: FormState) -> dict:
 
-    def v(x):
+    def val(x):
         return x.value if x else None
 
     def lbl_val(x, chr_slice=1):
@@ -6544,14 +6871,14 @@ def build_payload(state: FormState) -> dict:
         else:
             actual_amounts[name] = 0
 
-    for name, val in state.listed_prices.items():
+    for name, value in state.listed_prices.items():
         price_row = state.price_rows.get(name)
         discount_row = state.discount_rows.get(name)
 
         # ── PRICE COMPONENT ─────────────────────────
         if price_row:
             if price_row.visible:
-                allowed_amounts[name] = val  # ALWAYS include
+                allowed_amounts[name] = value  # ALWAYS include
             else:
                 allowed_amounts[name] = 0
 
@@ -6567,11 +6894,11 @@ def build_payload(state: FormState) -> dict:
                     inp and str(inp.value).strip()
                 )
 
-                allowed_amounts[name] = val if is_applied else 0
+                allowed_amounts[name] = value if is_applied else 0
 
         # ── SAFETY (unknown component) ──────────────
         else:
-            allowed_amounts[name] = val
+            allowed_amounts[name] = value
 
     # ─────────────────────────────
     # CONDITIONS
@@ -6614,8 +6941,8 @@ def build_payload(state: FormState) -> dict:
     # INVOICE
     # ─────────────────────────────
     invoice_details = {
-        "invoice_number": v(state.invoice_number),
-        "invoice_date": v(state.invoice_date),
+        "invoice_number": val(state.invoice_number),
+        "invoice_date": val(state.invoice_date),
         "ex_showroom_price": intval(state.invoice_ex_showroom),
         "discount": intval(state.invoice_discount),
         "taxable_value": intval(state.invoice_taxable_value),
@@ -6642,31 +6969,31 @@ def build_payload(state: FormState) -> dict:
     payload = {
         # ── REQUIRED ──
         "variant_id": state.variant_id,
-        "booking_date": v(state.booking_date),
+        "booking_date": val(state.booking_date),
         "booking_amt": intval(state.booking_amt),
-        "booking_receipt_num": v(state.booking_receipt_num),
+        "booking_receipt_num": val(state.booking_receipt_num),
         "outlet_id": state.outlet_id,
         "sales_executive_id": state.executive_id,
         # ── CUSTOMER ──
         "customer": {
-            "name": v(state.cust_name),
-            "mobile_number": v(state.cust_mobile),
-            "email": v(state.cust_email),
-            "pan_number": v(state.cust_pan),
-            "aadhar_number": v(state.cust_aadhar),
-            "address": v(state.cust_address),
-            "city": v(state.cust_city),
-            "pin_code": v(state.cust_pincode),
+            "name": val(state.cust_name),
+            "mobile_number": val(state.cust_mobile),
+            "email": val(state.cust_email),
+            "pan_number": val(state.cust_pan),
+            "aadhar_number": val(state.cust_aadhar),
+            "address": val(state.cust_address),
+            "city": val(state.cust_city),
+            "pin_code": val(state.cust_pincode),
         },
         # ── VEHICLE ──
-        "customer_file_number": v(state.cust_file_no),
-        "vin_number": v(state.vin_no),
-        "color": v(state.car_color),
-        "engine_number": v(state.engine_no),
-        "model_year": v(state.model_year),
-        "registration_number": v(state.vehicle_regn_no),
-        "registration_date": v(state.regn_date),
-        "price_adjustment": v(state.adjustment_input),
+        "customer_file_number": val(state.cust_file_no),
+        "vin_number": val(state.vin_no),
+        "color": val(state.car_color),
+        "engine_number": val(state.engine_no),
+        "model_year": val(state.model_year),
+        "registration_number": val(state.vehicle_regn_no),
+        "registration_date": val(state.regn_date),
+        "price_adjustment": val(state.adjustment_input),
         # ── CORE LOGIC ──
         "actual_amounts": actual_amounts,
         "allowed_amounts": allowed_amounts,
@@ -6682,8 +7009,8 @@ def build_payload(state: FormState) -> dict:
         "exchange_details": {},
         # ── AUDIT INFO ──
         "audit_info": {
-            "observations": v(state.audit_obs),
-            "actions": v(state.audit_action),
+            "observations": val(state.audit_obs),
+            "actions": val(state.audit_action),
         },
     }
 
@@ -6705,12 +7032,15 @@ def build_payload(state: FormState) -> dict:
     elif state.stage == "delivery":
         payload["stage"] = "delivery"
         payload["booking_id"] = state.booking_id
-        payload["delivery_date"] = v(state.delivery_date)
+        payload["delivery_date"] = val(state.delivery_date)
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
         payload["delivery_file_incomplete"] = any(
             v is not True for v in delivery_checks.values()
         )
+        payload["total_actual_discount"] = lbl_val(state.total_given)
+        payload["total_allowed_discount"] = lbl_val(state.total_allowed)
+        payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
 
     return payload
 
@@ -6824,25 +7154,21 @@ async def form_page(
     state.mode = mode
     state.txn_id = transaction_id
     state.is_direct_delivery = mode == "direct"
-    print("hello, world")
     txn_data = None
 
     if transaction_id and stage == "delivery":
-        print("hello, world 2")
         state.booking_id = transaction_id
         state.edit_mode = True
     if transaction_id and stage == "booking":
         state.form_mode = "booking_edit"
 
         try:
-            print("hello, world 3", transaction_id)
             txn_data = await api_get(f"/transactions/{transaction_id}")
             state.booking_data = txn_data
 
         except Exception as e:
             print(str(e))
             ui.notify("Failed to load booking data", type="negative")
-        print("DEBUG: ", state.booking_data)
     # Detect edit mode from query param
     if state.booking_id:
         pass

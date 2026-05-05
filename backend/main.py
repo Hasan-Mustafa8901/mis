@@ -99,10 +99,18 @@ def create_dealership(
         raise HTTPException(400, "Dealership with same name/code already exists")
 
 
+@app.get("/dealerships")
+def api_list_dealerships(session: Session = Depends(get_session)):
+    dealerships = session.exec(select(Dealership)).all()
+    return [{"id": d.id, "name": d.name} for d in dealerships]
+
+
 @app.get("/outlets")
 def api_list_outlets(session: Session = Depends(get_session)):
     outlets = session.exec(select(Outlet)).all()
-    return [{"id": o.id, "name": o.name} for o in outlets]
+    return [
+        {"id": o.id, "name": o.name, "dealership_id": o.dealership_id} for o in outlets
+    ]
 
 
 @app.post("/outlets")
@@ -218,6 +226,14 @@ async def upload_price_list(
             os.remove(file_path)
 
 
+@app.delete("/transactions/{transaction_id}")
+def delete_transaction_api(
+    transaction_id: int,
+    session: Session = Depends(get_session),
+):
+    return TransactionService.delete_transaction(session, transaction_id)
+
+
 @app.post("/transactions/calculate")
 def api_calculate_audit(
     transaction: Transaction,
@@ -316,9 +332,40 @@ def api_recalculate_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# @app.get("/transactions")
+# def get_all_transactions(
+#     showroom_id: int | None,
+#     dealership_id: int | None,
+#     session: Session = Depends(get_session),
+# ):
+#     txs = session.exec(select(Transaction)).all()
+
+#     return [
+#         TransactionService.get_transaction_reconstruction(session, tx.id)
+#         for tx in txs
+#         if tx.id
+#     ]
+
+
 @app.get("/transactions")
-def get_all_transactions(session: Session = Depends(get_session)):
-    txs = session.exec(select(Transaction)).all()
+def get_all_transactions(
+    showroom_id: int | None = None,
+    dealership_id: int | None = None,
+    stage: str | None = None,
+    session: Session = Depends(get_session),
+):
+    stmt = select(Transaction)
+
+    if showroom_id:
+        stmt = stmt.where(Transaction.outlet_id == showroom_id)
+
+    elif dealership_id:
+        stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
+
+    if stage:
+        stmt = stmt.where(Transaction.stage == stage)
+
+    txs = session.exec(stmt).all()
 
     return [
         TransactionService.get_transaction_reconstruction(session, tx.id)

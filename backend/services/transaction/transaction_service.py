@@ -1,7 +1,10 @@
 from sqlmodel import Session, select
+from fastapi import HTTPException
 from typing import Dict, Any, List, Optional
 from db.models import (
     Transaction,
+    Outlet,
+    Dealership,
     TransactionItem,
     Customer,
     Variant,
@@ -249,38 +252,35 @@ class TransactionService:
         transaction.delivery_date = payload.get("delivery_date", None)
         transaction.booking_date = payload.get("booking_date", transaction.booking_date)
 
-        if not use_booking_data:
-            audit_result = DiscountService.calculate_discount(
-                session=session,
-                transaction=transaction,
-                actual_amounts=payload.get("actual_amounts", {}),
-                conditions=payload.get("conditions", {}),
-            )
+        # # Replace this with Frontend Sent Discount
+        # if not use_booking_data:
+        #     audit_result = DiscountService.calculate_discount(
+        #         session=session,
+        #         transaction=transaction,
+        #         actual_amounts=payload.get("actual_amounts", {}),
+        #         conditions=payload.get("conditions", {}),
+        #     )
 
-            transaction.total_actual_discount = audit_result["total_actual_discount"]
-            transaction.total_allowed_discount = audit_result["pricelist_discount"]
-            transaction.total_excess_discount = audit_result["excess_discount"]
-            transaction.status = audit_result["status"]
+        transaction.total_actual_discount = payload.get("total_actual_discount")
+        transaction.total_allowed_discount = payload.get("pricelist_discount")
+        transaction.total_excess_discount = payload.get("excess_discount")
+        transaction.status = (
+            "Excess Discount"
+            if payload.get("excess_discount", 0) > 0
+            else "No Excess Discount"
+        )
 
-        else:
-            audit_result = {
-                "actual_discount": transaction.total_actual_discount,
-                "pricelist_discount": transaction.total_allowed_discount,
-                "excess_discount": transaction.total_excess_discount,
-                "status": transaction.status,
-            }
+        audit_result = {
+            "actual_discount": transaction.total_actual_discount,
+            "pricelist_discount": transaction.total_allowed_discount,
+            "excess_discount": transaction.total_excess_discount,
+            "status": transaction.status,
+        }
 
         # =========================
         # STEP 5: Reconciliation
         # =========================
-        TransactionService.apply_funds_reconciliation(
-            session, transaction, payload, audit_result
-        )
-
-        # =========================
-        # STEP 6: Finalize
-        # =========================
-        # transaction.stage = "delivery" (already set above)
+        TransactionService.apply_funds_reconciliation(session, transaction, payload)
 
         session.add(transaction)
         session.commit()
@@ -321,23 +321,33 @@ class TransactionService:
         print(
             f"DEBUG: create_delivery_transaction - BEFORE CALC: stage={transaction.stage}"
         )
-        audit_result = DiscountService.calculate_discount(
-            session=session,
-            transaction=transaction,
-            actual_amounts=payload.get("actual_amounts", {}),
-            conditions=payload.get("conditions", {}),
+        # # Replace this with Frontend Sent Discount
+        # audit_result = DiscountService.calculate_discount(
+        #     session=session,
+        #     transaction=transaction,
+        #     actual_amounts=payload.get("actual_amounts", {}),
+        #     conditions=payload.get("conditions", {}),
+        # )
+
+        # # STEP 6: Store discount
+        transaction.total_actual_discount = payload.get("total_actual_discount", 0)
+        transaction.total_allowed_discount = payload.get("total_allowed_discount", 0)
+        transaction.total_excess_discount = payload.get("total_excess_discount", 0)
+        transaction.status = (
+            "Excess Discount"
+            if payload.get("excess_discount", 0) > 0
+            else "No Excess Discount"
         )
 
-        # STEP 6: Store discount
-        transaction.total_actual_discount = audit_result["total_actual_discount"]
-        transaction.total_allowed_discount = audit_result["pricelist_discount"]
-        transaction.total_excess_discount = audit_result["excess_discount"]
-        transaction.status = audit_result["status"]
+        audit_result = {
+            "actual_discount": transaction.total_actual_discount,
+            "pricelist_discount": transaction.total_allowed_discount,
+            "excess_discount": transaction.total_excess_discount,
+            "status": transaction.status,
+        }
 
         # STEP 7: Reconciliation (IMPORTANT)
-        TransactionService.apply_funds_reconciliation(
-            session, transaction, payload, audit_result
-        )
+        TransactionService.apply_funds_reconciliation(session, transaction, payload)
 
         session.add(transaction)
         session.commit()
@@ -465,14 +475,27 @@ class TransactionService:
         This allows full fidelity to the original Excel MIS template.
         """
         transaction = session.get(Transaction, transaction_id)
+        if not transaction:
+            print()
+            return {}
         user = (
             session.get(User, transaction.created_by)
             if transaction.created_by
             else None
         )
-        if not transaction:
-            print()
-            return {}
+        # ── FETCH OUTLET ─────────────────────────
+        outlet = (
+            session.get(Outlet, transaction.outlet_id)
+            if transaction.outlet_id
+            else None
+        )
+
+        # ── FETCH DEALERSHIP ─────────────────────
+        dealership = (
+            session.get(Dealership, outlet.dealership_id)
+            if outlet and outlet.dealership_id
+            else None
+        )
 
         # 1. Start with metadata
         data = {
@@ -484,6 +507,10 @@ class TransactionService:
             "created_at": transaction.created_at.isoformat()
             if transaction.created_at
             else None,
+            "outlet_id": transaction.outlet_id,
+            "outlet_name": outlet.name if outlet else None,
+            "dealership_id": outlet.dealership_id if outlet else None,
+            "dealership_name": dealership.name if dealership else None,
         }
 
         # 2. Section 1: Customer Details
@@ -636,7 +663,6 @@ class TransactionService:
         session: Session,
         transaction: Transaction,
         payload: Dict[str, Any],
-        audit_result: Dict[str, Any],
     ):
 
         # from sqlmodel import select
@@ -648,47 +674,16 @@ class TransactionService:
             )
         ).all()
 
-        ON_ROAD_COMPONENTS = {
-            "ex showroom price",
-            "insurance",
-            "registration",
-            "hyundai genuine acc kit",
-            "tcs",
-            "fastag",
-            "ext warr",
-            "shield of trust",
-        }
         total_on_road = 0.0
 
         for item in items:
-            if (
-                item.component_name.lower().replace("-", " ").strip()
-                in ON_ROAD_COMPONENTS
-            ):
+            if item.component_type == "price":
                 total_on_road += item.actual_amount
-
-        # accessory_total = sum(
-        #     link.accessory.listed_price
-        #     for link in transaction.accessories
-        #     if link.accessory
-        # )
-
-        # total_on_road += accessory_total
-
-        DISCOUNT_COMPONENTS = {
-            "cash discount all customers",
-            "additional discount from dealer",
-            "extra kitty on tr cases",
-            "additional for poi /corporate customers",
-            "additional for exchange customers",
-            "additional for scrappage customers",
-            "additional for upward sales customers",
-        }
 
         total_discount = 0.0
 
         for item in items:
-            if item.component_name.lower().strip() in DISCOUNT_COMPONENTS:
+            if item.component_type == "discount":
                 total_discount += item.actual_amount
 
         total_receivable = total_on_road - total_discount
@@ -716,3 +711,37 @@ class TransactionService:
         print(f"{balance=}\n{payment_status=}")
         session.add(transaction)
         session.flush()
+
+    @staticmethod
+    def delete_transaction(session: Session, transaction_id: int) -> dict:
+        transaction = session.get(Transaction, transaction_id)
+
+        if not transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+
+        # ── Delete related TransactionItems ─────────────────
+        items = session.exec(
+            select(TransactionItem).where(
+                TransactionItem.transaction_id == transaction_id
+            )
+        ).all()
+
+        for item in items:
+            session.delete(item)
+
+        # ── Delete accessory links ──────────────────────────
+        links = session.exec(
+            select(TransactionAccessoryLink).where(
+                TransactionAccessoryLink.transaction_id == transaction_id
+            )
+        ).all()
+
+        for link in links:
+            session.delete(link)
+
+        # ── Delete main transaction ─────────────────────────
+        session.delete(transaction)
+
+        session.commit()
+
+        return {"message": "Transaction deleted successfully", "id": transaction_id}
