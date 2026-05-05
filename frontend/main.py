@@ -6387,9 +6387,9 @@ def _fs_update_live(state) -> None:
             "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
         )
 
-    if getattr(state, "lbl_excess", None):
-        state.lbl_excess.set_text(f"₹{excess:,}")
-        state.lbl_excess.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
+    if getattr(state, "lbl_excess_lv", None):
+        state.lbl_excess_lv.set_text(f"₹{excess:,}")
+        state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
 
 
 def _fs_update_visibility(state: FormState) -> None:
