@@ -54,6 +54,7 @@ def set_user(data: dict):
     app.storage.user.update(
         {
             "token": data["access_token"],
+            "id": data["id"],
             "name": data["name"],
             "role": [data["role"]],
             "outlet_id": data["outlet_id"],

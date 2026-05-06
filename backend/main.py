@@ -29,8 +29,6 @@ from routes.auth_routes import router as auth_router
 from routes.complaint_routes import router as complaints_router
 from routes.daily_reporting_routes import router as daily_reporting_router
 
-from rich import print
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -164,14 +162,12 @@ def api_price_list_preview(
     active_price_list = PriceListService.get_active_price_list(
         session, booking_date, model_year
     )
-    print("\nActive Price List:", active_price_list)
     if not active_price_list:
         raise HTTPException(status_code=404, detail="Active Price List not found")
 
     allowed_amounts = PriceListService.get_allowed_amounts(
         session, active_price_list.id, variant_id, {}
     )
-    print("\nAllowed Amounts:", allowed_amounts)
 
     result = {}
     comps = session.exec(
@@ -179,15 +175,12 @@ def api_price_list_preview(
             (DiscountComponent.type == "price") | (DiscountComponent.type == "discount")
         )
     ).all()
-    print("\nPrice Components in DB:", [c.name for c in comps])
     comp_map = {c.id: " ".join(c.name.split()) for c in comps}
-    print("\nComponent ID to Name Map:", comp_map)
 
     for comp_id, amount in allowed_amounts.items():
         if comp_id in comp_map:
             name = comp_map[comp_id]
             result[name] = amount
-    print("\nFinal Mapped Result:", result)
 
     return result
 

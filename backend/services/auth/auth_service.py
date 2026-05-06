@@ -60,9 +60,9 @@ class AuthService:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
         token = AuthService.create_access_token({"sub": str(user.id)})
-
         return {
             "access_token": token,
+            "id": user.id,
             "name": user.name,
             "outlet_id": user.outlet_id,
             "role": UserRole(user.role),

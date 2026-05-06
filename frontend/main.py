@@ -327,6 +327,7 @@ def accounting_input(
 
 def get_user():
     return {
+        "id": app.storage.user.get("id"),
         "name": app.storage.user.get("name"),
         "role": app.storage.user.get("role"),
         "outlet_id": app.storage.user.get("outlet_id"),
@@ -424,7 +425,6 @@ def login_page():
                         data = r.json()
 
                     set_user(data)
-
                     ui.notify("Login successful", type="positive")
                     ui.navigate.to("/")
 
@@ -4172,6 +4172,12 @@ class FormState:
         if not self.variant_id:
             return False, "Please select a Car and Variant."
 
+        if not self.outlet_id:
+            return False, "Please select Showroom."
+
+        if not self.executive_id:
+            return False, "Please select Sale Executive."
+
         if not _val(self.cust_name):
             return False, "Customer name is required."
 
@@ -4736,7 +4742,7 @@ def build_vehicle_section(state: FormState) -> None:
                 state.outlet_select = (
                     ui.select(
                         options=outlet_opts,
-                        label="Outlet",
+                        label="Outlet *",
                     )
                     .classes("w-full")
                     .props("outlined dense")
@@ -5155,23 +5161,26 @@ def build_prices_section(state: FormState) -> None:
                 "w-full items-center gap-3 mt-3 pt-3 border-t-2 border-gray-200"
             ):
                 ui.label("Total on-road price").classes(
-                    "text-[12px] font-bold uppercase tracking-wide text-gray-700 flex-1"
+                    "text-[14px] font-bold uppercase tracking-wide text-gray-700 flex-1"
                 )
                 with ui.row().classes("items-baseline gap-1"):
                     ui.label("Listed").classes("text-[13px] text-black text-left")
                     state.lbl_total_listed_price = ui.label("₹—").classes(
-                        "text-[13px] font-mono text-black-500 w-28 text-right"
+                        "text-[15px] font-mono text-black-500 w-28 text-right"
                     )
+                ui.element("div").classes("w-20")
                 with ui.row().classes("items-baseline gap-1"):
                     ui.label("Charged").classes("text-[13px] text-black text-left")
                     state.lbl_total_charged_price = ui.label("₹—").classes(
-                        "text-[13px] font-mono font-semibold text-black w-28 text-right"
+                        "text-[15px] font-mono font-semibold text-black w-28 text-right"
                     )
+                # ui.element("div").classes("w-20")
                 with ui.row().classes("items-baseline gap-1"):
                     ui.label("Diff").classes("text-[10px] text-black text-left")
                     state.lbl_total_diff_price = ui.label("₹—").classes(
-                        "text-[13px] font-mono w-24 text-right text-black"
+                        "text-[15px] font-mono w-20 text-right text-black"
                     )
+                ui.element("div").classes("w-1")
 
             # Note: lbl_total_offered_price kept as alias so _fs_update_live
             # doesn't crash if called from old code referencing that attribute.
@@ -5214,15 +5223,14 @@ def build_prices_section(state: FormState) -> None:
                     # merge discount_booking into map (without mutating original)
                     booking_disc_map_ui = dict(booking_disc_map or {})
                     discount_booking_val = int(
-                        state.listed_prices.get("discount_booking") or 0
+                        booking_data.get("discount_booking") or 0
                     )
-
                     if discount_booking_val:
                         booking_disc_map_ui["Discount (Booking File)"] = (
                             discount_booking_val
                         )
-                    if booking_disc_map:
-                        for disc_name, disc_val in booking_disc_map.items():
+                    if booking_disc_map_ui:
+                        for disc_name, disc_val in booking_disc_map_ui.items():
                             cond_key = _condition_badge(disc_name, conditions)
                             with ui.row().classes(
                                 "w-full items-center py-1 border-b border-blue-100"
@@ -5258,34 +5266,34 @@ def build_prices_section(state: FormState) -> None:
                         ui.label("No discount data from booking.").classes(
                             "text-[12px] text-blue-400 italic"
                         )
-            # ── [B] Booking-file total row — shown on booking + direct delivery ─
-            if not is_delivery:
-                with ui.row().classes(
-                    "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200"
-                ):
-                    ui.label("Total discount as per booking file").classes(
-                        f"{_LABEL} flex-1 font-medium"
-                    )
-                    # Allowed placeholder — aligns with the discount table below
-                    ui.label("—").classes(f"{_MONO} w-28")
-                    state.total_discount_booking = accounting_input(
-                        "", placeholder="₹0", container_classes="w-36"
-                    ).props("dense")
-                    state.total_discount_booking.on_value_change(_update)
+            # # ── [B] Booking-file total row — shown on booking + direct delivery ─
+            # if not is_delivery:
+            #     with ui.row().classes(
+            #         "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200"
+            #     ):
+            #         ui.label("Total discount as per booking file").classes(
+            #             f"{_LABEL} flex-1 font-medium"
+            #         )
+            #         # Allowed placeholder — aligns with the discount table below
+            #         ui.label("—").classes(f"{_MONO} w-28")
+            #         state.total_discount_booking = accounting_input(
+            #             "", placeholder="₹0", container_classes="w-36"
+            #         ).props("dense")
+            #         state.total_discount_booking.on_value_change(_update)
 
-            # ── [C] Delivery-note total row — shown on all delivery modes ─────
-            if is_delivery:
-                with ui.row().classes(
-                    "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200"
-                ):
-                    ui.label("Total discount as per delivery note").classes(
-                        f"{_LABEL} flex-1 font-medium"
-                    )
-                    ui.label("—").classes(f"{_MONO} w-28")
-                    state.total_discount_delivery = accounting_input(
-                        "", placeholder="₹0", container_classes="w-36"
-                    ).props("dense")
-                    state.total_discount_delivery.on_value_change(_update)
+            # # ── [C] Delivery-note total row — shown on all delivery modes ─────
+            # if is_delivery:
+            #     with ui.row().classes(
+            #         "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200"
+            #     ):
+            #         ui.label("Total discount as per delivery note").classes(
+            #             f"{_LABEL} flex-1 font-medium"
+            #         )
+            #         ui.label("—").classes(f"{_MONO} w-28")
+            #         state.total_discount_delivery = accounting_input(
+            #             "", placeholder="₹0", container_classes="w-36"
+            #         ).props("dense")
+            #         state.total_discount_delivery.on_value_change(_update)
 
             with ui.row().classes(
                 "w-full items-center gap-2 py-1 border-b border-gray-200 mt-2"
@@ -5354,6 +5362,35 @@ def build_prices_section(state: FormState) -> None:
 
                 toggle.on("update:model-value", on_toggle)
                 inp.on_value_change(_update)
+            # ── [D] Other Discount Row ─────────────────────────────────────
+            with ui.row().classes(
+                "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
+            ):
+                ui.label("Other discount").classes(f"{_LABEL} flex-1 font-medium")
+
+                # spacer to align with table
+                ui.label("—").classes(f"{_MONO} w-28")
+                ui.element("div").classes("w-20")
+
+                # NOTE:
+                # total_discount_booking / total_discount_delivery inputs
+                # are now used as "other discount"
+
+                if not is_delivery:
+                    state.total_discount_booking = accounting_input(
+                        "", placeholder="₹0", container_classes="w-36"
+                    ).props("dense")
+
+                    state.total_discount_booking.on_value_change(_update)
+
+                else:
+                    state.total_discount_delivery = accounting_input(
+                        "", placeholder="₹0", container_classes="w-36"
+                    ).props("dense")
+
+                    state.total_discount_delivery.on_value_change(_update)
+
+                ui.element("div").classes("w-25")
 
             # ── [D] Adjustment Row ─────────────────────────────────────
             with ui.row().classes(
@@ -5363,10 +5400,13 @@ def build_prices_section(state: FormState) -> None:
 
                 # spacer to align with table
                 ui.label("—").classes(f"{_MONO} w-28")
+                ui.element("div").classes("w-20")
 
                 state.adjustment_input = accounting_input(
-                    "", placeholder="₹0", container_classes="w-48"
+                    "", placeholder="₹0", container_classes="w-36"
                 ).props("dense")
+
+                ui.element("div").classes("w-25")
 
                 state.adjustment_input.on_value_change(_update)
 
@@ -5377,18 +5417,20 @@ def build_prices_section(state: FormState) -> None:
                 "w-full items-center gap-4 mt-3 pt-3 border-t-2 border-gray-200"
             ):
                 ui.label("Discount summary").classes(
-                    "text-[12px] font-bold uppercase tracking-wide text-gray-700 flex-1"
+                    "text-[14px] font-bold uppercase tracking-wide text-black flex-1"
                 )
                 with ui.row().classes("items-baseline gap-1"):
-                    ui.label("Allowed").classes("text-[10px] text-gray-400")
+                    ui.label("Allowed").classes("text-[13px] text-black")
                     state.total_allowed = ui.label("₹0").classes(
-                        "text-[13px] font-mono text-gray-600 w-28 text-right"
+                        "text-[15px] font-mono text-black w-28 text-right"
                     )
+                ui.element("div").classes("w-20")
                 with ui.row().classes("items-baseline gap-1"):
-                    ui.label("Given").classes("text-[10px] text-gray-400")
+                    ui.label("Given").classes("text-[13px] text-black")
                     state.total_given = ui.label("₹0").classes(
-                        "text-[13px] font-mono text-gray-600 w-28 text-right"
+                        "text-[15px] font-mono text-black w-28 text-right"
                     )
+                ui.element("div").classes("w-26")
 
             # ── EXCESS DISCOUNT CALLOUT ───────────────────────────────────────
             with ui.row().classes(
@@ -5397,13 +5439,13 @@ def build_prices_section(state: FormState) -> None:
             ) as _excess_bar:
                 with ui.column().classes("gap-0"):
                     ui.label("Excess discount").classes(
-                        "text-[11px] font-bold uppercase tracking-wide text-gray-500"
+                        "text-[14px] font-bold uppercase tracking-wide text-gray-500"
                     )
                     ui.label("Discount given minus allowed limit").classes(
-                        "text-[10px] text-gray-400"
+                        "text-[12px] text-gray-400"
                     )
                 state.lbl_excess_discount = ui.label("₹0").classes(
-                    "text-[18px] font-bold font-mono text-gray-400"
+                    "text-[20px] font-bold font-mono text-gray-400"
                 )
                 # lbl_excess is the compact version used in the live bar elsewhere
                 state.lbl_excess_lv = state.lbl_excess_discount
@@ -6655,26 +6697,22 @@ def _fs_update_live(state) -> None:
 
         allowed_val = int(state.listed_prices.get(name) or 0)
         given_val = int(parsed_val(inp))
-
-        if is_active:
-            total_allowed_discount += allowed_val
+        # counts all visible rows in the allowed vl
+        total_allowed_discount += allowed_val
 
         total_given_discount += given_val
 
         # ── per-row diff
         dl = state.discount_diff_labels.get(name)
         if dl:
-            if not is_active:
-                dl.set_text("—")
-                dl.style("color:#9CA3AF")
+            diff = given_val - allowed_val
+
+            if diff > 0:
+                dl.set_text(f"₹{diff:,}")
+                dl.style("color:#DC2626; font-weight:600")
             else:
-                diff = allowed_val - given_val
-                if diff > 0:
-                    dl.set_text(f"₹{diff:,}")
-                    dl.style("color:#DC2626; font-weight:600")
-                else:
-                    dl.set_text("₹0")
-                    dl.style("color:#9CA3AF")
+                dl.set_text("₹0")
+                dl.style("color:#9CA3AF")
 
     # ── 4. EXCESS CALCULATION ───────────────────────────────────────
     adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
@@ -6884,17 +6922,10 @@ def build_payload(state: FormState) -> dict:
 
         # ── DISCOUNT COMPONENT ─────────────────────
         elif discount_row:
-            if not discount_row.visible:
-                allowed_amounts[name] = 0
+            if discount_row.visible:
+                allowed_amounts[name] = value
             else:
-                toggle = state.discount_match_toggles.get(name)
-                inp = state.discount_inputs.get(name)
-
-                is_applied = (toggle and toggle.value) or (
-                    inp and str(inp.value).strip()
-                )
-
-                allowed_amounts[name] = value if is_applied else 0
+                allowed_amounts[name] = 0
 
         # ── SAFETY (unknown component) ──────────────
         else:
@@ -6904,7 +6935,7 @@ def build_payload(state: FormState) -> dict:
     # CONDITIONS
     # ─────────────────────────────
     conditions = {key: (cb.value or False) for key, cb in state.condition_cbs.items()}
-
+    user = get_user()
     # ─────────────────────────────
     # DELIVERY CHECKS
     # ─────────────────────────────
@@ -6966,6 +6997,7 @@ def build_payload(state: FormState) -> dict:
     # ─────────────────────────────
     # MAIN PAYLOAD
     # ─────────────────────────────
+    print(user)
     payload = {
         # ── REQUIRED ──
         "variant_id": state.variant_id,
@@ -6974,6 +7006,7 @@ def build_payload(state: FormState) -> dict:
         "booking_receipt_num": val(state.booking_receipt_num),
         "outlet_id": state.outlet_id,
         "sales_executive_id": state.executive_id,
+        "user_id": user.get("id"),
         # ── CUSTOMER ──
         "customer": {
             "name": val(state.cust_name),

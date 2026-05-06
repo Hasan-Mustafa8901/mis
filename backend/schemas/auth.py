@@ -19,6 +19,7 @@ class UserLogin(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    id: int
     name: str
     role: str | UserRole
     outlet_id: int | None

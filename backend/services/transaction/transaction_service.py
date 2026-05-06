@@ -424,6 +424,7 @@ class TransactionService:
         payload = convert_date_fields(
             payload, ["booking_date", "registration_date", "delivery_date"]
         )
+
         # ─────────────────────────────
         # 2. TRANSACTION CORE
         # ─────────────────────────────
@@ -432,7 +433,7 @@ class TransactionService:
             variant_id=payload["variant_id"],
             outlet_id=payload["outlet_id"],
             sales_executive_id=payload["sales_executive_id"],
-            created_by=payload.get("user_id", None),
+            created_by=payload.get("user_id"),
             stage=payload.get("stage", "booking"),
             booking_date=payload.get("booking_date"),
             booking_amt=payload.get("booking_amt", 0.0),
