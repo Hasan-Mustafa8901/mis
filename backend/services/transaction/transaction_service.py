@@ -253,17 +253,12 @@ class TransactionService:
         transaction.booking_date = payload.get("booking_date", transaction.booking_date)
 
         # # Replace this with Frontend Sent Discount
-        # if not use_booking_data:
-        #     audit_result = DiscountService.calculate_discount(
-        #         session=session,
-        #         transaction=transaction,
-        #         actual_amounts=payload.get("actual_amounts", {}),
-        #         conditions=payload.get("conditions", {}),
-        #     )
-
-        transaction.total_actual_discount = payload.get("total_actual_discount")
-        transaction.total_allowed_discount = payload.get("pricelist_discount")
-        transaction.total_excess_discount = payload.get("excess_discount")
+        transaction.total_actual_discount = int(
+            payload.get("total_actual_discount") or 0
+        )
+        transaction.total_allowed_discount = int(payload.get("pricelist_discount") or 0)
+        transaction.total_excess_discount = int(payload.get("excess_discount") or 0)
+        transaction.adjustment_delivery = int(payload.get("adjustment_delivery") or 0)
         transaction.status = (
             "Excess Discount"
             if payload.get("excess_discount", 0) > 0
@@ -318,21 +313,10 @@ class TransactionService:
             )
 
         # STEP 5: Discount
-        print(
-            f"DEBUG: create_delivery_transaction - BEFORE CALC: stage={transaction.stage}"
-        )
-        # # Replace this with Frontend Sent Discount
-        # audit_result = DiscountService.calculate_discount(
-        #     session=session,
-        #     transaction=transaction,
-        #     actual_amounts=payload.get("actual_amounts", {}),
-        #     conditions=payload.get("conditions", {}),
-        # )
-
-        # # STEP 6: Store discount
         transaction.total_actual_discount = payload.get("total_actual_discount", 0)
         transaction.total_allowed_discount = payload.get("total_allowed_discount", 0)
         transaction.total_excess_discount = payload.get("total_excess_discount", 0)
+        transaction.adjustment_delivery = int(payload.get("adjustment_delivery") or 0)
         transaction.status = (
             "Excess Discount"
             if payload.get("excess_discount", 0) > 0
@@ -346,7 +330,7 @@ class TransactionService:
             "status": transaction.status,
         }
 
-        # STEP 7: Reconciliation (IMPORTANT)
+        # STEP 6: Reconciliation (IMPORTANT)
         TransactionService.apply_funds_reconciliation(session, transaction, payload)
 
         session.add(transaction)
@@ -364,7 +348,6 @@ class TransactionService:
 
     @staticmethod
     def create_booking_transaction(session: Session, payload: Dict[str, Any]):
-
         # STEP 1: Create base transaction
         transaction = TransactionService.create_transaction_raw(session, payload)
 
@@ -387,6 +370,7 @@ class TransactionService:
         transaction.total_discount_booking = payload.get("total_discount_booking", 0.0)
         transaction.price_offered_booking = payload.get("price_offered_booking", 0.0)
         transaction.excess_booking = payload.get("excess_booking", 0.0)
+        transaction.adjustment_booking = int(payload.get("adjustment_booking") or 0)
 
         transaction.status = (
             "Excess Discount"
@@ -463,7 +447,6 @@ class TransactionService:
         session.add(transaction)
         session.flush()
         session.refresh(transaction)
-        print(f"DEBUG: create_transaction_raw - Transaction: \n{transaction}")
 
         return transaction
 
@@ -477,7 +460,6 @@ class TransactionService:
         """
         transaction = session.get(Transaction, transaction_id)
         if not transaction:
-            print()
             return {}
         user = (
             session.get(User, transaction.created_by)
@@ -532,8 +514,12 @@ class TransactionService:
 
         # 3. Section 2: Vehicle Details
         variant = session.get(Variant, transaction.variant_id)
+        if variant is None:
+            raise ValueError(f"Variant with ID {transaction.variant_id} not found.")
         data.update(
             {
+                "car_id": variant.car_id if variant.car_id else None,
+                "variant_id": variant.id if variant.id else None,
                 "car_name": variant.car.name if variant.car else None,
                 "variant_name": variant.variant_name,
                 "full_variant_name": variant.full_variant_name,
@@ -602,7 +588,10 @@ class TransactionService:
         data.update({f"finance_{k}": v for k, v in transaction.finance_details.items()})
 
         data.update(
-            {f"checklist_{k}": v for k, v in transaction.delivery_checklist.items()}
+            {f"del_checks_{k}": v for k, v in transaction.delivery_checklist.items()}
+        )
+        data.update(
+            {f"bk_checks_{k}": v for k, v in transaction.booking_checklist.items()}
         )
         data.update({f"audit_{k}": v for k, v in transaction.audit_info.items()})
         # 7.5 Accessories (NEW)
@@ -634,6 +623,7 @@ class TransactionService:
                 "total_discount_booking": transaction.total_discount_booking,
                 "price_offered_booking": transaction.price_offered_booking,
                 "excess_booking": transaction.excess_booking,
+                "adjustment_booking": transaction.adjustment_booking,
             }
         )
 
@@ -643,9 +633,10 @@ class TransactionService:
                 "total_allowed_discount": transaction.total_allowed_discount,
                 "total_actual_discount": transaction.total_actual_discount,
                 "total_excess_discount": transaction.total_excess_discount,
+                "other_discount_delivery": transaction.other_discount_delivery,
+                "adjustment_delivery": transaction.adjustment_delivery,
             }
         )
-        print("From Transaction Reconstruction: ", data)
 
         return data
 

@@ -61,7 +61,6 @@ def submit_remark(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    print(payload)
     success = complaint_service.submit_remarks(
         session=session,
         remark=payload.remark,

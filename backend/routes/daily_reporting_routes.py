@@ -46,7 +46,6 @@ def submit_daily_report(
     for d in payload.get("deliveries", []):
         d[outlet_id] = outlet_id
 
-    print("Received daily report:", payload)
     save_daily_report(session, payload)
     return {"message": "Daily report submitted successfully"}
 

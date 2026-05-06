@@ -284,13 +284,18 @@ class Transaction(SQLModel, table=True):
 
     # Values at the time of booking
     price_offered_booking: float = 0.0  # Total price that the customer is being offered with all the components that they are buying.
-    discount_booking: float = 0.0  # Quoted on file
+    discount_booking: float = 0.0  # Other Discount Given at the time on booking
     total_discount_booking: float = 0.0  # Total Discount at the time of booking
     excess_booking: float = 0.0  # excess discount at booking
+    adjustment_booking: int = 0  #
     status: str = "No Excess Discount"  # "No Excess Discount", "Excess"
+
+    # Values at the time of delivery
     total_actual_discount: float = 0.0
     total_allowed_discount: float = 0.0
     total_excess_discount: float = 0.0
+    other_discount_delivery: int = 0
+    adjustment_delivery: int = 0
     payment_status: Optional[str] = None
 
     created_by: Optional[int] = Field(default=None, foreign_key="user.id")

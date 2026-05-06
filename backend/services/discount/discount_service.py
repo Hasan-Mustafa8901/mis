@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 class DiscountStrategyFactory:
     @staticmethod
     def get_strategy(stage: str) -> DiscountStrategy:
-        print(f"DEBUG: DiscountStrategyFactory.get_strategy for stage='{stage}'")
         if stage == "booking":
             return BookingDiscountStrategy()
 
@@ -31,7 +30,6 @@ class DiscountService:
         actual_amounts,
         conditions,
     ):
-        print(__class__, "called")
 
         strategy = DiscountStrategyFactory.get_strategy(transaction.stage)
 

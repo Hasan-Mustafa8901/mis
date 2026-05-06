@@ -43,19 +43,19 @@ class PriceListIngestionService:
         valid_to: date | None = None,
     ):
 
-        # 🔹 1. Read Excel (SINGLE HEADER ONLY)
+        # 1. Read Excel (SINGLE HEADER ONLY)
         df = pd.read_excel(file_path, sheet_name=sheet_name)
         print("EXCEL HEADERS:", df.columns.tolist())
         print("EXCEL HEADS:\n", df.head())
 
-        # 🔹 2. Components from DB
+        # 2. Components from DB
         db_components = session.exec(select(DiscountComponent)).all()
         print("DB COMPONENTS:", [c.name for c in db_components])
 
         comp_map = {normalize(c.name): c for c in db_components}
         print("NORMALIZED DB COMPONENTS:", list(comp_map.keys()))
 
-        # 🔹 3. Map columns → components (SIMPLE MATCH)
+        # 3. Map columns → components (SIMPLE MATCH)
         mapped_cols = []  # (col_index, component)
 
         print("DB COMPONENTS:", comp_map.keys())
