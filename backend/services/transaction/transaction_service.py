@@ -17,7 +17,7 @@ from db.models import (
 
 # from services.discount.discount_service import DiscountService
 from datetime import datetime, date
-from utils import get_ist_now
+from services.utils import get_ist_now
 from rich import print
 
 
@@ -582,8 +582,7 @@ class TransactionService:
             data[f"cond_{cond}"] = val
 
         # 7. Section 6: Additional Sections (JSON)
-        print("INVOICE DETAILS", transaction.invoice_details)
-        print("INVOICE DETAILS", transaction.invoice_number)
+
         data.update({f"{k}": v for k, v in transaction.invoice_details.items()})
         data.update(
             {f"exchange_{k}": v for k, v in transaction.exchange_details.items()}

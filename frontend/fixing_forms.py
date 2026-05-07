@@ -3954,6 +3954,9 @@ class FormState:
         self.cust_aadhar: ui.input | None = None
         self.cust_other_id: ui.input | None = None
 
+        self.visible_price_rows: dict[str, bool] = {}
+        self.visible_discount_rows: dict[str, bool] = {}
+
         # UI element refs — accessories / audit
         self.acc_select: ui.select | None = None
         self.acc_charged: ui.number | None = None
@@ -4552,6 +4555,7 @@ async def resolve_form_mode(
                 # BOOKING → DELIVERY
                 else:
                     state.form_mode = "delivery_from_booking"
+                    state.edit_mode = True
 
             else:
                 state.form_mode = "delivery_direct_create"
@@ -4590,6 +4594,8 @@ async def hydrate_vehicle_section(
 
         exec_id = txn.get("sales_executive_id")
 
+        delivery_date = txn.get("delivery_date")
+
         # ─────────────────────────
         # CAR
         # ─────────────────────────
@@ -4622,6 +4628,10 @@ async def hydrate_vehicle_section(
         # ─────────────────────────
         if exec_id:
             state.exec_select.set_value(exec_id)
+
+        # Delivery Date
+        if delivery_date:
+            state.delivery_date.set_value(delivery_date)
 
     finally:
         state.is_hydrating = False
@@ -5629,9 +5639,25 @@ def build_action_bar(state: FormState) -> None:
         ui.button("← Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes(
             "text-gray-500 text-[13px] hover:text-gray-800"
         ).props("flat no-caps")
+
+        submit_text = "Save Booking"
+
+        if state.edit_mode:
+            if state.form_mode == "booking_edit":
+                submit_text = "Update Booking"
+
+            elif state.form_mode == "delivery_from_booking":
+                submit_text = "Convert to Delivery"
+
+            elif state.form_mode == "delivery_edit":
+                submit_text = "Update Delivery"
+
+        elif state.stage == "delivery":
+            submit_text = "Create Delivery"
+
         state.submit_btn = (
             ui.button(
-                "Save Entry" if not state.edit_mode else "Update Entry",
+                submit_text,
                 on_click=lambda: _fs_handle_submit(state),
             )
             .classes(
@@ -5981,6 +6007,13 @@ async def _fs_on_variant_change(variant_id, state: FormState) -> None:
     if variant_id:
         await _fs_try_price_preload(state)
 
+    if getattr(state, "form_ready", False) and not getattr(
+        state, "is_hydrating", False
+    ):
+        _fs_update_live(state)
+
+        _fs_revalidate(state)
+
 
 async def _fs_try_price_preload(state: FormState) -> None:
     """Call GET /price-list/preview when both variant + date are known."""
@@ -6119,50 +6152,68 @@ def calculate_invoice_taxes(
 
 def _fs_update_live(state) -> None:
 
-    if not state.form_ready:
-        return
-    # ── 1. PRICE TOTALS ─────────────────────────────────────────────
-    print("_fs_update_live: LIVE UPDATE")
+    # ─────────────────────────────────────────────
+    # 1. PRICE TOTALS
+    # ─────────────────────────────────────────────
+
     total_listed = 0
     total_charged = 0
+    total_diff = 0
 
     for name, inp in state.price_inputs.items():
-        row = state.price_rows.get(name)
-
-        # if row is not None and not row.visible:
-        #     dl = state.price_diff_labels.get(name)
-        #     if dl:
-        #         dl.set_text("—")
-        #         dl.style("color:#9CA3AF")
-        #     continue
-
-        toggle = state.price_match_toggles.get(name)
+        is_visible = state.visible_price_rows.get(
+            name,
+            True,
+        )
 
         listed_val = int(state.listed_prices.get(name) or 0)
+
         charged_val = int(parsed_val(inp))
 
-        is_active = listed_val > 0 or charged_val > 0 or row is None or row.visible
-
-        if is_active:
+        # visible rows participate in totals
+        if is_visible:
             total_listed += listed_val
+            total_charged += charged_val
 
-        total_charged += charged_val
+        # UX interaction state
+        toggle = state.price_match_toggles.get(name)
+
+        is_active = (toggle.value if toggle else False) or str(
+            inp.value
+        ).strip() not in ["", "None"]
 
         dl = state.price_diff_labels.get(name)
-        if dl:
-            if not is_active:
-                dl.set_text("—")
-                dl.style("color:#9CA3AF")
-            else:
-                diff = listed_val - charged_val
-                if diff > 0:
-                    dl.set_text(f"₹{diff:,}")
-                    dl.style("color:#DC2626; font-weight:600")
-                else:
-                    dl.set_text("₹0")
-                    dl.style("color:#9CA3AF")
 
-    total_diff = total_listed - total_charged
+        if not dl:
+            continue
+
+        # hidden row
+        if not is_visible:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # untouched row
+        if not is_active:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # active visible row
+        diff = listed_val - charged_val
+        if is_visible and is_active:
+            total_diff += diff
+
+        if diff > 0:
+            dl.set_text(f"₹{diff:,}")
+            dl.style("color:#DC2626; font-weight:600")
+        else:
+            dl.set_text("₹0")
+            dl.style("color:#9CA3AF")
+
+    # ─────────────────────────────────────────────
+    # PRICE LABELS
+    # ─────────────────────────────────────────────
 
     if getattr(state, "lbl_total_listed_price", None):
         state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
@@ -6174,102 +6225,304 @@ def _fs_update_live(state) -> None:
         if total_diff > 0:
             state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
             state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
+
         else:
             state.lbl_total_diff_price.set_text("₹0")
             state.lbl_total_diff_price.style("color:#9CA3AF")
 
-    # ── 2. ACCESSORIES ──────────────────────────────────────────────
+    # ─────────────────────────────────────────────
+    # 2. ACCESSORIES
+    # ─────────────────────────────────────────────
+
     acc_listed = 0
     acc_charged = 0
 
-    if getattr(state, "acc_total_label", None) and getattr(state, "acc_charged", None):
+    if getattr(state, "acc_total_label", None):
         try:
             raw = state.acc_total_label.text
+
             acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
+
         except Exception:
-            # log error
             acc_listed = 0
 
+    if getattr(state, "acc_charged", None):
         acc_charged = int(parsed_val(state.acc_charged))
 
     acc_diff = acc_listed - acc_charged
 
-    # ── 3. DISCOUNT TOTALS (LIKE PRICE) ─────────────────────────
+    # ─────────────────────────────────────────────
+    # 3. DISCOUNT TOTALS
+    # ─────────────────────────────────────────────
 
     total_allowed_discount = 0
     total_given_discount = 0
 
     for name, inp in state.discount_inputs.items():
-        row = state.discount_rows.get(name)
-
-        # if row is not None and not row.visible:
-        #     dl = state.discount_diff_labels.get(name)
-        #     if dl:
-        #         dl.set_text("—")
-        #         dl.style("color:#9CA3AF")
-        #     continue
-
-        toggle = state.discount_match_toggles.get(name)
+        is_visible = state.visible_discount_rows.get(
+            name,
+            True,
+        )
 
         allowed_val = int(state.listed_prices.get(name) or 0)
 
         given_val = int(parsed_val(inp))
 
-        is_active = allowed_val > 0 or given_val > 0 or row.visible or row is None
+        # visible rows participate in totals
+        if is_visible:
+            total_allowed_discount += allowed_val
+            total_given_discount += given_val
 
-        # counts all visible rows in the allowed vl
-        total_allowed_discount += allowed_val
+        # UX interaction state
+        toggle = state.discount_match_toggles.get(name)
 
-        total_given_discount += given_val
+        is_active = (toggle.value if toggle else False) or str(
+            inp.value
+        ).strip() not in ["", "None"]
 
-        # ── per-row diff
         dl = state.discount_diff_labels.get(name)
-        if dl:
-            diff = given_val - allowed_val
 
-            if diff > 0:
-                dl.set_text(f"₹{diff:,}")
-                dl.style("color:#DC2626; font-weight:600")
-            else:
-                dl.set_text("₹0")
-                dl.style("color:#9CA3AF")
+        if not dl:
+            continue
 
-    # ── 4. EXCESS CALCULATION ───────────────────────────────────────
-    adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
+        # hidden row
+        if not is_visible:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # untouched row
+        if not is_active:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # active visible row
+        diff = given_val - allowed_val
+
+        if diff > 0:
+            dl.set_text(f"₹{diff:,}")
+            dl.style("color:#DC2626; font-weight:600")
+        else:
+            dl.set_text("₹0")
+            dl.style("color:#9CA3AF")
+
+    # ─────────────────────────────────────────────
+    # 4. EXCESS CALCULATION
+    # ─────────────────────────────────────────────
+
+    adjustment = int(
+        float(
+            parsed_val(
+                getattr(
+                    state,
+                    "adjustment_input",
+                    None,
+                )
+            )
+        )
+    )
 
     total_discount_given = int(
         total_diff
-        # + acc_diff
-        + int(parsed_val(getattr(state, "total_discount_booking", None)))
+        + acc_diff
+        + int(
+            parsed_val(
+                getattr(
+                    state,
+                    "total_discount_booking",
+                    None,
+                )
+            )
+        )
         + total_given_discount
-        + int(parsed_val(getattr(state, "other_discount_delivery", None)))
+        + int(
+            parsed_val(
+                getattr(
+                    state,
+                    "total_discount_delivery",
+                    None,
+                )
+            )
+        )
         - adjustment
     )
 
-    excess = int(max(0, total_discount_given - total_allowed_discount))
+    excess = int(
+        max(
+            0,
+            total_discount_given - total_allowed_discount,
+        )
+    )
 
-    # ── 5. UPDATE LABELS ────────────────────────────────────────────
-    if state.total_allowed:
+    # ─────────────────────────────────────────────
+    # 5. UPDATE LABELS
+    # ─────────────────────────────────────────────
+
+    if getattr(state, "total_allowed", None):
         state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
 
-    if state.total_given:
+    if getattr(state, "total_given", None):
         state.total_given.set_text(f"₹{total_discount_given:,}")
 
-    if state.lbl_allowed_lv:
+    if getattr(state, "lbl_allowed_lv", None):
         state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
 
-    if state.lbl_discount_lv:
+    if getattr(state, "lbl_discount_lv", None):
         state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
 
     if getattr(state, "lbl_excess_discount", None):
         state.lbl_excess_discount.set_text(f"₹{excess:,}")
+
         state.lbl_excess_discount.style(
             "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
         )
 
     if getattr(state, "lbl_excess_lv", None):
         state.lbl_excess_lv.set_text(f"₹{excess:,}")
+
         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
+
+
+# def _fs_update_live(state) -> None:
+
+#     if not state.form_ready:
+#         return
+#     # ── 1. PRICE TOTALS ─────────────────────────────────────────────
+#     print("_fs_update_live: LIVE UPDATE")
+#     total_listed = 0
+#     total_charged = 0
+
+#     for name, inp in state.price_inputs.items():
+#         row = state.price_rows.get(name)
+#         toggle = state.price_match_toggles.get(name)
+
+#         listed_val = int(state.listed_prices.get(name) or 0)
+#         charged_val = int(parsed_val(inp))
+
+#         is_active = row is None or state.visible_price_rows.get(name, True)
+
+#         if is_active:
+#             total_listed += listed_val
+
+#         total_charged += charged_val
+
+#         dl = state.price_diff_labels.get(name)
+#         if dl:
+#             if not is_active:
+#                 dl.set_text("—")
+#                 dl.style("color:#9CA3AF")
+#             else:
+#                 diff = listed_val - charged_val
+#                 if diff > 0:
+#                     dl.set_text(f"₹{diff:,}")
+#                     dl.style("color:#DC2626; font-weight:600")
+#                 else:
+#                     dl.set_text("₹0")
+#                     dl.style("color:#9CA3AF")
+
+#     total_diff = total_listed - total_charged
+
+#     if getattr(state, "lbl_total_listed_price", None):
+#         state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
+
+#     if getattr(state, "lbl_total_charged_price", None):
+#         state.lbl_total_charged_price.set_text(f"₹{total_charged:,}")
+
+#     if getattr(state, "lbl_total_diff_price", None):
+#         if total_diff > 0:
+#             state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
+#             state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
+#         else:
+#             state.lbl_total_diff_price.set_text("₹0")
+#             state.lbl_total_diff_price.style("color:#9CA3AF")
+
+#     # ── 2. ACCESSORIES ──────────────────────────────────────────────
+#     acc_listed = 0
+#     acc_charged = 0
+
+#     if getattr(state, "acc_total_label", None) and getattr(state, "acc_charged", None):
+#         try:
+#             raw = state.acc_total_label.text
+#             acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
+#         except Exception:
+#             # log error
+#             acc_listed = 0
+
+#         acc_charged = int(parsed_val(state.acc_charged))
+
+#     acc_diff = acc_listed - acc_charged
+
+#     # ── 3. DISCOUNT TOTALS (LIKE PRICE) ─────────────────────────
+
+#     total_allowed_discount = 0
+#     total_given_discount = 0
+
+#     for name, inp in state.discount_inputs.items():
+#         row = state.discount_rows.get(name)
+
+#         toggle = state.discount_match_toggles.get(name)
+
+#         allowed_val = int(state.listed_prices.get(name) or 0)
+
+#         given_val = int(parsed_val(inp))
+
+#         is_active = state.visible_discount_rows.get(name, True) or row is None
+
+#         if is_active:
+#             # counts all visible rows in the allowed vl
+#             total_allowed_discount += allowed_val
+
+#             total_given_discount += given_val
+
+#         # ── per-row diff
+#         dl = state.discount_diff_labels.get(name)
+#         if dl:
+#             diff = given_val - allowed_val
+
+#             if diff > 0:
+#                 dl.set_text(f"₹{diff:,}")
+#                 dl.style("color:#DC2626; font-weight:600")
+#             else:
+#                 dl.set_text("₹0")
+#                 dl.style("color:#9CA3AF")
+
+#     # ── 4. EXCESS CALCULATION ───────────────────────────────────────
+#     adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
+
+#     total_discount_given = int(
+#         total_diff
+#         # + acc_diff
+#         + int(parsed_val(getattr(state, "total_discount_booking", None)))
+#         + total_given_discount
+#         + int(parsed_val(getattr(state, "other_discount_delivery", None)))
+#         - adjustment
+#     )
+
+#     excess = int(max(0, total_discount_given - total_allowed_discount))
+
+#     # ── 5. UPDATE LABELS ────────────────────────────────────────────
+#     if state.total_allowed:
+#         state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
+
+#     if state.total_given:
+#         state.total_given.set_text(f"₹{total_discount_given:,}")
+
+#     if state.lbl_allowed_lv:
+#         state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
+
+#     if state.lbl_discount_lv:
+#         state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
+
+#     if getattr(state, "lbl_excess_discount", None):
+#         state.lbl_excess_discount.set_text(f"₹{excess:,}")
+#         state.lbl_excess_discount.style(
+#             "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
+#         )
+
+#     if getattr(state, "lbl_excess_lv", None):
+#         state.lbl_excess_lv.set_text(f"₹{excess:,}")
+#         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
 
 
 def get_conditions(state) -> dict:
@@ -6323,34 +6576,123 @@ def _fs_clear_error(state: FormState) -> None:
 # ══════════════════════════════════════════════════════════════
 # SUBMIT HANDLER
 # ══════════════════════════════════════════════════════════════
+# async def _fs_handle_submit(state: FormState) -> None:
+#     if not state.error_banner or not state.error_msg_label:
+#         return
+
+#     valid, msg = state.is_valid()
+#     if not valid:
+#         state.error_msg_label.set_text(msg)
+#         state.error_banner.set_visibility(True)
+#         return
+
+#     payload = build_payload(state)
+
+#     try:
+#         if state.stage == "delivery":
+#             if state.txn_id:
+#                 await api_put(f"/transactions/{state.txn_id}", payload)
+#                 ui.notify("Delivery Data saved", color="green", type="positive")
+#             else:
+#                 await api_post("/transactions", payload)
+#                 ui.notify(
+#                     "Delivery Created Successfully", color="green", type="positive"
+#                 )
+#         else:
+#             await api_post("/transactions", payload)
+#             ui.notify("Booking Created Successfully", color="green", type="positive")
+
+#     except Exception as e:
+#         state.error_msg_label.set_text(str(e))
+#         state.error_banner.set_visibility(True)
+
+
 async def _fs_handle_submit(state: FormState) -> None:
+
     if not state.error_banner or not state.error_msg_label:
         return
 
     valid, msg = state.is_valid()
+
     if not valid:
         state.error_msg_label.set_text(msg)
         state.error_banner.set_visibility(True)
         return
 
     payload = build_payload(state)
+    print("EDIT MODE:", state.edit_mode)
+    print("TXN ID:", state.txn_id)
+    print("FORM MODE:", state.form_mode)
+    print("STAGE:", state.stage)
 
     try:
-        if state.stage == "delivery":
-            if state.txn_id:
-                await api_put(f"/transactions/{state.txn_id}", payload)
-                ui.notify("Delivery Data saved", color="green", type="positive")
+        # ─────────────────────────────────────
+        # UPDATE FLOW
+        # booking_edit
+        # delivery_from_booking
+        # delivery_edit
+        # ─────────────────────────────────────
+        if state.edit_mode and state.txn_id:
+            await api_put(
+                f"/transactions/{state.txn_id}",
+                payload,
+            )
+
+            if state.stage == "delivery":
+                if state.form_mode == "delivery_from_booking":
+                    ui.notify(
+                        "Booking converted to Delivery successfully",
+                        color="green",
+                        type="positive",
+                    )
+
+                else:
+                    ui.notify(
+                        "Delivery updated successfully",
+                        color="green",
+                        type="positive",
+                    )
+
             else:
-                await api_post("/transactions", payload)
                 ui.notify(
-                    "Delivery Created Successfully", color="green", type="positive"
+                    "Booking updated successfully",
+                    color="green",
+                    type="positive",
                 )
+
+        # ─────────────────────────────────────
+        # CREATE FLOW
+        # booking_create
+        # delivery_direct_create
+        # ─────────────────────────────────────
         else:
-            await api_post("/transactions", payload)
-            ui.notify("Booking Created Successfully", color="green", type="positive")
+            await api_post(
+                "/transactions",
+                payload,
+            )
+
+            if state.stage == "delivery":
+                ui.notify(
+                    "Delivery created successfully",
+                    color="green",
+                    type="positive",
+                )
+
+            else:
+                ui.notify(
+                    "Booking created successfully",
+                    color="green",
+                    type="positive",
+                )
+
+        # ─────────────────────────────────────
+        # SUCCESS UI
+        # ─────────────────────────────────────
+        state.error_banner.set_visibility(False)
 
     except Exception as e:
         state.error_msg_label.set_text(str(e))
+
         state.error_banner.set_visibility(True)
 
 
@@ -6608,36 +6950,59 @@ def refresh_visibility(state: FormState) -> None:
         norm("Insurance"): not is_checked("self_insurance"),
     }
 
-    # discounts
+    # 2. Set row visibility and update rows/labels
     for name, row in state.discount_rows.items():
         n_name = norm(name)
         is_default = name in _DEFAULT_DISC
         visible = is_default or discount_visibility_rules.get(n_name, False)
         row.set_visibility(visible)
-
-    # prices
+        state.visible_discount_rows[name] = visible
+        row.update()
+        # Also update child labels if present
+        if (
+            hasattr(state, "discount_diff_labels")
+            and name in state.discount_diff_labels
+        ):
+            state.discount_diff_labels[name].update()
+        if (
+            hasattr(state, "discount_given_labels")
+            and name in state.discount_given_labels
+        ):
+            state.discount_given_labels[name].update()
+        if (
+            hasattr(state, "discount_listed_labels")
+            and name in state.discount_listed_labels
+        ):
+            state.discount_listed_labels[name].update()
 
     for name, row in state.price_rows.items():
         n_name = norm(name)
-        # default visible unless explicitly conditional
         visible = price_visibility_rules.get(
             n_name,
             True,
         )
         row.set_visibility(visible)
+        state.visible_price_rows[name] = visible
+        row.update()
+        if hasattr(state, "price_diff_labels") and name in state.price_diff_labels:
+            state.price_diff_labels[name].update()
+        if hasattr(state, "price_listed_labels") and name in state.price_listed_labels:
+            state.price_listed_labels[name].update()
 
+    # 3. Revalidate if needed
     if getattr(state, "form_ready", False) and not getattr(
         state, "is_hydrating", False
     ):
-        _fs_update_live(state)
-
         _fs_revalidate(state)
+        _fs_update_live(state)
 
 
 async def load_reference_data(state: FormState):
 
     ref = await fetch_reference_data()
-
+    if not isinstance(ref, dict):
+        ui.notify("Failed to fetch reference data from backend", type="negative")
+        return
     state.cars = ref["cars"]
     state.variants = ref["variants"]
     state.components = ref["components"]
