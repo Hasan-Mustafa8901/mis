@@ -3232,6 +3232,58 @@ async def daily_reporting_page() -> None:
         build_table("booking", bking_dates, booking_wrap)
         build_table("delivery", del_dates, delivery_wrap)
 
+    async def download_report():
+
+        try:
+            params = {
+                "start_date": from_inp.value,
+                "end_date": to_inp.value,
+            }
+
+            # Optional filters
+            # if "selected_dealership_id" in locals() and selected_dealership_id:
+            #     params["dealership_id"] = selected_dealership_id
+
+            # if "selected_outlet_id" in locals() and selected_outlet_id:
+            #     params["outlet_id"] = selected_outlet_id
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{BASE_URL}/reports/daily",
+                    headers=get_auth_headers(),
+                    params=params,
+                    timeout=60,
+                )
+
+                response.raise_for_status()
+
+                filename = "daily-report.xlsx"
+
+                content_disposition = response.headers.get("Content-Disposition")
+
+                if content_disposition and "filename=" in content_disposition:
+                    filename = (
+                        content_disposition.split("filename=")[-1]
+                        .replace('"', "")
+                        .strip()
+                    )
+
+                ui.download(
+                    src=response.content,
+                    filename=filename,
+                )
+
+                ui.notify(
+                    "Report downloaded successfully",
+                    type="positive",
+                )
+
+        except Exception as e:
+            ui.notify(
+                f"Download failed: {str(e)}",
+                type="negative",
+            )
+
     # ── Page layout ───────────────────────────────────────────
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
         # ── Sidebar ───────────────────────────────────────────
@@ -3386,9 +3438,24 @@ async def daily_reporting_page() -> None:
                     .classes("w-full overflow-x-auto")
                     .style("padding:0")
                 )
-            ui.button("Save", on_click=save_reporting).classes(
-                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
-            ).props("no-caps unelevated")
+            with ui.row().classes("gap-3"):
+                ui.button(
+                    "Save",
+                    on_click=save_reporting,
+                ).classes(
+                    "bg-gradient-to-r from-[#E8402A] to-[#c73019] "
+                    "text-white px-8 py-2.5 rounded-lg font-bold "
+                    "shadow-lg shadow-red-500/20"
+                ).props("no-caps unelevated")
+
+                ui.button(
+                    "Download Report",
+                    on_click=download_report,
+                ).classes(
+                    "bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] "
+                    "text-white px-8 py-2.5 rounded-lg font-bold "
+                    "shadow-lg shadow-blue-500/20"
+                ).props("no-caps unelevated")
 
     # ── Wire controls ─────────────────────────────────────────
     def _get_current_range():

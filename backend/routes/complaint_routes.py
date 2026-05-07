@@ -151,7 +151,7 @@ class FlashReportPayload(BaseModel):
 
 @router.post("/report/flash")
 def generate_flash_report(payload: FlashReportPayload):
-    from services.complaints.report.complaint_flash_report import ComplaintFlashReport
+    from backend.services.report.complaint_flash_report import ComplaintFlashReport
     from io import BytesIO
 
     try:
@@ -177,7 +177,7 @@ class ExcelReportPayload(BaseModel):
 
 @router.post("/report/bookings")
 def generate_bookings_report(payload: ExcelReportPayload):
-    from services.complaints.report.bookings_report import booking_report_generator
+    from backend.services.report.bookings_report import booking_report_generator
     import pandas as pd
     from datetime import datetime
 
@@ -197,7 +197,7 @@ def generate_bookings_report(payload: ExcelReportPayload):
 
 @router.post("/report/deliveries")
 def generate_deliveries_report(payload: ExcelReportPayload):
-    from services.complaints.report.bookings_report import delivery_report_generator
+    from backend.services.report.bookings_report import delivery_report_generator
     import pandas as pd
     from datetime import datetime
 

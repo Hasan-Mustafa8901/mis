@@ -28,6 +28,7 @@ from routes.edit_routes import router as edit_requests_router
 from routes.auth_routes import router as auth_router
 from routes.complaint_routes import router as complaints_router
 from routes.daily_reporting_routes import router as daily_reporting_router
+from routes.reports_routes import router as report_router
 
 
 @asynccontextmanager
@@ -50,6 +51,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+app.include_router(report_router)
 app.include_router(edit_requests_router)
 app.include_router(auth_router)
 app.include_router(complaints_router)
