@@ -14,8 +14,10 @@ from db.models import (
     Accessory,
     User,
 )
-from services.discount.discount_service import DiscountService
+
+# from services.discount.discount_service import DiscountService
 from datetime import datetime, date
+from utils import get_ist_now
 from rich import print
 
 
@@ -232,7 +234,6 @@ class TransactionService:
         # STEP 3: Add delivery data
         # =========================
         transaction.delivery_checklist = payload.get("delivery_checklist", {})
-
         # accessories
         if "accessory_ids" in payload:
             TransactionService.update_transaction_accessories(
@@ -419,7 +420,7 @@ class TransactionService:
             sales_executive_id=payload["sales_executive_id"],
             created_by=payload.get("user_id"),
             stage=payload.get("stage", "booking"),
-            booking_date=payload.get("booking_date"),
+            booking_date=payload.get("booking_date", None),
             booking_amt=payload.get("booking_amt", 0.0),
             booking_receipt_num=payload.get("booking_receipt_num", None),
             delivery_date=payload.get("delivery_date", None),
@@ -581,6 +582,8 @@ class TransactionService:
             data[f"cond_{cond}"] = val
 
         # 7. Section 6: Additional Sections (JSON)
+        print("INVOICE DETAILS", transaction.invoice_details)
+        print("INVOICE DETAILS", transaction.invoice_number)
         data.update({f"{k}": v for k, v in transaction.invoice_details.items()})
         data.update(
             {f"exchange_{k}": v for k, v in transaction.exchange_details.items()}
@@ -703,6 +706,170 @@ class TransactionService:
         print(f"{balance=}\n{payment_status=}")
         session.add(transaction)
         session.flush()
+
+    @staticmethod
+    def update_transaction(
+        session: Session,
+        transaction_id: int,
+        payload: Dict[str, Any],
+    ):
+
+        transaction = session.get(Transaction, transaction_id)
+
+        if not transaction:
+            raise HTTPException(
+                status_code=404,
+                detail="Transaction not found",
+            )
+
+        payload = convert_date_fields(
+            payload,
+            [
+                "booking_date",
+                "delivery_date",
+                "registration_date",
+            ],
+        )
+
+        # ─────────────────────────────
+        # CUSTOMER
+        # ─────────────────────────────
+        if payload.get("customer"):
+            customer = TransactionService.create_or_update_customer(
+                session,
+                payload["customer"],
+            )
+
+            transaction.customer_id = customer.id
+
+        # ─────────────────────────────
+        # CORE FIELDS
+        # ─────────────────────────────
+        CORE_FIELDS = [
+            "variant_id",
+            "outlet_id",
+            "sales_executive_id",
+            "bank_id",
+            "booking_date",
+            "booking_amt",
+            "booking_receipt_num",
+            "booking_file_incomplete",
+            "delivery_file_incomplete",
+            "booking_file_incomplete_remarks",
+            "delivery_file_incomplete_remarks",
+            "delivery_date",
+            "invoice_number",
+            "customer_file_number",
+            "stage",
+            "mode",
+            "vin_number",
+            "engine_number",
+            "color",
+            "registration_number",
+            "registration_date",
+            "team_leader",
+            "total_receivable",
+            "total_received",
+            "balance",
+            "price_offered_booking",
+            "discount_booking",
+            "total_discount_booking",
+            "excess_booking",
+            "adjustment_booking",
+            "status",
+            "total_actual_discount",
+            "total_allowed_discount",
+            "total_excess_discount",
+            "other_discount_delivery",
+            "adjustment_delivery",
+            "payment_status",
+        ]
+
+        for field in CORE_FIELDS:
+            if field in payload:
+                setattr(
+                    transaction,
+                    field,
+                    payload[field],
+                )
+
+        # ─────────────────────────────
+        # MODEL YEAR
+        # ─────────────────────────────
+        transaction.model_year = (
+            int(payload["model_year"]) if payload.get("model_year") else None
+        )
+
+        # ─────────────────────────────
+        # JSON FIELDS
+        # ─────────────────────────────
+        JSON_FIELDS = [
+            "conditions",
+            "invoice_details",
+            "payment_details",
+            "finance_details",
+            "exchange_details",
+            "audit_info",
+            "booking_checklist",
+            "delivery_checklist",
+        ]
+
+        for field in JSON_FIELDS:
+            if field in payload:
+                setattr(
+                    transaction,
+                    field,
+                    payload.get(field) or {},
+                )
+
+        # ─────────────────────────────
+        # ITEMS
+        # ─────────────────────────────
+        TransactionService.create_transaction_items(
+            session,
+            transaction.id,
+            payload,
+        )
+
+        # ─────────────────────────────
+        # ACCESSORIES
+        # ─────────────────────────────
+        if "accessory_ids" in payload:
+            TransactionService.update_transaction_accessories(
+                session,
+                transaction,
+                payload["accessory_ids"],
+            )
+
+        # ─────────────────────────────
+        # RECONCILIATION
+        # ─────────────────────────────
+        TransactionService.apply_funds_reconciliation(
+            session,
+            transaction,
+            payload,
+        )
+
+        # ─────────────────────────────
+        # UPDATED TIMESTAMP
+        # ─────────────────────────────
+        transaction.updated_at = get_ist_now()
+
+        session.add(transaction)
+
+        session.commit()
+
+        session.refresh(transaction)
+
+        return {
+            "id": transaction.id,
+            "stage": transaction.stage,
+            "mode": transaction.mode,
+            "status": transaction.status,
+            "updated_at": transaction.updated_at.isoformat()
+            if transaction.updated_at
+            else None,
+        }
 
     @staticmethod
     def delete_transaction(session: Session, transaction_id: int) -> dict:

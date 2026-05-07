@@ -4112,6 +4112,10 @@ class FormState:
         return True, ""
 
     def is_valid(self) -> tuple[bool, str]:
+
+        if getattr(self, "is_hydrating", False):
+            return True, ""
+
         if self.form_mode == "complaint_create" or self.form_mode == "complaint_edit":
             return self._validate_complaint()
 
@@ -4137,13 +4141,7 @@ class FormState:
             type(self.car_select.value),
         )
 
-        variant_val = getattr(
-            self.variant_select,
-            "value",
-            None,
-        )
-
-        if variant_val in [None, "", 0]:
+        if self.variant_id in [None, "", 0]:
             return False, "Please select a Car and Variant."
 
         outlet_val = getattr(
@@ -4193,9 +4191,15 @@ class FormState:
         if not year_val or not year_val.isdigit():
             return False, "Valid Model Year is required."
 
-        if self.stage == "delivery":
+        delivery_validation_modes = [
+            "delivery_edit",
+            "delivery_direct_create",
+            "delivery_from_booking",
+        ]
+        if self.form_mode in delivery_validation_modes:
             if not _val(self.vin_no):
                 return False, "VIN Number is required."
+
             if not _val(self.engine_no):
                 return False, "Engine Number is required."
 
@@ -4493,27 +4497,81 @@ def populate_from_delivery(state: FormState, delivery: dict):
         state.audit_action.set_value(audit.get("follow_up_action", ""))
 
 
-async def resolve_form_mode(state, transaction_id):
-    if state.stage != "delivery":
-        return
+async def resolve_form_mode(
+    state: FormState,
+    stage: str,
+    transaction_id: int | None,
+    mode: str | None,
+):
+    print(f"STAGE: {stage}, TRANS ID: {transaction_id}, MODE: {mode}")
+    txn_data = None
 
-    if transaction_id:
-        txn_data = await api_get(f"/transactions/{transaction_id}")
+    # ─────────────────────────────────────────────
+    # BOOKING
+    # ─────────────────────────────────────────────
+    if stage == "booking":
+        if transaction_id:
+            state.form_mode = "booking_edit"
 
-        if txn_data.get("stage") == "delivery":
-            state.form_mode = "delivery_edit"
+            txn_data = await api_get(f"/transactions/{transaction_id}")
+
+            state.edit_mode = True
+
         else:
-            state.form_mode = "delivery_from_booking"
+            state.form_mode = "booking_create"
 
-        state.txn_id = transaction_id
-        state.edit_mode = True
+    # ─────────────────────────────────────────────
+    # DELIVERY
+    # ─────────────────────────────────────────────
+    elif stage == "delivery":
+        # DIRECT DELIVERY
+        if mode == "direct":
+            if transaction_id:
+                state.form_mode = "delivery_edit"
+
+                txn_data = await api_get(f"/transactions/{transaction_id}")
+
+                state.edit_mode = True
+
+            else:
+                state.form_mode = "delivery_direct_create"
+
+        # DELIVERY FROM BOOKING
+        else:
+            if transaction_id:
+                txn_data = await api_get(f"/transactions/{transaction_id}")
+
+                txn_stage = txn_data.get("stage")
+
+                # EXISTING DELIVERY
+                if txn_stage == "delivery":
+                    state.form_mode = "delivery_edit"
+
+                    state.edit_mode = True
+
+                # BOOKING → DELIVERY
+                else:
+                    state.form_mode = "delivery_from_booking"
+
+            else:
+                state.form_mode = "delivery_direct_create"
+
+    # ─────────────────────────────────────────────
+    # SAVE TRANSACTION DATA
+    # ─────────────────────────────────────────────
+    if txn_data:
+        state.transaction_data = txn_data
+
         state.booking_data = txn_data
 
-        return txn_data
+        state.txn_id = transaction_id
 
-    else:
-        state.form_mode = "delivery_direct_create"
-        return None
+    print(
+        "FORM MODE:",
+        state.form_mode,
+    )
+
+    return txn_data
 
 
 async def hydrate_vehicle_section(
@@ -5383,38 +5441,16 @@ def build_audit_section(state: FormState) -> None:
             )
 
 
-def build_invoice_section(state: FormState) -> None:
-    def calculate_taxes():
-        taxable = parsed_val(state.invoice_taxable_value)
-        cgst = taxable * 0.09
-        sgst = taxable * 0.09
-        state.invoice_cgst.set_value(format_num_inr(cgst))
-        state.invoice_sgst.set_value(format_num_inr(sgst))
-        calculate_total()
-
-    def calculate_total():
-        taxable = parsed_val(state.invoice_taxable_value)
-        cgst = parsed_val(state.invoice_cgst)
-        sgst = parsed_val(state.invoice_sgst)
-        igst = (
-            parsed_val(state.invoice_igst)
-            if state.igst_toggle and state.igst_toggle.value
-            else 0
-        )
-        cess = (
-            parsed_val(state.invoice_cess)
-            if state.cess_toggle and state.cess_toggle.value
-            else 0
-        )
-
-        total = taxable + cgst + sgst + igst + cess
-        state.invoice_total.set_value(format_num_inr(total))
+def build_invoice_section(
+    state: FormState,
+) -> None:
 
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
         ):
             ui.label("🧾").classes("text-[20px] select-none")
+
             ui.label("Invoice Details").classes("text-[15px] font-bold text-gray-900")
 
         with ui.grid(columns=3).classes("w-full gap-5"):
@@ -5423,17 +5459,18 @@ def build_invoice_section(state: FormState) -> None:
                 .classes("uppercase")
                 .props("outlined dense")
             )
+
             state.invoice_date = ui.input(
                 label="Invoice Date",
                 validation={
-                    "Enter valid date (DD-MM-YYYY)": lambda v: (
-                        bool(v) and is_valid_date(v)
+                    "Enter valid date (DD-MM-YYYY)": (
+                        lambda v: bool(v) and is_valid_date(v)
                     )
                 },
             ).props('outlined dense type="date"')
 
             state.invoice_ex_showroom = accounting_input(
-                label_text="Ex-Showroom Price (From Price List)"
+                label_text=("Ex-Showroom Price (From Price List)")
             )
             state.invoice_ex_showroom.props("readonly")
             state.invoice_discount = accounting_input(label_text="Discount")
@@ -5445,13 +5482,6 @@ def build_invoice_section(state: FormState) -> None:
             state.cess_toggle = ui.switch("Apply CESS").props("dense")
             state.invoice_cess = accounting_input(label_text="CESS")
             state.invoice_total = accounting_input(label_text="Total Invoice Value")
-
-        def toggle_taxes():
-            state.invoice_igst.set_enabled(state.igst_toggle.value)
-            state.invoice_cess.set_enabled(state.cess_toggle.value)
-
-        toggle_taxes()
-        calculate_total()
 
 
 def build_payment_section(state: FormState) -> None:
@@ -5640,6 +5670,7 @@ def handle_price_toggle(
 
     else:
         inp.set_enabled(True)
+        inp.set_value(None)
 
     _fs_update_live(state)
 
@@ -5668,6 +5699,7 @@ def handle_discount_toggle(
 
     else:
         inp.set_enabled(True)
+        inp.set_value(None)
 
     _fs_update_live(state)
 
@@ -5712,7 +5744,7 @@ def attach_form_handlers(state):
                 if upper_val != state.cust_pan.value:
                     state.cust_pan.set_value(upper_val)
 
-            _fs_revalidate(state)
+            revalidate(state)
 
         state.cust_pan.on(
             "update:model-value",
@@ -5783,6 +5815,7 @@ def attach_form_handlers(state):
             lambda e: (
                 refresh_visibility(state),
                 _fs_update_live(state),
+                _fs_revalidate(state),
             ),
         )
 
@@ -5851,6 +5884,44 @@ def attach_form_handlers(state):
             lambda e, n=name: handle_discount_toggle(
                 state,
                 n,
+            ),
+        )
+    attach_invoice_handlers(state)
+
+
+def attach_invoice_handlers(
+    state: FormState,
+):
+    taxable = getattr(state, "invoice_taxable_value", None)
+    invoice_igst = getattr(state, "invoice_igst", None)
+    invoice_cess = getattr(state, "invoice_cess", None)
+    igst_toggle = getattr(state, "igst_toggle", None)
+    cess_toggle = getattr(state, "cess_toggle", None)
+
+    if taxable:
+        taxable.on_value_change(lambda e: calculate_invoice_taxes(state))
+
+    if invoice_igst:
+        invoice_igst.on_value_change(lambda e: calculate_invoice_total(state))
+
+    if invoice_cess:
+        invoice_cess.on_value_change(lambda e: calculate_invoice_total(state))
+
+    if igst_toggle:
+        igst_toggle.on(
+            "update:model-value",
+            lambda e: (
+                update_invoice_tax_visibility(state),
+                calculate_invoice_total(state),
+            ),
+        )
+
+    if cess_toggle:
+        cess_toggle.on(
+            "update:model-value",
+            lambda e: (
+                update_invoice_tax_visibility(state),
+                calculate_invoice_total(state),
             ),
         )
 
@@ -5984,6 +6055,68 @@ async def _fs_try_price_preload(state: FormState) -> None:
         pass  # best-effort; silently skip if endpoint missing
 
 
+## Invoice calculation helpers
+def update_invoice_tax_visibility(
+    state: FormState,
+):
+
+    if state.invoice_igst:
+        state.invoice_igst.set_enabled(
+            bool(state.igst_toggle and state.igst_toggle.value)
+        )
+
+    if state.invoice_cess:
+        state.invoice_cess.set_enabled(
+            bool(state.cess_toggle and state.cess_toggle.value)
+        )
+
+
+def calculate_invoice_total(
+    state: FormState,
+):
+
+    taxable = parsed_val(state.invoice_taxable_value)
+
+    cgst = parsed_val(state.invoice_cgst)
+
+    sgst = parsed_val(state.invoice_sgst)
+
+    igst = (
+        parsed_val(state.invoice_igst)
+        if state.igst_toggle and state.igst_toggle.value
+        else 0
+    )
+
+    cess = (
+        parsed_val(state.invoice_cess)
+        if state.cess_toggle and state.cess_toggle.value
+        else 0
+    )
+
+    total = taxable + cgst + sgst + igst + cess
+
+    if state.invoice_total:
+        state.invoice_total.set_value(format_num_inr(total))
+
+
+def calculate_invoice_taxes(
+    state: FormState,
+):
+
+    taxable = parsed_val(state.invoice_taxable_value)
+
+    cgst = taxable * 0.09
+    sgst = taxable * 0.09
+
+    if state.invoice_cgst:
+        state.invoice_cgst.set_value(format_num_inr(cgst))
+
+    if state.invoice_sgst:
+        state.invoice_sgst.set_value(format_num_inr(sgst))
+
+    calculate_invoice_total(state)
+
+
 def _fs_update_live(state) -> None:
 
     if not state.form_ready:
@@ -5996,20 +6129,19 @@ def _fs_update_live(state) -> None:
     for name, inp in state.price_inputs.items():
         row = state.price_rows.get(name)
 
-        if row is not None and not row.visible:
-            dl = state.price_diff_labels.get(name)
-            if dl:
-                dl.set_text("—")
-                dl.style("color:#9CA3AF")
-            continue
+        # if row is not None and not row.visible:
+        #     dl = state.price_diff_labels.get(name)
+        #     if dl:
+        #         dl.set_text("—")
+        #         dl.style("color:#9CA3AF")
+        #     continue
 
         toggle = state.price_match_toggles.get(name)
-        is_active = (toggle.value if toggle else False) or bool(
-            inp.value and str(inp.value).strip()
-        )
 
         listed_val = int(state.listed_prices.get(name) or 0)
         charged_val = int(parsed_val(inp))
+
+        is_active = listed_val > 0 or charged_val > 0 or row is None or row.visible
 
         if is_active:
             total_listed += listed_val
@@ -6070,20 +6202,21 @@ def _fs_update_live(state) -> None:
     for name, inp in state.discount_inputs.items():
         row = state.discount_rows.get(name)
 
-        if row is not None and not row.visible:
-            dl = state.discount_diff_labels.get(name)
-            if dl:
-                dl.set_text("—")
-                dl.style("color:#9CA3AF")
-            continue
+        # if row is not None and not row.visible:
+        #     dl = state.discount_diff_labels.get(name)
+        #     if dl:
+        #         dl.set_text("—")
+        #         dl.style("color:#9CA3AF")
+        #     continue
 
         toggle = state.discount_match_toggles.get(name)
-        is_active = (toggle.value if toggle else False) or bool(
-            inp.value and str(inp.value).strip()
-        )
 
         allowed_val = int(state.listed_prices.get(name) or 0)
+
         given_val = int(parsed_val(inp))
+
+        is_active = allowed_val > 0 or given_val > 0 or row.visible or row is None
+
         # counts all visible rows in the allowed vl
         total_allowed_discount += allowed_val
 
@@ -6153,8 +6286,9 @@ def get_conditions(state) -> dict:
 
 def _fs_revalidate(state: FormState) -> None:
 
-    if not state.form_ready:
+    if state.is_hydrating:
         return
+
     print("from _fs_revalidate: LIVE UPDATE")
     ok, msg = state.is_valid()
 
@@ -6341,6 +6475,7 @@ def build_payload(state: FormState) -> dict:
         "cess": intval(state.invoice_cess),
         "total": intval(state.invoice_total),
     }
+    print(json.dumps(invoice_details, indent=4))
 
     # ─────────────────────────────
     # PAYMENT
@@ -6389,7 +6524,7 @@ def build_payload(state: FormState) -> dict:
         "actual_amounts": actual_amounts,
         "allowed_amounts": allowed_amounts,
         "conditions": conditions,
-        "delivery_checks": delivery_checks,
+        "delivery_checklist": delivery_checks,
         # ── JSON SECTIONS ──
         "accessories_details": accessories_details,
         "accessory_ids": selected_acc_ids,  # Explicitly for TransactionService
@@ -6437,6 +6572,7 @@ def build_payload(state: FormState) -> dict:
         payload["total_allowed_discount"] = lbl_val(state.total_allowed)
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
 
+    print("DELIVERY CHECKLIST", payload.get("delivery_checklist"))
     print("ADJUSTMENT Booking", payload.get("adjustment_booking"))
     print("ADJUSTMENT Delivery", payload.get("adjustment_delivery"))
 
@@ -6475,16 +6611,27 @@ def refresh_visibility(state: FormState) -> None:
     # discounts
     for name, row in state.discount_rows.items():
         n_name = norm(name)
-
-        if n_name in discount_visibility_rules:
-            row.set_visibility(discount_visibility_rules[n_name])
+        is_default = name in _DEFAULT_DISC
+        visible = is_default or discount_visibility_rules.get(n_name, False)
+        row.set_visibility(visible)
 
     # prices
+
     for name, row in state.price_rows.items():
         n_name = norm(name)
+        # default visible unless explicitly conditional
+        visible = price_visibility_rules.get(
+            n_name,
+            True,
+        )
+        row.set_visibility(visible)
 
-        if n_name in price_visibility_rules:
-            row.set_visibility(price_visibility_rules[n_name])
+    if getattr(state, "form_ready", False) and not getattr(
+        state, "is_hydrating", False
+    ):
+        _fs_update_live(state)
+
+        _fs_revalidate(state)
 
 
 async def load_reference_data(state: FormState):
@@ -6604,8 +6751,6 @@ async def hydrate_form(
         if exec_id and state.exec_select:
             state.exec_select.set_value(exec_id)
         print("TXN VARIANT ID:", txn.get("variant_id"))
-
-        print(txn)
         variant_id = txn.get("variant_id")
 
         car_id = None
@@ -6634,6 +6779,9 @@ async def hydrate_form(
             state.variant_select.set_value(variant_id)
 
             state.variant_id = variant_id
+
+        if state.car_color:
+            state.car_color.set_value(txn.get("color"))
 
         # ─────────────────────────────
         # BOOKING
@@ -6768,7 +6916,15 @@ async def hydrate_form(
         if state.total_discount_booking:
             state.total_discount_booking.set_value(
                 txn.get(
-                    "total_discount_booking",
+                    "discount_booking",
+                    0,
+                )
+            )
+
+        if getattr(state, "other_discount_delivery", None):
+            state.other_discount_delivery.set_value(
+                txn.get(
+                    "other_discount_delivery",
                     0,
                 )
             )
@@ -6819,11 +6975,6 @@ def hydrate_invoice_section(
     txn: dict,
 ):
 
-    invoice = txn.get(
-        "invoice_details",
-        {},
-    )
-
     mapping = {
         "invoice_number": state.invoice_number,
         "invoice_date": state.invoice_date,
@@ -6838,13 +6989,18 @@ def hydrate_invoice_section(
     }
 
     for key, widget in mapping.items():
-        if widget:
-            widget.set_value(
-                invoice.get(
-                    key,
-                    "",
-                )
-            )
+        if not widget:
+            continue
+
+        value = txn.get(
+            key,
+            "",
+        )
+
+        if value is None:
+            value = ""
+
+        widget.set_value(value)
 
 
 def hydrate_payment_section(
@@ -6971,30 +7127,15 @@ async def form_page(
     if state.booking_id:
         pass
 
-    # Breadcrumb label
-    bc = f"Edit Entry #{state.txn_id}" if state.edit_mode else "New Entry"
-    render_topbar(bc)
-
     await load_reference_data(state)
     # TEMP explicit form mode resolution
     # ─────────────────────────────────────────────
-    if stage == "booking":
-        if transaction_id:
-            state.form_mode = "booking_edit"
-        else:
-            state.form_mode = "booking_create"
 
-    elif stage == "delivery":
-        if mode == "direct":
-            if transaction_id:
-                state.form_mode = "delivery_edit"
-            else:
-                state.form_mode = "delivery_direct_create"
+    await resolve_form_mode(state, stage, transaction_id, mode)
 
-        else:
-            if transaction_id:
-                state.form_mode = "delivery_from_booking"
-    print("FORM MODE: ", state.form_mode)
+    # Breadcrumb label
+    bc = f"Edit Entry #{state.txn_id}" if state.edit_mode else "New Entry"
+    render_topbar(bc)
 
     # ─────────────────────────────────────────────
     # Load transaction data
@@ -7002,25 +7143,37 @@ async def form_page(
     await load_transaction(state)
 
     with ui.element("div").classes("max-w-[1200px] mx-auto p-6"):
-        # ── Edit mode indicator ──────────────────────────
-        if state.form_mode in ["delivery_from_booking", "delivery_edit"]:
-            variant_label = (
-                state.transaction_data.get("variant_name")
-                or state.transaction_data.get("variant")
-                or ""
-            )
+        # ─────────────────────────────────────────────
+        # MODE BANNER
+        # ─────────────────────────────────────────────
+        banner_modes = {
+            "booking_edit": {
+                "title": (f"✏️ Editing Booking #{state.txn_id}"),
+                "color": ("bg-blue-100 text-blue-800 border-blue-200"),
+            },
+            "delivery_from_booking": {
+                "title": (f"📦 Converting Booking #{state.txn_id} to Delivery"),
+                "color": ("bg-amber-100 text-amber-800 border-amber-200"),
+            },
+            "delivery_edit": {
+                "title": (f"✏️ Editing Delivery #{state.txn_id}"),
+                "color": ("bg-green-100 text-green-800 border-green-200"),
+            },
+        }
+
+        banner = banner_modes.get(state.form_mode)
+
+        if banner:
+            variant_label = state.transaction_data.get("variant_name") or ""
 
             with ui.row().classes("items-center gap-3 mb-4"):
-                if state.form_mode == "delivery_from_booking":
-                    title = f"📦 Converting Booking #{state.txn_id} to Delivery"
-
-                elif state.form_mode == "delivery_edit":
-                    title = f"✏️ Editing Delivery #{state.txn_id}"
-
                 ui.label(
-                    f"{title} {(' — ' + variant_label) if variant_label else ''}"
+                    f"{banner['title']}"
+                    f"{(' — ' + variant_label) if variant_label else ''}"
                 ).classes(
-                    "bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1 rounded-md text-[12px] font-medium"
+                    f"{banner['color']} "
+                    "border px-3 py-1 rounded-md "
+                    "text-[12px] font-medium"
                 )
 
                 ui.label("Fields pre-filled from saved data").classes(
@@ -7028,16 +7181,17 @@ async def form_page(
                 )
 
         build_form(state)
-        # Ensure button state is correct on first render
-        # _fs_revalidate(state)
+
     # ─────────────────────────────────────────────
     # Hydrate form
     # ─────────────────────────────────────────────
     if state.transaction_data:
         await hydrate_form(state, state.transaction_data)
 
-    attach_form_handlers(state)
+    update_invoice_tax_visibility(state)
+
     state.form_ready = True
+    attach_form_handlers(state)
 
     refresh_visibility(state)
 

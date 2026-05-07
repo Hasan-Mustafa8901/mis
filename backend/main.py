@@ -268,13 +268,7 @@ def api_update_transaction(
     payload: dict[str, Any],
     session: Session = Depends(get_session),
 ):
-    stage = payload.get("stage", "booking")
-
-    if stage == "delivery":
-        return TransactionService.convert_to_delivery(session, transaction_id, payload)
-
-    else:
-        raise HTTPException(status_code=400, detail="Invalid mode")
+    return TransactionService.update_transaction(session, transaction_id, payload)
 
 
 @app.post("/transactions/{transaction_id}/calculate")

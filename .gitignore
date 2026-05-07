@@ -12,3 +12,4 @@ old_code
 test_daily_report.py
 test_report.py
 test_report_empty.py
+implementation_*.md
