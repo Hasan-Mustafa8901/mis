@@ -51,7 +51,7 @@ class StageReport(BaseModel):
 
 
 class DailyReportData(BaseModel):
-    report_date: str
+    report_date: str | dict
 
     booking: StageReport
     delivery: StageReport

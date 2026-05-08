@@ -35,7 +35,6 @@ def download_daily_report(
         dealership_id=dealership_id,
         outlet_id=outlet_id,
     )
-
     buffer, filename = generate_daily_report(backend_data=report_data)
 
     return StreamingResponse(

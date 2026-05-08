@@ -53,9 +53,16 @@ class DailyReportService:
                 session, start_date, end_date, dealership_id, outlet_id
             ),
         )
+        if start_date == end_date:
+            report_date = end_date.strftime("%d/%m/%Y")
+        else:
+            report_date = {
+                "from": start_date.strftime("%d/%m/%Y"),
+                "to": end_date.strftime("%d/%m/%Y"),
+            }
 
         report = DailyReportData(
-            report_date=end_date.strftime("%d/%m/%Y"),
+            report_date=report_date,
             booking=booking_stage,
             delivery=delivery_stage,
             files_pending=get_pending_files(

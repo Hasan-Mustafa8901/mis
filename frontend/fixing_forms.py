@@ -3239,7 +3239,6 @@ async def daily_reporting_page() -> None:
                 "start_date": from_inp.value,
                 "end_date": to_inp.value,
             }
-
             # Optional filters
             # if "selected_dealership_id" in locals() and selected_dealership_id:
             #     params["dealership_id"] = selected_dealership_id
