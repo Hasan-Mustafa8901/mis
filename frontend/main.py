@@ -201,7 +201,7 @@ async def api_post_file(path: str, file, data: dict):
         r = await client.post(
             f"{BASE_URL}{path}",
             files={
-                "file": (name, content)  # ✅ no await
+                "file": (name, content)  # no await
             },
             data=data,
             headers=headers,
@@ -3438,7 +3438,7 @@ async def daily_reporting_page() -> None:
                     .style("padding:0")
                 )
 
-            with ui.row().classes("gap-3"):
+            with ui.row().classes("gap-3 w-full"):
                 ui.button(
                     "Save",
                     on_click=save_reporting,
@@ -3456,6 +3456,43 @@ async def daily_reporting_page() -> None:
                     "text-white px-8 py-2.5 rounded-lg font-bold "
                     "shadow-lg shadow-blue-500/20"
                 ).props("no-caps unelevated")
+                ui.space()
+
+                status_label = ui.label("")
+
+                async def handle_mis_upload(e):
+                    try:
+                        user = get_user()
+                        status_label.text = "Uploading..."
+                        status_label.classes("text-blue-500")
+                        payload = {
+                            "outlet_id": user.get("outlet_id")
+                            or 1,  # temporarily make it 1 change it later
+                        }
+                        response = await api_post_file(
+                            "/mis/upload-ebd",
+                            e,
+                            payload,
+                        )
+
+                        created = response.get(
+                            "records_created",
+                            0,
+                        )
+
+                        status_label.text = f"✅ Upload successful ({created} records)"
+
+                        status_label.classes("text-green-600")
+
+                    except Exception as ex:
+                        status_label.text = f"❌ {str(ex)}"
+
+                        status_label.classes("text-red-500")
+
+                ui.upload(
+                    on_upload=handle_mis_upload,
+                    auto_upload=True,
+                ).props('accept=".xlsx,.xls"')
 
     # ── Wire controls ─────────────────────────────────────────
     def _get_current_range():

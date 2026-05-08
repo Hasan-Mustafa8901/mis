@@ -29,6 +29,7 @@ from routes.auth_routes import router as auth_router
 from routes.complaint_routes import router as complaints_router
 from routes.daily_reporting_routes import router as daily_reporting_router
 from routes.reports_routes import router as report_router
+from routes.ebd_routes import router as ebd_router
 
 
 @asynccontextmanager
@@ -57,6 +58,7 @@ app.include_router(edit_requests_router)
 app.include_router(auth_router)
 app.include_router(complaints_router)
 app.include_router(daily_reporting_router)  # daily reporting routes
+app.include_router(ebd_router)
 
 
 @app.get("/")

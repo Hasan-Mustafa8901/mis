@@ -343,6 +343,35 @@ def get_dealership_id_by_name(session: Session, name: str):
     return dealer.id if dealer else None
 
 
+def get_dealership_by_outlet(
+    session: Session,
+    name_or_id: str | int,
+) -> dict:
+
+    if isinstance(name_or_id, int):
+        outlet = session.get(
+            Outlet,
+            name_or_id,
+        )
+    else:
+        outlet = session.exec(
+            select(Outlet).where(Outlet.name == str(name_or_id).strip())
+        ).first()
+    if not outlet:
+        return None
+    # FIND DEALERSHIP
+    dealership = session.get(
+        Dealership,
+        outlet.dealership_id,
+    )
+    if not dealership:
+        return None
+    return {
+        "id": dealership.id,
+        "name": dealership.name,
+    }
+
+
 def get_outlet_id_by_name(
     session: Session, name: str, dealership_id: int | None = None
 ):
