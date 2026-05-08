@@ -3437,6 +3437,7 @@ async def daily_reporting_page() -> None:
                     .classes("w-full overflow-x-auto")
                     .style("padding:0")
                 )
+
             with ui.row().classes("gap-3"):
                 ui.button(
                     "Save",

@@ -44,6 +44,18 @@ FLAG_DURATIONS = {
 }
 
 
+class MISRecordType(str, Enum):
+    ENQUIRY = "enquiry"
+    BOOKING = "booking"
+    DELIVERY = "Delivery"
+
+
+class MISMatchingStatus(str, Enum):
+    MATCHED = "matched"
+    UNMATCHED = "unmatched"
+    MANUAL = "manual"
+
+
 class Dealership(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     name: str
@@ -403,6 +415,58 @@ class DailyDelivery(SQLModel, table=True):
     files_pending: int
     files_verified: int
     is_locked: bool = False
+
+
+class MISRecord(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    # Core
+    record_date: date = Field(index=True)
+    type: MISRecordType = Field(index=True)
+
+    outlet_id: int = Field(foreign_key="outlet.id", index=True)
+    dealership_id: int = Field(foreign_key="dealership.id", index=True)
+
+    customer_name: str = Field(index=True)
+    customer_mobile: Optional[str] = Field(default=None, index=True)
+
+    car_model: str
+    team_leader: Optional[str] = None
+
+    # Workflow
+    received: bool = Field(default=False)
+    receiving_date: Optional[datetime] = None
+
+    approved: bool = Field(default=False)
+    approved_date: Optional[datetime] = None
+
+    rejected: bool = Field(default=False)
+    rejection_reason: Optional[str] = None
+
+    out_of_scope: bool = Field(default=False)
+    out_of_scope_reason: Optional[str] = None
+
+    # Transaction Linking
+    transaction_id: Optional[int] = Field(
+        default=None,
+        foreign_key="transaction.id",
+        index=True,
+    )
+
+    matching_status: MISMatchingStatus = Field(
+        default=MISMatchingStatus.UNMATCHED,
+        index=True,
+    )
+
+    matched_automatically: bool = Field(default=False)
+
+    # Raw upload row
+    raw_data: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON),
+    )
+
+    created_at: datetime = Field(default_factory=get_ist_now)
 
 
 class Remark(SQLModel, table=True):
