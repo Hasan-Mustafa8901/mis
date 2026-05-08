@@ -37,10 +37,10 @@ CONDITION_KEYS = [
     ("corporate", "Corporate"),
     ("govt_employee", "Govt Employee"),
     ("scrap", "Scrap"),
-    ("upgrade", "Upgrade"),
+    # ("upgrade", "Upgrade"),
     ("self_insurance", "Self Insurance"),
     # ("tr_case", "TR Case"),
-    ("tcs", "TCS"),
+    # ("tcs", "TCS"),
     ("green_bonus", "Green Bonus"),
     ("acc_kit", "Accessories"),
     ("fastag", "FasTag"),
@@ -49,6 +49,22 @@ CONDITION_KEYS = [
     ("loyalty_ev_ev", "Additional Loyalty (EV TO EV)"),
     ("loyalty_ice_ev", "Additional Loyalty (ICE TO EV)"),
 ]
+# NOT FOR LLMs: These hard-coded keys should be avoided because it the whole code dependent on the field name
+# NOT FOR LLMs: but for now lets keep it but in future we will discard them
+COMPONENT_CONDITIONS = {
+    # discounts
+    "Additional for Exchange Customers": "exchange",
+    "Additional for Scrappage Customers": "scrap",
+    "Additional for POI /Corporate Customers": "corporate",
+    "Green Bonus": "green_bonus",
+    "Additional Loyalty (EV TO EV)": "loyalty_ev_ev",
+    "Additional Loyalty (ICE TO EV)": "loyalty_ice_ev",
+    # prices
+    "Accessories": "acc_kit",
+    "FasTag": "fastag",
+    "Extended Warranty": "ext_warr",
+    "AMC": "amc",
+}
 
 DELIVERY_CHECK_KEYS = [
     ("customer_ledger", "Customer Ledger"),
@@ -3216,6 +3232,57 @@ async def daily_reporting_page() -> None:
         build_table("booking", bking_dates, booking_wrap)
         build_table("delivery", del_dates, delivery_wrap)
 
+    async def download_report():
+
+        try:
+            params = {
+                "start_date": from_inp.value,
+                "end_date": to_inp.value,
+            }
+            # Optional filters
+            # if "selected_dealership_id" in locals() and selected_dealership_id:
+            #     params["dealership_id"] = selected_dealership_id
+
+            # if "selected_outlet_id" in locals() and selected_outlet_id:
+            #     params["outlet_id"] = selected_outlet_id
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{BASE_URL}/reports/daily",
+                    headers=get_auth_headers(),
+                    params=params,
+                    timeout=60,
+                )
+
+                response.raise_for_status()
+
+                filename = "daily-report.xlsx"
+
+                content_disposition = response.headers.get("Content-Disposition")
+
+                if content_disposition and "filename=" in content_disposition:
+                    filename = (
+                        content_disposition.split("filename=")[-1]
+                        .replace('"', "")
+                        .strip()
+                    )
+
+                ui.download(
+                    src=response.content,
+                    filename=filename,
+                )
+
+                ui.notify(
+                    "Report downloaded successfully",
+                    type="positive",
+                )
+
+        except Exception as e:
+            ui.notify(
+                f"Download failed: {str(e)}",
+                type="negative",
+            )
+
     # ── Page layout ───────────────────────────────────────────
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
         # ── Sidebar ───────────────────────────────────────────
@@ -3370,9 +3437,24 @@ async def daily_reporting_page() -> None:
                     .classes("w-full overflow-x-auto")
                     .style("padding:0")
                 )
-            ui.button("Save", on_click=save_reporting).classes(
-                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
-            ).props("no-caps unelevated")
+            with ui.row().classes("gap-3"):
+                ui.button(
+                    "Save",
+                    on_click=save_reporting,
+                ).classes(
+                    "bg-gradient-to-r from-[#E8402A] to-[#c73019] "
+                    "text-white px-8 py-2.5 rounded-lg font-bold "
+                    "shadow-lg shadow-red-500/20"
+                ).props("no-caps unelevated")
+
+                ui.button(
+                    "Download Report",
+                    on_click=download_report,
+                ).classes(
+                    "bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] "
+                    "text-white px-8 py-2.5 rounded-lg font-bold "
+                    "shadow-lg shadow-blue-500/20"
+                ).props("no-caps unelevated")
 
     # ── Wire controls ─────────────────────────────────────────
     def _get_current_range():
@@ -3813,6 +3895,59 @@ async def settings_page():
 # ══════════════════════════════════════════════════════════════
 #                   PAGE-LOCAL FORM STATE
 # ══════════════════════════════════════════════════════════════
+class FormController:
+    def __init__(self, state):
+        self.state = state
+
+    async def initialize(self):
+        await self.load_reference_data()
+        await self.load_transaction_if_needed()
+
+        self.build_form()
+
+        if self.state.transaction_data:
+            self.hydrate_form()
+
+        self.refresh_visibility()
+        self.refresh_live_calculations()
+
+        self.attach_handlers()
+
+    async def load_reference_data(self):
+        data = await fetch_reference_data()
+
+        self.state.cars = data.get("cars", [])
+        self.state.variants = data.get("variants", [])
+        self.state.outlets = data.get("outlets", [])
+        self.state.executives = data.get("executives", [])
+        self.state.components = data.get("components", [])
+        self.state.accessories = data.get("accessories", [])
+        self.state.dealerships = data.get("dealerships", [])
+
+    async def load_transaction_if_needed(self):
+        transaction_id = self.state.transaction_id
+
+        if not transaction_id:
+            return
+
+        self.state.transaction_data = await api_get(f"/transactions/{transaction_id}")
+
+    def build_form(self):
+        build_full_form(self.state)
+
+    def hydrate_form(self):
+        hydrate_form(self.state)
+
+    def refresh_visibility(self):
+        refresh_visibility(self.state)
+
+    def refresh_live_calculations(self):
+        _fs_update_live(self.state)
+
+    def attach_handlers(self):
+        attach_form_handlers(self.state)
+
+
 class FormState:
     """
     All mutable state for a single /form session.
@@ -3820,6 +3955,17 @@ class FormState:
     """
 
     def __init__(self):
+        self.transaction_id = None
+        self.transaction_data = None
+
+        self.is_hydrating = False
+        self.form_ready = False
+        self.handlers_attached = False
+
+        self.is_edit_mode = False
+        self.is_delivery = False
+        self.is_direct_delivery = False
+        self.is_conversion_flow = False
         # Edit mode
         self.txn_id: int | None = None
         self.booking_id: int | None = None
@@ -3874,12 +4020,16 @@ class FormState:
         self.cust_aadhar: ui.input | None = None
         self.cust_other_id: ui.input | None = None
 
+        self.visible_price_rows: dict[str, bool] = {}
+        self.visible_discount_rows: dict[str, bool] = {}
+
         # UI element refs — accessories / audit
         self.acc_select: ui.select | None = None
         self.acc_charged: ui.number | None = None
         self.acc_total_label: ui.label | None = None
         self.accessory_allowed: ui.number | None = None
         self.accessory_map: dict = {}
+        self.accessory_rows: list = []
 
         self.audit_obs: ui.textarea | None = None
         self.audit_action: ui.textarea | None = None
@@ -4031,6 +4181,10 @@ class FormState:
         return True, ""
 
     def is_valid(self) -> tuple[bool, str]:
+
+        if getattr(self, "is_hydrating", False):
+            return True, ""
+
         if self.form_mode == "complaint_create" or self.form_mode == "complaint_edit":
             return self._validate_complaint()
 
@@ -4040,13 +4194,41 @@ class FormState:
         def _val_upper(f):
             return (f.value or "").strip().upper() if f else ""
 
-        if not self.variant_id:
+        print(
+            "OUTLET VALUE:",
+            self.outlet_select.value,
+            type(self.outlet_select.value),
+        )
+        print(
+            "VARIANT VALUE:",
+            self.variant_select.value,
+            type(self.variant_select.value),
+        )
+        print(
+            "CAR VALUE:",
+            self.car_select.value,
+            type(self.car_select.value),
+        )
+
+        if self.variant_id in [None, "", 0]:
             return False, "Please select a Car and Variant."
 
-        if not self.outlet_id:
+        outlet_val = getattr(
+            self.outlet_select,
+            "value",
+            None,
+        )
+
+        if outlet_val in [None, "", 0]:
             return False, "Please select Showroom."
 
-        if not self.executive_id:
+        exec_val = getattr(
+            self.exec_select,
+            "value",
+            None,
+        )
+
+        if exec_val in [None, "", 0]:
             return False, "Please select Sale Executive."
 
         if not _val(self.cust_name):
@@ -4078,9 +4260,15 @@ class FormState:
         if not year_val or not year_val.isdigit():
             return False, "Valid Model Year is required."
 
-        if self.stage == "delivery":
+        delivery_validation_modes = [
+            "delivery_edit",
+            "delivery_direct_create",
+            "delivery_from_booking",
+        ]
+        if self.form_mode in delivery_validation_modes:
             if not _val(self.vin_no):
                 return False, "VIN Number is required."
+
             if not _val(self.engine_no):
                 return False, "Engine Number is required."
 
@@ -4222,10 +4410,6 @@ def populate_from_booking(state: FormState, data: dict):
     for key, cb in zip(disp_key, state.condition_cbs.values()):
         cb.set_value(conditions.get(key, False))
 
-    # ── Trigger recalculation ────
-    _fs_update_live(state)
-    _fs_revalidate(state)
-
 
 def populate_price_and_discount(
     state,
@@ -4336,9 +4520,6 @@ def populate_price_and_discount(
             if display_val is not None:
                 g_lbl.set_text(f"₹{float(display_val):,.2f}")
 
-    # Recalculate everything with the populated values
-    _fs_update_live(state)
-
 
 def populate_from_delivery(state: FormState, delivery: dict):
 
@@ -4384,145 +4565,143 @@ def populate_from_delivery(state: FormState, delivery: dict):
     if state.audit_action:
         state.audit_action.set_value(audit.get("follow_up_action", ""))
 
-    # ── Trigger recalculation ────
-    _fs_update_live(state)
-    _fs_revalidate(state)
 
+async def resolve_form_mode(
+    state: FormState,
+    stage: str,
+    transaction_id: int | None,
+    mode: str | None,
+):
+    print(f"STAGE: {stage}, TRANS ID: {transaction_id}, MODE: {mode}")
+    txn_data = None
 
-def populate_from_complaint(state: FormState, complaint: dict):
-    import asyncio
+    # ─────────────────────────────────────────────
+    # BOOKING
+    # ─────────────────────────────────────────────
+    if stage == "booking":
+        if transaction_id:
+            state.form_mode = "booking_edit"
 
-    if not complaint:
-        return
+            txn_data = await api_get(f"/transactions/{transaction_id}")
 
-    # --- Customer details ---
-    if state.cust_name:
-        state.cust_name.set_value(complaint.get("customer_name", ""))
-    if state.cust_mobile:
-        state.cust_mobile.set_value(complaint.get("customer_mobile", ""))
-    if state.cust_email:
-        state.cust_email.set_value(complaint.get("email", ""))
-    if state.cust_address:
-        state.cust_address.set_value(complaint.get("customer_address", ""))
-    if state.cust_city:
-        state.cust_city.set_value(complaint.get("customer_city", ""))
-    if state.cust_pincode:
-        state.cust_pincode.set_value(complaint.get("customer_pin", ""))
-    if state.cust_pan:
-        state.cust_pan.set_value(complaint.get("customer_pan", ""))
-    if state.cust_aadhar:
-        state.cust_aadhar.set_value(complaint.get("customer_aadhar", ""))
+            state.edit_mode = True
 
-    # --- Quotation & Booking ---
-    if state.comp_quotation_no:
-        state.comp_quotation_no.set_value(complaint.get("quotation_number", ""))
-    if state.comp_quotation_date:
-        state.comp_quotation_date.set_value(complaint.get("quotation_date", ""))
-    if state.comp_net_offered:
-        state.comp_net_offered.set_value(complaint.get("net_offered_price", ""))
-    if state.comp_total_offered:
-        state.comp_total_offered.set_value(complaint.get("total_offered_price", ""))
-    if state.comp_tcs:
-        state.comp_tcs.set_value(complaint.get("tcs_amount", ""))
-    if state.comp_booking_file_no:
-        state.comp_booking_file_no.set_value(complaint.get("booking_file_number", ""))
-    if state.comp_receipt_no:
-        state.comp_receipt_no.set_value(complaint.get("receipt_number", ""))
-    if state.comp_booking_amt:
-        state.comp_booking_amt.set_value(complaint.get("booking_amount", ""))
-    if state.comp_mode_of_payment:
-        state.comp_mode_of_payment.set_value(complaint.get("mode_of_payment", ""))
-    if state.comp_instrument_date:
-        state.comp_instrument_date.set_value(complaint.get("instrument_date", ""))
-    if state.comp_instrument_no:
-        state.comp_instrument_no.set_value(complaint.get("instrument_number", ""))
-    if state.comp_bank_name:
-        state.comp_bank_name.set_value(complaint.get("bank_name", ""))
-
-    # --- Vehicle ---
-    if state.vin_no:
-        state.vin_no.set_value(complaint.get("vin_number", ""))
-    if state.engine_no:
-        state.engine_no.set_value(complaint.get("engine_number", ""))
-    if state.vehicle_regn_no:
-        state.vehicle_regn_no.set_value(complaint.get("registration_number", ""))
-    if state.regn_date:
-        state.regn_date.set_value(complaint.get("registration_date", ""))
-    if state.car_color:
-        state.car_color.set_value(complaint.get("car_color", ""))
-
-    # --- Dealerships (CRITICAL ORDER) ---
-    dlr = complaint.get("complainant_dealer_name")
-
-    if dlr:
-        state.complainant_dealership.set_value(dlr)
-
-        if hasattr(state, "_handle_complainant_change"):
-            asyncio.create_task(state._handle_complainant_change(dlr))
-
-    comp_dlr = complaint.get("complainee_dealer_name")
-
-    if comp_dlr:
-        if hasattr(state, "_handle_complainee_change"):
-            asyncio.create_task(state._handle_complainee_change(comp_dlr))
-
-    # --- Delayed dependent fields ---
-    def set_dependent_fields():
-        if state.complainant_showroom:
-            state.complainant_showroom.set_value(
-                complaint.get("complainant_showroom_name")
-            )
-
-        if state.complainee_dealership:
-            state.complainee_dealership.set_value(
-                complaint.get("complainee_dealer_name")
-            )
-
-        if state.complainee_showroom:
-            state.complainee_showroom.set_value(
-                complaint.get("complainee_showroom_name")
-            )
-
-    ui.timer(0.2, set_dependent_fields, once=True)
-
-    # --- Remarks ---
-    if state.complaint_date:
-        state.complaint_date.set_value(complaint.get("date_of_complaint", ""))
-    if state.complainant_remarks:
-        state.complainant_remarks.set_value(complaint.get("remarks_complainant", ""))
-    if state.complainee_aa_name:
-        state.complainee_aa_name.set_value(complaint.get("remark_complainee_aa", ""))
-    if state.complainant_aa_remarks:
-        state.complainant_aa_remarks.set_value(complaint.get("remark_admin", ""))
-
-    if state.complaint_status:
-        state.complaint_status.set_value(complaint.get("status", ""))
-
-    # --- Variant mapping ---
-    _map_car_and_variant(state, complaint)
-
-
-async def resolve_form_mode(state, transaction_id):
-    if state.stage != "delivery":
-        return
-
-    if transaction_id:
-        txn_data = await api_get(f"/transactions/{transaction_id}")
-
-        if txn_data.get("stage") == "delivery":
-            state.form_mode = "delivery_edit"
         else:
-            state.form_mode = "delivery_from_booking"
+            state.form_mode = "booking_create"
 
-        state.txn_id = transaction_id
-        state.edit_mode = True
+    # ─────────────────────────────────────────────
+    # DELIVERY
+    # ─────────────────────────────────────────────
+    elif stage == "delivery":
+        # DIRECT DELIVERY
+        if mode == "direct":
+            if transaction_id:
+                state.form_mode = "delivery_edit"
+
+                txn_data = await api_get(f"/transactions/{transaction_id}")
+
+                state.edit_mode = True
+
+            else:
+                state.form_mode = "delivery_direct_create"
+
+        # DELIVERY FROM BOOKING
+        else:
+            if transaction_id:
+                txn_data = await api_get(f"/transactions/{transaction_id}")
+
+                txn_stage = txn_data.get("stage")
+
+                # EXISTING DELIVERY
+                if txn_stage == "delivery":
+                    state.form_mode = "delivery_edit"
+
+                    state.edit_mode = True
+
+                # BOOKING → DELIVERY
+                else:
+                    state.form_mode = "delivery_from_booking"
+                    state.edit_mode = True
+
+            else:
+                state.form_mode = "delivery_direct_create"
+
+    # ─────────────────────────────────────────────
+    # SAVE TRANSACTION DATA
+    # ─────────────────────────────────────────────
+    if txn_data:
+        state.transaction_data = txn_data
+
         state.booking_data = txn_data
 
-        return txn_data
+        state.txn_id = transaction_id
 
-    else:
-        state.form_mode = "delivery_direct_create"
-        return None
+    print(
+        "FORM MODE:",
+        state.form_mode,
+    )
+
+    return txn_data
+
+
+async def hydrate_vehicle_section(
+    state,
+    txn,
+):
+
+    state.is_hydrating = True
+
+    try:
+        car_id = txn.get("car_id")
+
+        variant_id = txn.get("variant_id")
+
+        outlet_id = txn.get("outlet_id")
+
+        exec_id = txn.get("sales_executive_id")
+
+        delivery_date = txn.get("delivery_date")
+
+        # ─────────────────────────
+        # CAR
+        # ─────────────────────────
+        if car_id:
+            state.car_select.set_value(car_id)
+
+            # IMPORTANT
+            await _fs_on_car_change(
+                car_id,
+                state,
+                preserve_variant=True,
+            )
+
+        # ─────────────────────────
+        # VARIANT
+        # ─────────────────────────
+        if variant_id:
+            state.variant_select.set_value(variant_id)
+
+            state.variant_id = variant_id
+
+        # ─────────────────────────
+        # OUTLET
+        # ─────────────────────────
+        if outlet_id:
+            state.outlet_select.set_value(outlet_id)
+
+        # ─────────────────────────
+        # EXECUTIVE
+        # ─────────────────────────
+        if exec_id:
+            state.exec_select.set_value(exec_id)
+
+        # Delivery Date
+        if delivery_date:
+            state.delivery_date.set_value(delivery_date)
+
+    finally:
+        state.is_hydrating = False
+        _fs_revalidate(state)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -4541,7 +4720,6 @@ def build_vehicle_section(state: FormState) -> None:
         outlet["id"]: outlet["name"]
         for outlet in sorted(state.outlets, key=lambda x: x["name"].lower())
     }
-
     exec_opts = {executive["id"]: executive["name"] for executive in state.executives}
 
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6 w-full"):
@@ -4557,7 +4735,6 @@ def build_vehicle_section(state: FormState) -> None:
                     options=car_opts,
                     label="Car *",
                     with_input=True,
-                    on_change=lambda e: _fs_on_car_change(e.value, state),
                 )
                 .classes("w-full")
                 .props("outlined dense")
@@ -4567,11 +4744,9 @@ def build_vehicle_section(state: FormState) -> None:
                     options={},
                     with_input=True,
                     label="Variant *",
-                    on_change=lambda e: _fs_on_variant_change(e.value, state),
                 )
                 .classes("w-full")
                 .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.car_color = (
                 ui.input(label="Car Colour").classes("w-full").props("outlined dense")
@@ -4583,21 +4758,18 @@ def build_vehicle_section(state: FormState) -> None:
                 )
                 .classes("w-full")
                 .props("outlined dense")
-                .on_value_change(lambda v: setattr(state, "executive_id", v.value))
             )
             if state.form_mode not in ["complaint_create", "complaint_edit"]:
                 state.cust_file_no = (
                     ui.input(label="Customer File No *")
                     .classes("w-full")
                     .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.model_year = (
                     ui.input(
                         label="Model Year *",
                         value="2026",
                         placeholder="e.g. 2024",
-                        on_change=lambda _: _fs_try_price_preload(state),
                         validation={
                             "Must be 4 digits": lambda value: (
                                 len(str(value)) == 4 and str(value).isdigit()
@@ -4606,9 +4778,6 @@ def build_vehicle_section(state: FormState) -> None:
                     )
                     .classes("w-full")
                     .props("outlined dense")
-                    .on_value_change(
-                        lambda _: _fs_revalidate(state),
-                    )
                 )
                 state.outlet_select = (
                     ui.select(
@@ -4617,7 +4786,6 @@ def build_vehicle_section(state: FormState) -> None:
                     )
                     .classes("w-full")
                     .props("outlined dense")
-                    .on_value_change(lambda e: setattr(state, "outlet_id", e.value))
                 )
 
             if state.stage == "delivery":
@@ -4633,7 +4801,6 @@ def build_vehicle_section(state: FormState) -> None:
                     )
                     .classes("w-full uppercase")
                     .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.delivery_date = (
                     ui.input(
@@ -4646,7 +4813,6 @@ def build_vehicle_section(state: FormState) -> None:
                     )
                     .classes("w-full")
                     .props('type="date" outlined dense')
-                    .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.engine_no = (
                     ui.input(
@@ -4660,7 +4826,6 @@ def build_vehicle_section(state: FormState) -> None:
                     )
                     .classes("w-full uppercase")
                     .props("outlined dense")
-                    .on_value_change(lambda _: _fs_revalidate(state))
                 )
                 state.vehicle_regn_no = (
                     ui.input(
@@ -4703,7 +4868,6 @@ def build_customer_section(state: FormState) -> None:
                 ui.input(label="Name *", placeholder="Full name")
                 .classes("w-full")
                 .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.cust_mobile = (
                 ui.input(
@@ -4717,7 +4881,6 @@ def build_customer_section(state: FormState) -> None:
                 )
                 .classes("w-full")
                 .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.cust_email = (
                 ui.input(label="Email", placeholder="optional")
@@ -4733,13 +4896,9 @@ def build_customer_section(state: FormState) -> None:
                 ui.textarea(label="Address *")
                 .classes("w-full")
                 .props("outlined dense rows=2")
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.cust_city = (
-                ui.input(label="City *")
-                .classes("w-full")
-                .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
+                ui.input(label="City *").classes("w-full").props("outlined dense")
             )
             state.cust_pincode = (
                 ui.input(
@@ -4753,7 +4912,6 @@ def build_customer_section(state: FormState) -> None:
                 )
                 .classes("w-full")
                 .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.cust_pan = (
                 ui.input(
@@ -4768,16 +4926,8 @@ def build_customer_section(state: FormState) -> None:
                 )
                 .classes("w-full uppercase")
                 .props("outlined dense")
-                .on(
-                    "update:model-value",
-                    lambda e: (
-                        state.cust_pan.set_value(e.args.upper())
-                        if isinstance(e.args, str)
-                        else None,
-                        _fs_revalidate(state),
-                    ),
-                )
             )
+
             state.cust_aadhar = (
                 ui.input(
                     label="Aadhar *",
@@ -4790,7 +4940,6 @@ def build_customer_section(state: FormState) -> None:
                 )
                 .classes("w-full")
                 .props("outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.cust_other_id = (
                 ui.input(label="Other ID Proof")
@@ -4813,7 +4962,6 @@ def build_conditions_section(state: FormState) -> None:
                     ui.checkbox(label)
                     .props("dense color=primary")
                     .classes("text-gray-700 font-medium")
-                    .on_value_change(lambda _: _fs_revalidate(state))
                 )
 
 
@@ -4830,7 +4978,6 @@ def build_booking_checklist_section(state: FormState) -> None:
                     ui.checkbox(label, value=False)
                     .props("dense color=primary")
                     .classes("text-gray-700 font-medium")
-                    .on_value_change(lambda _: _fs_revalidate(state))
                 )
 
 
@@ -4848,7 +4995,6 @@ def build_booking_section(state: FormState):
                 ui.input(
                     label="Booking Date *",
                     value=str(get_ist_today()),
-                    on_change=lambda _: _fs_try_price_preload(state),
                     validation={
                         "Enter valid date (DD-MM-YYYY)": lambda v: (
                             bool(v) and is_valid_date(v)
@@ -4857,7 +5003,6 @@ def build_booking_section(state: FormState):
                 )
                 .classes("w-full")
                 .props("type='date' outlined dense")
-                .on_value_change(lambda _: _fs_revalidate(state))
             )
             state.booking_amt = accounting_input(
                 label_text="Booking Amount", placeholder="Enter Amount"
@@ -4890,8 +5035,14 @@ def build_prices_section(state: FormState) -> None:
     is_delivery = stage == "delivery"
     is_direct = getattr(state, "is_direct_delivery", True)
     booking_data = getattr(state, "booking_data", None) or {}
-    conditions = getattr(state, "conditions", {}) or {}
-    print("Booking Data", json.dumps(booking_data, indent=4))
+    conditions = {
+        key: cb.value
+        for key, cb in getattr(
+            state,
+            "condition_cbs",
+            {},
+        ).items()
+    }
 
     price_comps = sorted(
         [c for c in state.components if c.get("type") == "price"],
@@ -4911,9 +5062,6 @@ def build_prices_section(state: FormState) -> None:
             for k, v in booking_data.items()
             if k.endswith("_actual")
         }
-
-    def _update(_=None):
-        _fs_update_live(state)
 
     # ── OUTER CARD ────────────────────────────────────────────────────────────
     with ui.card().classes("w-full rounded-xl shadow-sm mb-4"):
@@ -4988,46 +5136,18 @@ def build_prices_section(state: FormState) -> None:
                                 ui.switch("").props("dense color=green").classes("m-0")
                             )
                             state.price_match_toggles[name] = toggle
-                            toggle.on_value_change(_update)
 
                         # Charged input
                         inp = accounting_input(
                             "", placeholder="₹0", container_classes="w-36"
                         ).props("dense")
                         state.price_inputs[name] = inp
-                        inp.on_value_change(_update)
 
                         # Difference label
                         diff_lbl = ui.label("—").classes(
                             f"{_MONO_SM} w-24 text-gray-400"
                         )
                         state.price_diff_labels[name] = diff_lbl
-
-                    # Toggle handler — fills input from listed or booking source
-                    def _on_price_toggle(
-                        _,
-                        _name=name,
-                        _inp=inp,
-                        _toggle=toggle,
-                        _is_delivery=is_delivery,
-                        _is_direct=is_direct,
-                        _bmap=booking_actual_map,
-                    ):
-                        if _toggle.value:
-                            if _is_delivery and not _is_direct:
-                                # Match booking value
-                                src_val = _bmap.get(_name, 0)
-                            else:
-                                # Match listed price
-                                src_val = state.listed_prices.get(_name, 0)
-                            _inp.set_value(format_num_inr(src_val))
-                            _inp.set_enabled(False)
-                        else:
-                            _inp.set_enabled(True)
-                            _inp.set_value(None)
-
-                    toggle.on("update:model-value", _on_price_toggle)
-                    # _fs_update_live(state)
 
             with ui.row().classes(
                 "w-full items-center gap-3 mt-3 pt-3 border-t-2 border-gray-200"
@@ -5212,14 +5332,12 @@ def build_prices_section(state: FormState) -> None:
                     with ui.element("div").classes("w-20 flex justify-center"):
                         toggle = ui.switch("").props("dense color=green").classes("m-0")
                         state.discount_match_toggles[name] = toggle
-                        toggle.on_value_change(_update)
 
                     # ── Given input
                     inp = accounting_input(
                         "", placeholder="₹0", container_classes="w-36"
                     ).props("dense")
                     state.discount_inputs[name] = inp
-                    inp.on_value_change(_update)
 
                     # ── Difference
                     diff_lbl = ui.label("—").classes(
@@ -5227,18 +5345,6 @@ def build_prices_section(state: FormState) -> None:
                     )
                     state.discount_diff_labels[name] = diff_lbl
 
-                def on_toggle(_, name=name, inp=inp, toggle=toggle):
-                    if toggle.value:
-                        val = state.listed_prices.get(name, 0)
-                        inp.set_value(format_num_inr(val))
-                        inp.set_enabled(False)  # disable input
-                    else:
-                        inp.set_enabled(True)  # re-enable input
-                        inp.set_value(None)  # optional: clear
-                    _fs_update_live(state)
-
-                toggle.on("update:model-value", on_toggle)
-                inp.on_value_change(_update)
             # ── [D] Other Discount Row ─────────────────────────────────────
             with ui.row().classes(
                 "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
@@ -5258,14 +5364,11 @@ def build_prices_section(state: FormState) -> None:
                         "", placeholder="₹0", container_classes="w-36"
                     ).props("dense")
 
-                    state.total_discount_booking.on_value_change(_update)
                 # Renamed this to other discount in delivery
                 else:
                     state.other_discount_delivery = accounting_input(
                         "", placeholder="₹0", container_classes="w-36"
                     ).props("dense")
-
-                    state.other_discount_delivery.on_value_change(_update)
 
                 ui.element("div").classes("w-25")
 
@@ -5284,8 +5387,6 @@ def build_prices_section(state: FormState) -> None:
                 ).props("dense")
 
                 ui.element("div").classes("w-25")
-
-                state.adjustment_input.on_value_change(_update)
 
             # ══════════════════════════════════════════════════════════════════
             # SECTION 3 — DISCOUNT SUMMARY BAR
@@ -5326,7 +5427,7 @@ def build_prices_section(state: FormState) -> None:
                 )
                 # lbl_excess is the compact version used in the live bar elsewhere
                 state.lbl_excess_lv = state.lbl_excess_discount
-    _fs_update_live(state)
+    # _fs_update_live(state)
 
 
 def build_accessories_section(state: FormState) -> None:
@@ -5364,7 +5465,6 @@ def build_accessories_section(state: FormState) -> None:
                     label="Select Accessories",
                     multiple=True,
                     with_input=True,  # search enabled
-                    on_change=update_total,
                 )
                 .classes("w-full h-10")
                 .props("outlined dense use-input")
@@ -5380,9 +5480,7 @@ def build_accessories_section(state: FormState) -> None:
             )
 
             # ── Charged Input ─────────────────────────
-            state.acc_charged = accounting_input(
-                label_text="Actual Charged (₹)"
-            ).on_value_change(lambda _: _fs_update_live(state))
+            state.acc_charged = accounting_input(label_text="Actual Charged (₹)")
 
 
 def build_delivery_checklist_section(state: FormState) -> None:
@@ -5419,38 +5517,16 @@ def build_audit_section(state: FormState) -> None:
             )
 
 
-def build_invoice_section(state: FormState) -> None:
-    def calculate_taxes():
-        taxable = parsed_val(state.invoice_taxable_value)
-        cgst = taxable * 0.09
-        sgst = taxable * 0.09
-        state.invoice_cgst.set_value(format_num_inr(cgst))
-        state.invoice_sgst.set_value(format_num_inr(sgst))
-        calculate_total()
-
-    def calculate_total():
-        taxable = parsed_val(state.invoice_taxable_value)
-        cgst = parsed_val(state.invoice_cgst)
-        sgst = parsed_val(state.invoice_sgst)
-        igst = (
-            parsed_val(state.invoice_igst)
-            if state.igst_toggle and state.igst_toggle.value
-            else 0
-        )
-        cess = (
-            parsed_val(state.invoice_cess)
-            if state.cess_toggle and state.cess_toggle.value
-            else 0
-        )
-
-        total = taxable + cgst + sgst + igst + cess
-        state.invoice_total.set_value(format_num_inr(total))
+def build_invoice_section(
+    state: FormState,
+) -> None:
 
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
         ):
             ui.label("🧾").classes("text-[20px] select-none")
+
             ui.label("Invoice Details").classes("text-[15px] font-bold text-gray-900")
 
         with ui.grid(columns=3).classes("w-full gap-5"):
@@ -5459,62 +5535,29 @@ def build_invoice_section(state: FormState) -> None:
                 .classes("uppercase")
                 .props("outlined dense")
             )
+
             state.invoice_date = ui.input(
                 label="Invoice Date",
                 validation={
-                    "Enter valid date (DD-MM-YYYY)": lambda v: (
-                        bool(v) and is_valid_date(v)
+                    "Enter valid date (DD-MM-YYYY)": (
+                        lambda v: bool(v) and is_valid_date(v)
                     )
                 },
             ).props('outlined dense type="date"')
 
             state.invoice_ex_showroom = accounting_input(
-                label_text="Ex-Showroom Price (From Price List)"
+                label_text=("Ex-Showroom Price (From Price List)")
             )
             state.invoice_ex_showroom.props("readonly")
-            state.invoice_ex_showroom.on_value_change(lambda _: _fs_update_live(state))
-
             state.invoice_discount = accounting_input(label_text="Discount")
-            state.invoice_discount.on_value_change(lambda _: _fs_update_live(state))
-
             state.invoice_taxable_value = accounting_input(label_text="Taxable Value")
-            state.invoice_taxable_value.on_value_change(
-                lambda _: (
-                    calculate_taxes(),
-                    calculate_total(),
-                    _fs_update_live(state),
-                )
-            )
-
             state.invoice_cgst = accounting_input(label_text="CGST")
-            state.invoice_cgst.on_value_change(lambda _: calculate_total())
-
             state.invoice_sgst = accounting_input(label_text="SGST")
-            state.invoice_sgst.on_value_change(lambda _: calculate_total())
-
             state.igst_toggle = ui.switch("Apply IGST").props("dense")
             state.invoice_igst = accounting_input(label_text="IGST")
-            state.invoice_igst.on_value_change(lambda _: calculate_total())
-
             state.cess_toggle = ui.switch("Apply CESS").props("dense")
             state.invoice_cess = accounting_input(label_text="CESS")
-            state.invoice_cess.on_value_change(lambda _: calculate_total())
-
             state.invoice_total = accounting_input(label_text="Total Invoice Value")
-
-        def toggle_taxes():
-            state.invoice_igst.set_enabled(state.igst_toggle.value)
-            state.invoice_cess.set_enabled(state.cess_toggle.value)
-
-        state.igst_toggle.on(
-            "update:model-value", lambda _: (toggle_taxes(), calculate_total())
-        )
-        state.cess_toggle.on(
-            "update:model-value", lambda _: (toggle_taxes(), calculate_total())
-        )
-
-        toggle_taxes()
-        calculate_total()
 
 
 def build_payment_section(state: FormState) -> None:
@@ -5530,25 +5573,6 @@ def build_payment_section(state: FormState) -> None:
             state.payment_bank = accounting_input("Bank Payment")
             state.payment_finance = accounting_input("Finance")
             state.payment_exchange = accounting_input("Exchange")
-
-        # ── Dynamic Enable/Disable ─────────────
-        def toggle_fields():
-            if state.condition_cbs.get("finance"):
-                state.payment_finance.set_enabled(state.condition_cbs["finance"].value)
-
-            if state.condition_cbs.get("exchange"):
-                state.payment_exchange.set_enabled(
-                    state.condition_cbs["exchange"].value
-                )
-
-        # attach listeners
-        for key in ["finance", "exchange"]:
-            if key in state.condition_cbs:
-                state.condition_cbs[key].on(
-                    "update:model-value", lambda _: toggle_fields()
-                )
-
-        toggle_fields()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -5566,6 +5590,7 @@ _DEFAULT_DISC = {
     "Additional Discount From Dealer",
     "Maximum benefit due to price increase",
 }
+_DEFAULT_PRICE = {"Ex Showroom Price", "TCS", "Registration", "Insurance"}
 
 # Condition key → discount component name substring mapping
 # Add more mappings as your domain grows
@@ -5631,9 +5656,1984 @@ def update_discount_visibility(state, conditions: dict) -> None:
         cond_key = _condition_badge(name, conditions)
         if cond_key is not None:
             row.set_visibility(bool(conditions.get(cond_key, False)))
+    # _fs_update_live(state)
+
+
+def build_live_bar(state: FormState) -> None:
+    with ui.row().classes(
+        "w-full bg-[#0F1623] text-white p-3 px-6 rounded-xl items-center gap-6 shadow-lg mb-4"
+    ):
+        ui.label("LIVE TOTALS").classes(
+            "text-[10px] font-bold tracking-[1.2px] text-white/40 uppercase"
+        )
+        ui.element("div").classes("w-[1px] h-4 bg-white/10")
+
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Allowable Discount (As per Price List):").classes(
+                "text-[11px] text-white/50"
+            )
+            state.lbl_allowed_lv = ui.label("₹0").classes(
+                "text-[16px] font-bold text-white mono"
+            )
+
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Discount Given:").classes("text-[11px] text-white/50")
+            state.lbl_discount_lv = ui.label("₹0").classes(
+                "text-[16px] font-bold text-white mono"
+            )
+
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Excess Discount:").classes("text-[11px] text-white/50")
+            state.lbl_excess_lv = ui.label("—").classes(
+                "text-[16px] font-bold text-white/30 mono"
+            )
+
+
+def build_action_bar(state: FormState) -> None:
+    with ui.row().classes(
+        "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
+    ) as banner:
+        state.error_banner = banner
+        ui.label("⚠️").classes("text-red-500")
+        state.error_msg_label = ui.label("").classes(
+            "text-red-800 text-[13px] font-medium"
+        )
+
+    state.error_banner.set_visibility(False)
+
+    with ui.row().classes("w-full items-center justify-between py-4"):
+        ui.button("← Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes(
+            "text-gray-500 text-[13px] hover:text-gray-800"
+        ).props("flat no-caps")
+
+        submit_text = "Save Booking"
+
+        if state.edit_mode:
+            if state.form_mode == "booking_edit":
+                submit_text = "Update Booking"
+
+            elif state.form_mode == "delivery_from_booking":
+                submit_text = "Convert to Delivery"
+
+            elif state.form_mode == "delivery_edit":
+                submit_text = "Update Delivery"
+
+        elif state.stage == "delivery":
+            submit_text = "Create Delivery"
+
+        state.submit_btn = (
+            ui.button(
+                submit_text,
+                on_click=lambda: _fs_handle_submit(state),
+            )
+            .classes(
+                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
+            )
+            .props("no-caps unelevated")
+        )
+
+
+# ══════════════════════════════════════════════════════════════
+# FORM EVENT HANDLERS
+# ══════════════════════════════════════════════════════════════
+
+
+def handle_price_toggle(
+    state: FormState,
+    name: str,
+):
+
+    toggle = state.price_match_toggles.get(name)
+
+    inp = state.price_inputs.get(name)
+
+    if not toggle or not inp:
+        return
+
+    if toggle.value:
+        src_val = state.listed_prices.get(
+            name,
+            0,
+        )
+
+        inp.set_value(format_num_inr(src_val))
+
+        inp.set_enabled(False)
+
+    else:
+        inp.set_enabled(True)
+        inp.set_value(None)
+
     _fs_update_live(state)
 
 
+def handle_discount_toggle(
+    state: FormState,
+    name: str,
+):
+
+    toggle = state.discount_match_toggles.get(name)
+
+    inp = state.discount_inputs.get(name)
+
+    if not toggle or not inp:
+        return
+
+    if toggle.value:
+        src_val = state.listed_prices.get(
+            name,
+            0,
+        )
+
+        inp.set_value(format_num_inr(src_val))
+
+        inp.set_enabled(False)
+
+    else:
+        inp.set_enabled(True)
+        inp.set_value(None)
+
+    _fs_update_live(state)
+
+
+def attach_form_handlers(state):
+
+    if getattr(state, "handlers_attached", False):
+        return
+
+    state.handlers_attached = True
+
+    # ─────────────────────────────────────────────
+    # HELPERS
+    # ─────────────────────────────────────────────
+    def live_update(*_):
+
+        if state.is_hydrating:
+            return
+
+        _fs_update_live(state)
+
+    def revalidate(*_):
+
+        if state.is_hydrating:
+            return
+
+        _fs_revalidate(state)
+
+    # ─────────────────────────────────────────────
+    # CUSTOMER
+    # ─────────────────────────────────────────────
+    if getattr(state, "cust_pan", None):
+
+        def on_pan_change(e):
+
+            if state.is_hydrating:
+                return
+
+            if isinstance(e.args, str):
+                upper_val = e.args.upper()
+
+                if upper_val != state.cust_pan.value:
+                    state.cust_pan.set_value(upper_val)
+
+            revalidate(state)
+
+        state.cust_pan.on(
+            "update:model-value",
+            on_pan_change,
+        )
+
+    if getattr(state, "cust_mobile", None):
+        state.cust_mobile.on_value_change(revalidate)
+
+    if getattr(state, "cust_email", None):
+        state.cust_email.on_value_change(revalidate)
+
+    # ─────────────────────────────────────────────
+    # CAR
+    # ─────────────────────────────────────────────
+    if getattr(state, "car_select", None):
+
+        async def handle_car_change(e):
+
+            if state.is_hydrating:
+                return
+
+            car_id = state.car_select.value
+
+            print("CAR SELECT VALUE:", car_id)
+
+            await _fs_on_car_change(
+                car_id,
+                state,
+                preserve_variant=False,
+            )
+
+        state.car_select.on(
+            "update:model-value",
+            lambda e: asyncio.create_task(handle_car_change(e)),
+        )
+
+    # ─────────────────────────────────────────────
+    # VARIANT
+    # ─────────────────────────────────────────────
+    if getattr(state, "variant_select", None):
+
+        async def handle_variant_change(e):
+
+            if state.is_hydrating:
+                return
+
+            variant_id = state.variant_select.value
+
+            print("VARIANT SELECT VALUE:", variant_id)
+
+            await _fs_on_variant_change(
+                variant_id,
+                state,
+            )
+
+        state.variant_select.on(
+            "update:model-value",
+            lambda e: asyncio.create_task(handle_variant_change(e)),
+        )
+
+    # ─────────────────────────────────────────────
+    # CONDITIONS
+    # ─────────────────────────────────────────────
+    for cb in getattr(state, "condition_cbs", {}).values():
+        cb.on(
+            "update:model-value",
+            lambda e: (
+                refresh_visibility(state),
+                _fs_update_live(state),
+                _fs_revalidate(state),
+            ),
+        )
+
+    # ─────────────────────────────────────────────
+    # CHECKLISTS
+    # ─────────────────────────────────────────────
+    for cb in getattr(state, "booking_cbs", {}).values():
+        cb.on_value_change(revalidate)
+
+    for cb in getattr(state, "delivery_cbs", {}).values():
+        cb.on_value_change(revalidate)
+
+    # ─────────────────────────────────────────────
+    # PRICE INPUTS
+    # ─────────────────────────────────────────────
+    for inp in getattr(state, "price_inputs", {}).values():
+        inp.on_value_change(live_update)
+
+    # ─────────────────────────────────────────────
+    # DISCOUNT INPUTS
+    # ─────────────────────────────────────────────
+    for inp in getattr(state, "discount_inputs", {}).values():
+        inp.on_value_change(live_update)
+
+    # ─────────────────────────────────────────────
+    # ACCESSORIES
+    # ─────────────────────────────────────────────
+    if getattr(state, "acc_charged", None):
+        state.acc_charged.on_value_change(live_update)
+
+    # ─────────────────────────────────────────────
+    # OTHER DISCOUNT
+    # ─────────────────────────────────────────────
+    if getattr(state, "total_discount_booking", None):
+        state.total_discount_booking.on_value_change(live_update)
+
+    if getattr(state, "adjustment_input", None):
+        state.adjustment_input.on_value_change(live_update)
+
+    # ─────────────────────────────────────────────
+    # PRICE TOGGLES
+    # ─────────────────────────────────────────────
+    for name, toggle in getattr(
+        state,
+        "price_match_toggles",
+        {},
+    ).items():
+        toggle.on(
+            "update:model-value",
+            lambda e, n=name: handle_price_toggle(
+                state,
+                n,
+            ),
+        )
+
+    # ─────────────────────────────────────────────
+    # DISCOUNT TOGGLES
+    # ─────────────────────────────────────────────
+    for name, toggle in getattr(
+        state,
+        "discount_match_toggles",
+        {},
+    ).items():
+        toggle.on(
+            "update:model-value",
+            lambda e, n=name: handle_discount_toggle(
+                state,
+                n,
+            ),
+        )
+    attach_invoice_handlers(state)
+
+
+def attach_invoice_handlers(
+    state: FormState,
+):
+    taxable = getattr(state, "invoice_taxable_value", None)
+    invoice_igst = getattr(state, "invoice_igst", None)
+    invoice_cess = getattr(state, "invoice_cess", None)
+    igst_toggle = getattr(state, "igst_toggle", None)
+    cess_toggle = getattr(state, "cess_toggle", None)
+
+    if taxable:
+        taxable.on_value_change(lambda e: calculate_invoice_taxes(state))
+
+    if invoice_igst:
+        invoice_igst.on_value_change(lambda e: calculate_invoice_total(state))
+
+    if invoice_cess:
+        invoice_cess.on_value_change(lambda e: calculate_invoice_total(state))
+
+    if igst_toggle:
+        igst_toggle.on(
+            "update:model-value",
+            lambda e: (
+                update_invoice_tax_visibility(state),
+                calculate_invoice_total(state),
+            ),
+        )
+
+    if cess_toggle:
+        cess_toggle.on(
+            "update:model-value",
+            lambda e: (
+                update_invoice_tax_visibility(state),
+                calculate_invoice_total(state),
+            ),
+        )
+
+
+async def _fs_on_car_change(
+    car_id,
+    state,
+    *,
+    preserve_variant=False,
+):
+    print("from _fs_on_car_change:LIVE UPDATE")
+
+    state.car_id = car_id
+    print("RECEIVED CAR ID:", car_id, type(car_id))
+
+    if state.variant_select is None:
+        return
+
+    # ONLY CLEAR DURING USER ACTIONS
+    if not preserve_variant:
+        state.variant_id = None
+        state.variant_select.set_value(None)
+
+    state.variant_select.options = {}
+    state.variant_select.update()
+
+    _fs_clear_prices(state)
+
+    if not car_id:
+        return
+
+    try:
+        variants = await api_get(f"/cars/{car_id}/variants")
+
+        options = {
+            v["id"]: v["full_variant_name"]
+            for v in sorted(
+                variants,
+                key=lambda x: (x.get("full_variant_name") or "").lower(),
+            )
+        }
+
+        state.variant_select.options = options
+        state.variant_select.update()
+
+    except Exception as ex:
+        _fs_show_error(
+            state,
+            f"Failed to load variants: {ex}",
+        )
+
+
+async def _fs_on_variant_change(variant_id, state: FormState) -> None:
+    print("from _fs_on_variant_change, LIVE UPDATE")
+    state.variant_id = variant_id
+
+    if variant_id:
+        await _fs_try_price_preload(state)
+
+    if getattr(state, "form_ready", False) and not getattr(
+        state, "is_hydrating", False
+    ):
+        _fs_update_live(state)
+
+        _fs_revalidate(state)
+
+
+async def _fs_try_price_preload(state: FormState) -> None:
+    """Call GET /price-list/preview when both variant + date are known."""
+    # Extract booking date from available sources
+    booking_date = None
+    if state.booking_date and state.booking_date.value and state.model_year.value:
+        booking_date = state.booking_date.value
+    elif state.delivery_date and state.delivery_date.value and state.model_year.value:
+        booking_date = state.delivery_date.value
+    if not state.variant_id or not booking_date or not state.model_year:
+        return
+
+    try:
+        booking_date = state.booking_date.value
+        model_year = state.model_year.value
+        preview = await api_get(
+            f"/price-list/preview?variant_id={state.variant_id}&booking_date={booking_date}&model_year={model_year}"
+        )
+        # ── Store listed prices (source of truth) ──
+        state.listed_prices = preview or {}
+        filled = 0
+
+        for name, value in state.listed_prices.items():
+            if value is None:
+                continue
+
+            formatted = f"₹{int(value):,}"
+
+            # ── Update Listed Price Labels ──
+            if name in state.price_listed_labels:
+                state.price_listed_labels[name].set_text(formatted)
+
+            if name in state.discount_listed_labels:
+                state.discount_listed_labels[name].set_text(formatted)
+
+            # ── Auto-fill ONLY if toggle is ON ──
+            if name in state.price_match_toggles:
+                toggle = state.price_match_toggles[name]
+                inp = state.price_inputs.get(name)
+
+                if toggle.value and inp:
+                    inp.set_value(int(value))
+                    inp.props("readonly")
+                    filled += 1
+
+            if name in state.discount_match_toggles:
+                toggle = state.discount_match_toggles[name]
+                inp = state.discount_inputs.get(name)
+
+                if toggle.value and inp:
+                    inp.set_value(int(value))
+                    inp.props("readonly")
+                    filled += 1
+
+        if state.invoice_ex_showroom:
+            # Match main.py line 1516
+            val = state.listed_prices.get("Ex Showroom Price", 0)
+            state.invoice_ex_showroom.set_value(val)
+
+        # _fs_update_live(state)
+
+        if filled:
+            ui.notify(
+                f"✓ {filled} field{'s' if filled > 1 else ''} synced with listed price.",
+                type="info",
+                position="top-right",
+                timeout=2500,
+            )
+
+    except Exception as e:
+        print(e)
+        pass  # best-effort; silently skip if endpoint missing
+
+
+## Invoice calculation helpers
+def update_invoice_tax_visibility(
+    state: FormState,
+):
+
+    if state.invoice_igst:
+        state.invoice_igst.set_enabled(
+            bool(state.igst_toggle and state.igst_toggle.value)
+        )
+
+    if state.invoice_cess:
+        state.invoice_cess.set_enabled(
+            bool(state.cess_toggle and state.cess_toggle.value)
+        )
+
+
+def calculate_invoice_total(
+    state: FormState,
+):
+
+    taxable = parsed_val(state.invoice_taxable_value)
+
+    cgst = parsed_val(state.invoice_cgst)
+
+    sgst = parsed_val(state.invoice_sgst)
+
+    igst = (
+        parsed_val(state.invoice_igst)
+        if state.igst_toggle and state.igst_toggle.value
+        else 0
+    )
+
+    cess = (
+        parsed_val(state.invoice_cess)
+        if state.cess_toggle and state.cess_toggle.value
+        else 0
+    )
+
+    total = taxable + cgst + sgst + igst + cess
+
+    if state.invoice_total:
+        state.invoice_total.set_value(format_num_inr(total))
+
+
+def calculate_invoice_taxes(
+    state: FormState,
+):
+
+    taxable = parsed_val(state.invoice_taxable_value)
+
+    cgst = taxable * 0.09
+    sgst = taxable * 0.09
+
+    if state.invoice_cgst:
+        state.invoice_cgst.set_value(format_num_inr(cgst))
+
+    if state.invoice_sgst:
+        state.invoice_sgst.set_value(format_num_inr(sgst))
+
+    calculate_invoice_total(state)
+
+
+def _fs_update_live(state) -> None:
+
+    # ─────────────────────────────────────────────
+    # 1. PRICE TOTALS
+    # ─────────────────────────────────────────────
+
+    total_listed = 0
+    total_charged = 0
+    total_diff = 0
+
+    for name, inp in state.price_inputs.items():
+        is_visible = state.visible_price_rows.get(
+            name,
+            True,
+        )
+
+        listed_val = int(state.listed_prices.get(name) or 0)
+
+        charged_val = int(parsed_val(inp))
+
+        # visible rows participate in totals
+        if is_visible:
+            total_listed += listed_val
+            total_charged += charged_val
+
+        # UX interaction state
+        toggle = state.price_match_toggles.get(name)
+
+        is_active = (toggle.value if toggle else False) or str(
+            inp.value
+        ).strip() not in ["", "None"]
+
+        dl = state.price_diff_labels.get(name)
+
+        if not dl:
+            continue
+
+        # hidden row
+        if not is_visible:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # untouched row
+        if not is_active:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # active visible row
+        diff = listed_val - charged_val
+        if is_visible and is_active:
+            total_diff += diff
+
+        if diff > 0:
+            dl.set_text(f"₹{diff:,}")
+            dl.style("color:#DC2626; font-weight:600")
+        else:
+            dl.set_text("₹0")
+            dl.style("color:#9CA3AF")
+
+    # ─────────────────────────────────────────────
+    # PRICE LABELS
+    # ─────────────────────────────────────────────
+
+    if getattr(state, "lbl_total_listed_price", None):
+        state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
+
+    if getattr(state, "lbl_total_charged_price", None):
+        state.lbl_total_charged_price.set_text(f"₹{total_charged:,}")
+
+    if getattr(state, "lbl_total_diff_price", None):
+        if total_diff > 0:
+            state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
+            state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
+
+        else:
+            state.lbl_total_diff_price.set_text("₹0")
+            state.lbl_total_diff_price.style("color:#9CA3AF")
+
+    # ─────────────────────────────────────────────
+    # 2. ACCESSORIES
+    # ─────────────────────────────────────────────
+
+    acc_listed = 0
+    acc_charged = 0
+
+    if getattr(state, "acc_total_label", None):
+        try:
+            raw = state.acc_total_label.text
+
+            acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
+
+        except Exception:
+            acc_listed = 0
+
+    if getattr(state, "acc_charged", None):
+        acc_charged = int(parsed_val(state.acc_charged))
+
+    acc_diff = acc_listed - acc_charged
+
+    # ─────────────────────────────────────────────
+    # 3. DISCOUNT TOTALS
+    # ─────────────────────────────────────────────
+
+    total_allowed_discount = 0
+    total_given_discount = 0
+
+    for name, inp in state.discount_inputs.items():
+        is_visible = state.visible_discount_rows.get(
+            name,
+            True,
+        )
+
+        allowed_val = int(state.listed_prices.get(name) or 0)
+
+        given_val = int(parsed_val(inp))
+
+        # visible rows participate in totals
+        if is_visible:
+            total_allowed_discount += allowed_val
+            total_given_discount += given_val
+
+        # UX interaction state
+        toggle = state.discount_match_toggles.get(name)
+
+        is_active = (toggle.value if toggle else False) or str(
+            inp.value
+        ).strip() not in ["", "None"]
+
+        dl = state.discount_diff_labels.get(name)
+
+        if not dl:
+            continue
+
+        # hidden row
+        if not is_visible:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # untouched row
+        if not is_active:
+            dl.set_text("—")
+            dl.style("color:#9CA3AF")
+            continue
+
+        # active visible row
+        diff = given_val - allowed_val
+
+        if diff > 0:
+            dl.set_text(f"₹{diff:,}")
+            dl.style("color:#DC2626; font-weight:600")
+        else:
+            dl.set_text("₹0")
+            dl.style("color:#9CA3AF")
+
+    # ─────────────────────────────────────────────
+    # 4. EXCESS CALCULATION
+    # ─────────────────────────────────────────────
+
+    adjustment = int(
+        float(
+            parsed_val(
+                getattr(
+                    state,
+                    "adjustment_input",
+                    None,
+                )
+            )
+        )
+    )
+
+    total_discount_given = int(
+        total_diff
+        + acc_diff
+        + int(
+            parsed_val(
+                getattr(
+                    state,
+                    "total_discount_booking",
+                    None,
+                )
+            )
+        )
+        + total_given_discount
+        + int(
+            parsed_val(
+                getattr(
+                    state,
+                    "total_discount_delivery",
+                    None,
+                )
+            )
+        )
+        - adjustment
+    )
+
+    excess = int(
+        max(
+            0,
+            total_discount_given - total_allowed_discount,
+        )
+    )
+
+    # ─────────────────────────────────────────────
+    # 5. UPDATE LABELS
+    # ─────────────────────────────────────────────
+
+    if getattr(state, "total_allowed", None):
+        state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
+
+    if getattr(state, "total_given", None):
+        state.total_given.set_text(f"₹{total_discount_given:,}")
+
+    if getattr(state, "lbl_allowed_lv", None):
+        state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
+
+    if getattr(state, "lbl_discount_lv", None):
+        state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
+
+    if getattr(state, "lbl_excess_discount", None):
+        state.lbl_excess_discount.set_text(f"₹{excess:,}")
+
+        state.lbl_excess_discount.style(
+            "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
+        )
+
+    if getattr(state, "lbl_excess_lv", None):
+        state.lbl_excess_lv.set_text(f"₹{excess:,}")
+
+        state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
+
+
+# def _fs_update_live(state) -> None:
+
+#     if not state.form_ready:
+#         return
+#     # ── 1. PRICE TOTALS ─────────────────────────────────────────────
+#     print("_fs_update_live: LIVE UPDATE")
+#     total_listed = 0
+#     total_charged = 0
+
+#     for name, inp in state.price_inputs.items():
+#         row = state.price_rows.get(name)
+#         toggle = state.price_match_toggles.get(name)
+
+#         listed_val = int(state.listed_prices.get(name) or 0)
+#         charged_val = int(parsed_val(inp))
+
+#         is_active = row is None or state.visible_price_rows.get(name, True)
+
+#         if is_active:
+#             total_listed += listed_val
+
+#         total_charged += charged_val
+
+#         dl = state.price_diff_labels.get(name)
+#         if dl:
+#             if not is_active:
+#                 dl.set_text("—")
+#                 dl.style("color:#9CA3AF")
+#             else:
+#                 diff = listed_val - charged_val
+#                 if diff > 0:
+#                     dl.set_text(f"₹{diff:,}")
+#                     dl.style("color:#DC2626; font-weight:600")
+#                 else:
+#                     dl.set_text("₹0")
+#                     dl.style("color:#9CA3AF")
+
+#     total_diff = total_listed - total_charged
+
+#     if getattr(state, "lbl_total_listed_price", None):
+#         state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
+
+#     if getattr(state, "lbl_total_charged_price", None):
+#         state.lbl_total_charged_price.set_text(f"₹{total_charged:,}")
+
+#     if getattr(state, "lbl_total_diff_price", None):
+#         if total_diff > 0:
+#             state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
+#             state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
+#         else:
+#             state.lbl_total_diff_price.set_text("₹0")
+#             state.lbl_total_diff_price.style("color:#9CA3AF")
+
+#     # ── 2. ACCESSORIES ──────────────────────────────────────────────
+#     acc_listed = 0
+#     acc_charged = 0
+
+#     if getattr(state, "acc_total_label", None) and getattr(state, "acc_charged", None):
+#         try:
+#             raw = state.acc_total_label.text
+#             acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
+#         except Exception:
+#             # log error
+#             acc_listed = 0
+
+#         acc_charged = int(parsed_val(state.acc_charged))
+
+#     acc_diff = acc_listed - acc_charged
+
+#     # ── 3. DISCOUNT TOTALS (LIKE PRICE) ─────────────────────────
+
+#     total_allowed_discount = 0
+#     total_given_discount = 0
+
+#     for name, inp in state.discount_inputs.items():
+#         row = state.discount_rows.get(name)
+
+#         toggle = state.discount_match_toggles.get(name)
+
+#         allowed_val = int(state.listed_prices.get(name) or 0)
+
+#         given_val = int(parsed_val(inp))
+
+#         is_active = state.visible_discount_rows.get(name, True) or row is None
+
+#         if is_active:
+#             # counts all visible rows in the allowed vl
+#             total_allowed_discount += allowed_val
+
+#             total_given_discount += given_val
+
+#         # ── per-row diff
+#         dl = state.discount_diff_labels.get(name)
+#         if dl:
+#             diff = given_val - allowed_val
+
+#             if diff > 0:
+#                 dl.set_text(f"₹{diff:,}")
+#                 dl.style("color:#DC2626; font-weight:600")
+#             else:
+#                 dl.set_text("₹0")
+#                 dl.style("color:#9CA3AF")
+
+#     # ── 4. EXCESS CALCULATION ───────────────────────────────────────
+#     adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
+
+#     total_discount_given = int(
+#         total_diff
+#         # + acc_diff
+#         + int(parsed_val(getattr(state, "total_discount_booking", None)))
+#         + total_given_discount
+#         + int(parsed_val(getattr(state, "other_discount_delivery", None)))
+#         - adjustment
+#     )
+
+#     excess = int(max(0, total_discount_given - total_allowed_discount))
+
+#     # ── 5. UPDATE LABELS ────────────────────────────────────────────
+#     if state.total_allowed:
+#         state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
+
+#     if state.total_given:
+#         state.total_given.set_text(f"₹{total_discount_given:,}")
+
+#     if state.lbl_allowed_lv:
+#         state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
+
+#     if state.lbl_discount_lv:
+#         state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
+
+#     if getattr(state, "lbl_excess_discount", None):
+#         state.lbl_excess_discount.set_text(f"₹{excess:,}")
+#         state.lbl_excess_discount.style(
+#             "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
+#         )
+
+#     if getattr(state, "lbl_excess_lv", None):
+#         state.lbl_excess_lv.set_text(f"₹{excess:,}")
+#         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
+
+
+def get_conditions(state) -> dict:
+
+    return {
+        key: bool(cb.value)
+        for key, cb in getattr(
+            state,
+            "condition_cbs",
+            {},
+        ).items()
+    }
+
+
+def _fs_revalidate(state: FormState) -> None:
+
+    if state.is_hydrating:
+        return
+
+    print("from _fs_revalidate: LIVE UPDATE")
+    ok, msg = state.is_valid()
+
+    if state.submit_btn:
+        state.submit_btn.set_enabled(ok)
+
+    if state.error_banner and state.error_msg_label:
+        if not ok:
+            state.error_msg_label.set_text(msg)
+            state.error_banner.set_visibility(True)
+        else:
+            state.error_banner.set_visibility(False)
+
+
+def _fs_clear_prices(state: FormState) -> None:
+    for inp in state.price_inputs.values():
+        inp.set_value(None)
+
+
+def _fs_show_error(state: FormState, msg: str) -> None:
+    if state.error_banner and state.error_msg_label:
+        state.error_msg_label.set_text(msg)
+        state.error_banner.set_visibility(True)
+
+
+def _fs_clear_error(state: FormState) -> None:
+    if state.error_banner and state.error_msg_label:
+        state.error_banner.set_visibility(False)
+        state.error_msg_label.set_text("")
+
+
+# ══════════════════════════════════════════════════════════════
+# SUBMIT HANDLER
+# ══════════════════════════════════════════════════════════════
+# async def _fs_handle_submit(state: FormState) -> None:
+#     if not state.error_banner or not state.error_msg_label:
+#         return
+
+#     valid, msg = state.is_valid()
+#     if not valid:
+#         state.error_msg_label.set_text(msg)
+#         state.error_banner.set_visibility(True)
+#         return
+
+#     payload = build_payload(state)
+
+#     try:
+#         if state.stage == "delivery":
+#             if state.txn_id:
+#                 await api_put(f"/transactions/{state.txn_id}", payload)
+#                 ui.notify("Delivery Data saved", color="green", type="positive")
+#             else:
+#                 await api_post("/transactions", payload)
+#                 ui.notify(
+#                     "Delivery Created Successfully", color="green", type="positive"
+#                 )
+#         else:
+#             await api_post("/transactions", payload)
+#             ui.notify("Booking Created Successfully", color="green", type="positive")
+
+#     except Exception as e:
+#         state.error_msg_label.set_text(str(e))
+#         state.error_banner.set_visibility(True)
+
+
+async def _fs_handle_submit(state: FormState) -> None:
+
+    if not state.error_banner or not state.error_msg_label:
+        return
+
+    valid, msg = state.is_valid()
+
+    if not valid:
+        state.error_msg_label.set_text(msg)
+        state.error_banner.set_visibility(True)
+        return
+
+    payload = build_payload(state)
+    print("EDIT MODE:", state.edit_mode)
+    print("TXN ID:", state.txn_id)
+    print("FORM MODE:", state.form_mode)
+    print("STAGE:", state.stage)
+
+    try:
+        # ─────────────────────────────────────
+        # UPDATE FLOW
+        # booking_edit
+        # delivery_from_booking
+        # delivery_edit
+        # ─────────────────────────────────────
+        if state.edit_mode and state.txn_id:
+            await api_put(
+                f"/transactions/{state.txn_id}",
+                payload,
+            )
+
+            if state.stage == "delivery":
+                if state.form_mode == "delivery_from_booking":
+                    ui.notify(
+                        "Booking converted to Delivery successfully",
+                        color="green",
+                        type="positive",
+                    )
+
+                else:
+                    ui.notify(
+                        "Delivery updated successfully",
+                        color="green",
+                        type="positive",
+                    )
+
+            else:
+                ui.notify(
+                    "Booking updated successfully",
+                    color="green",
+                    type="positive",
+                )
+
+        # ─────────────────────────────────────
+        # CREATE FLOW
+        # booking_create
+        # delivery_direct_create
+        # ─────────────────────────────────────
+        else:
+            await api_post(
+                "/transactions",
+                payload,
+            )
+
+            if state.stage == "delivery":
+                ui.notify(
+                    "Delivery created successfully",
+                    color="green",
+                    type="positive",
+                )
+
+            else:
+                ui.notify(
+                    "Booking created successfully",
+                    color="green",
+                    type="positive",
+                )
+
+        # ─────────────────────────────────────
+        # SUCCESS UI
+        # ─────────────────────────────────────
+        state.error_banner.set_visibility(False)
+
+    except Exception as e:
+        state.error_msg_label.set_text(str(e))
+
+        state.error_banner.set_visibility(True)
+
+
+def build_payload(state: FormState) -> dict:
+
+    def val(x):
+        return x.value if x else None
+
+    def lbl_val(x, chr_slice=1):
+        val = x.text[chr_slice:].strip().replace(",", "").replace(".", "")
+        return int(val) if val else None
+
+    def intval(x):
+        if not x:
+            return 0
+        v = x.value
+        if not v:
+            return 0
+        try:
+            v_str = str(v).replace(",", "").strip()
+            import re
+
+            if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
+                return int(eval(v_str))
+            return int(v_str)
+        except Exception:
+            return 0
+
+    # ─────────────────────────────
+    # COMPONENTS (CRITICAL)
+    # ─────────────────────────────
+    actual_amounts = {}
+    allowed_amounts = {}
+
+    # Price components
+    for name, inp in state.price_inputs.items():
+        row = state.price_rows.get(name)
+        if row is not None and not row.visible:
+            actual_amounts[name] = 0
+        else:
+            actual_amounts[name] = intval(inp)
+
+    # Discount components
+    for name, row in state.discount_rows.items():
+        if row.visible:
+            inp = state.discount_inputs.get(name)
+            actual_amounts[name] = intval(inp) if inp else 0
+        else:
+            actual_amounts[name] = 0
+
+    for name, value in state.listed_prices.items():
+        price_row = state.price_rows.get(name)
+        discount_row = state.discount_rows.get(name)
+
+        # ── PRICE COMPONENT ─────────────────────────
+        if price_row:
+            if price_row.visible:
+                allowed_amounts[name] = value  # ALWAYS include
+            else:
+                allowed_amounts[name] = 0
+
+        # ── DISCOUNT COMPONENT ─────────────────────
+        elif discount_row:
+            if discount_row.visible:
+                allowed_amounts[name] = value
+            else:
+                allowed_amounts[name] = 0
+
+        # ── SAFETY (unknown component) ──────────────
+        else:
+            allowed_amounts[name] = value
+
+    # ─────────────────────────────
+    # CONDITIONS
+    # ─────────────────────────────
+    conditions = {key: (cb.value or False) for key, cb in state.condition_cbs.items()}
+    user = get_user()
+    # ─────────────────────────────
+    # DELIVERY CHECKS
+    # ─────────────────────────────
+    delivery_checks = {
+        key: (cb.value or False) for key, cb in state.delivery_cbs.items()
+    }
+
+    booking_checks = {key: (cb.value or False) for key, cb in state.booking_cbs.items()}
+
+    # ─────────────────────────────
+    # ACCESSORIES
+    # ─────────────────────────────
+    # selected_ids list (for backend model logic)
+    selected_acc_ids = state.acc_select.value or []
+
+    # helper for flat listing
+    items_list = []
+    for aid in selected_acc_ids:
+        acc_info = state.accessory_map.get(int(aid))
+        if acc_info:
+            items_list.append(
+                {"id": aid, "name": acc_info["name"], "price": acc_info["listed_price"]}
+            )
+
+    total_listed = sum(item["price"] for item in items_list)
+
+    accessories_details = {
+        "items": items_list,
+        "charged_amount": intval(state.acc_charged),
+        "allowed_amount": total_listed,
+    }
+
+    # ─────────────────────────────
+    # INVOICE
+    # ─────────────────────────────
+    invoice_details = {
+        "invoice_number": val(state.invoice_number),
+        "invoice_date": val(state.invoice_date),
+        "ex_showroom_price": intval(state.invoice_ex_showroom),
+        "discount": intval(state.invoice_discount),
+        "taxable_value": intval(state.invoice_taxable_value),
+        "cgst": intval(state.invoice_cgst),
+        "sgst": intval(state.invoice_sgst),
+        "igst": intval(state.invoice_igst),
+        "cess": intval(state.invoice_cess),
+        "total": intval(state.invoice_total),
+    }
+    print(json.dumps(invoice_details, indent=4))
+
+    # ─────────────────────────────
+    # PAYMENT
+    # ─────────────────────────────
+    payment_details = {
+        "cash": intval(state.payment_cash),
+        "bank": intval(state.payment_bank),
+        "finance": intval(state.payment_finance),
+        "exchange": intval(state.payment_exchange),
+    }
+
+    # ─────────────────────────────
+    # MAIN PAYLOAD
+    # ─────────────────────────────
+    print(user)
+    payload = {
+        # ── REQUIRED ──
+        "variant_id": (state.variant_select.value if state.variant_select else None),
+        "booking_date": val(state.booking_date),
+        "booking_amt": intval(state.booking_amt),
+        "booking_receipt_num": val(state.booking_receipt_num),
+        "outlet_id": (state.outlet_select.value if state.outlet_select else None),
+        "sales_executive_id": (state.exec_select.value if state.exec_select else None),
+        "user_id": user.get("id"),
+        # ── CUSTOMER ──
+        "customer": {
+            "name": val(state.cust_name),
+            "mobile_number": val(state.cust_mobile),
+            "email": val(state.cust_email),
+            "pan_number": val(state.cust_pan),
+            "aadhar_number": val(state.cust_aadhar),
+            "address": val(state.cust_address),
+            "city": val(state.cust_city),
+            "pin_code": val(state.cust_pincode),
+        },
+        # ── VEHICLE ──
+        "customer_file_number": val(state.cust_file_no),
+        "vin_number": val(state.vin_no),
+        "color": val(state.car_color),
+        "engine_number": val(state.engine_no),
+        "model_year": val(state.model_year),
+        "registration_number": val(state.vehicle_regn_no),
+        "registration_date": val(state.regn_date),
+        "price_adjustment": val(state.adjustment_input),
+        # ── CORE LOGIC ──
+        "actual_amounts": actual_amounts,
+        "allowed_amounts": allowed_amounts,
+        "conditions": conditions,
+        "delivery_checklist": delivery_checks,
+        # ── JSON SECTIONS ──
+        "accessories_details": accessories_details,
+        "accessory_ids": selected_acc_ids,  # Explicitly for TransactionService
+        "invoice_details": invoice_details,
+        "payment_details": payment_details,
+        # ── OPTIONAL FUTURE SAFE ──
+        "finance_details": {},
+        "exchange_details": {},
+        # ── AUDIT INFO ──
+        "audit_info": {
+            "observations": val(state.audit_obs),
+            "actions": val(state.audit_action),
+        },
+    }
+
+    if state.stage == "booking":
+        payload["stage"] = "booking"
+        payload["booking_checklist"] = booking_checks
+        payload["booking_file_incomplete"] = any(
+            v is not True for v in booking_checks.values()
+        )
+        payload["discount_booking"] = intval(
+            state.total_discount_booking
+        )  # this is the discount given that doesn't fall under any head OTHER DISCOUNT
+
+        payload["total_discount_booking"] = lbl_val(
+            state.lbl_discount_lv
+        )  # after adding differences and subtracting price adjustment
+        payload["price_offered_booking"] = lbl_val(state.lbl_total_offered_price)
+        payload["adjustment_booking"] = intval(state.adjustment_input)
+        payload["excess_booking"] = lbl_val(state.lbl_excess_discount)
+
+    elif state.stage == "delivery":
+        payload["stage"] = "delivery"
+        payload["booking_id"] = state.booking_id
+        payload["delivery_date"] = val(state.delivery_date)
+        payload["is_direct_delivery"] = state.is_direct_delivery
+        payload["overrides"] = state.overrides
+        payload["delivery_file_incomplete"] = any(
+            v is not True for v in delivery_checks.values()
+        )
+        payload["adjustment_delivery"] = intval(state.adjustment_input)
+        payload["other_discount_delivery"] = intval(state.other_discount_delivery)
+        payload["total_actual_discount"] = lbl_val(state.total_given)
+        payload["total_allowed_discount"] = lbl_val(state.total_allowed)
+        payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
+
+    print("DELIVERY CHECKLIST", payload.get("delivery_checklist"))
+    print("ADJUSTMENT Booking", payload.get("adjustment_booking"))
+    print("ADJUSTMENT Delivery", payload.get("adjustment_delivery"))
+
+    return payload
+
+
+def refresh_visibility(state: FormState) -> None:
+
+    def is_checked(key: str) -> bool:
+        cb = state.condition_cbs.get(key)
+        return bool(cb and cb.value)
+
+    def norm(s: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9]", "", s).lower()
+
+    discount_visibility_rules = {
+        norm("Additional For POI /Corporate Customers"): is_checked("corporate")
+        or is_checked("govt_employee"),
+        norm("Additional For Exchange Customers"): is_checked("exchange"),
+        norm("Additional For Scrappage Customers"): is_checked("scrap"),
+        norm("Additional For Upward Sales Customers"): is_checked("upgrade"),
+        norm("Additional Loyalty (EV TO EV)"): is_checked("loyalty_ev_ev"),
+        norm("Additional Loyalty (ICE TO EV)"): is_checked("loyalty_ice_ev"),
+        norm("Green Bonus"): is_checked("green_bonus"),
+    }
+
+    price_visibility_rules = {
+        norm("Accessories"): is_checked("acc_kit"),
+        norm("FasTag"): is_checked("fastag"),
+        norm("Extended Warranty"): is_checked("ext_warr"),
+        norm("AMC"): is_checked("amc"),
+        norm("Insurance (With Depreciation Cover)"): not is_checked("self_insurance"),
+        norm("Insurance"): not is_checked("self_insurance"),
+    }
+
+    # 2. Set row visibility and update rows/labels
+    for name, row in state.discount_rows.items():
+        n_name = norm(name)
+        is_default = name in _DEFAULT_DISC
+        visible = is_default or discount_visibility_rules.get(n_name, False)
+        row.set_visibility(visible)
+        state.visible_discount_rows[name] = visible
+        row.update()
+        # Also update child labels if present
+        if (
+            hasattr(state, "discount_diff_labels")
+            and name in state.discount_diff_labels
+        ):
+            state.discount_diff_labels[name].update()
+        if (
+            hasattr(state, "discount_given_labels")
+            and name in state.discount_given_labels
+        ):
+            state.discount_given_labels[name].update()
+        if (
+            hasattr(state, "discount_listed_labels")
+            and name in state.discount_listed_labels
+        ):
+            state.discount_listed_labels[name].update()
+
+    for name, row in state.price_rows.items():
+        n_name = norm(name)
+        visible = price_visibility_rules.get(
+            n_name,
+            True,
+        )
+        row.set_visibility(visible)
+        state.visible_price_rows[name] = visible
+        row.update()
+        if hasattr(state, "price_diff_labels") and name in state.price_diff_labels:
+            state.price_diff_labels[name].update()
+        if hasattr(state, "price_listed_labels") and name in state.price_listed_labels:
+            state.price_listed_labels[name].update()
+
+    # 3. Revalidate if needed
+    if getattr(state, "form_ready", False) and not getattr(
+        state, "is_hydrating", False
+    ):
+        _fs_revalidate(state)
+        _fs_update_live(state)
+
+
+async def load_reference_data(state: FormState):
+
+    ref = await fetch_reference_data()
+    if not isinstance(ref, dict):
+        ui.notify("Failed to fetch reference data from backend", type="negative")
+        return
+    state.cars = ref["cars"]
+    state.variants = ref["variants"]
+    state.components = ref["components"]
+    state.outlets = ref["outlets"]
+    state.executives = ref["executives"]
+
+    state.accessory_map = {acc["id"]: acc for acc in ref["accessories"]}
+
+
+async def load_transaction(state: FormState):
+
+    if not state.transaction_id:
+        return
+
+    try:
+        txn = await api_get(f"/transactions/{state.transaction_id}")
+
+        state.transaction_data = txn
+        state.booking_data = txn
+
+    except Exception as e:
+        print(str(e))
+
+        ui.notify(
+            "Failed to load transaction",
+            type="negative",
+        )
+
+
+def build_form(state: FormState):
+
+    if state.form_mode in [
+        "booking_create",
+        "booking_edit",
+    ]:
+        with ui.row().classes("w-full justify-between items-center"):
+            ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
+
+        build_vehicle_section(state)
+        build_booking_section(state)
+        build_customer_section(state)
+        build_conditions_section(state)
+        build_accessories_section(state)
+        build_prices_section(state)
+        build_booking_checklist_section(state)
+        build_audit_section(state)
+
+    elif state.form_mode == "delivery_direct_create":
+        ui.label("Direct Delivery MIS Form").classes("text-2xl text-bold mb-5")
+
+        build_vehicle_section(state)
+        build_booking_section(state)
+        build_customer_section(state)
+        build_conditions_section(state)
+        build_accessories_section(state)
+        build_prices_section(state)
+        build_delivery_checklist_section(state)
+        build_invoice_section(state)
+        build_payment_section(state)
+        build_audit_section(state)
+
+    elif state.form_mode in [
+        "delivery_from_booking",
+        "delivery_edit",
+    ]:
+        title = (
+            "Delivery (From Booking)"
+            if state.form_mode == "delivery_from_booking"
+            else "Edit Delivery Entry"
+        )
+
+        ui.label(title).classes("text-2xl text-bold mb-5")
+
+        build_vehicle_section(state)
+        build_booking_section(state)
+        build_customer_section(state)
+        build_conditions_section(state)
+        build_accessories_section(state)
+        build_prices_section(state)
+        build_delivery_checklist_section(state)
+        build_invoice_section(state)
+        build_payment_section(state)
+        build_audit_section(state)
+
+    build_live_bar(state)
+    build_action_bar(state)
+
+
+async def hydrate_form(
+    state: FormState,
+    txn: dict,
+):
+
+    if not txn:
+        return
+
+    state.is_hydrating = True
+
+    try:
+        # ─────────────────────────────
+        # VEHICLE / CORE SELECTS
+        # ─────────────────────────────
+
+        outlet_id = txn.get("outlet_id")
+
+        if outlet_id and state.outlet_select:
+            state.outlet_select.set_value(outlet_id)
+
+        exec_id = txn.get("sales_executive_id")
+
+        if exec_id and state.exec_select:
+            state.exec_select.set_value(exec_id)
+        print("TXN VARIANT ID:", txn.get("variant_id"))
+        variant_id = txn.get("variant_id")
+
+        car_id = None
+
+        if variant_id:
+            variant_obj = next(
+                (v for v in state.variants if v["id"] == variant_id),
+                None,
+            )
+
+            if variant_obj:
+                car_id = variant_obj.get("car_id")
+
+        if car_id and state.car_select:
+            state.car_select.set_value(car_id)
+
+            state.car_id = car_id
+
+            await _fs_on_car_change(
+                car_id,
+                state,
+                preserve_variant=True,
+            )
+
+        if variant_id and state.variant_select:
+            state.variant_select.set_value(variant_id)
+
+            state.variant_id = variant_id
+
+        if state.car_color:
+            state.car_color.set_value(txn.get("color"))
+
+        # ─────────────────────────────
+        # BOOKING
+        # ─────────────────────────────
+
+        if state.booking_date:
+            state.booking_date.set_value(txn.get("booking_date"))
+
+        if state.booking_amt:
+            state.booking_amt.set_value(txn.get("booking_amt"))
+
+        if state.booking_receipt_num:
+            state.booking_receipt_num.set_value(txn.get("booking_receipt_num"))
+
+        # ─────────────────────────────
+        # CUSTOMER
+        # ─────────────────────────────
+
+        customer_map = {
+            state.cust_name: txn.get("customer_name"),
+            state.cust_mobile: txn.get("mobile_number"),
+            state.cust_email: txn.get("email"),
+            state.cust_pan: txn.get("pan_number"),
+            state.cust_aadhar: txn.get("aadhar_number"),
+            state.cust_address: txn.get("address"),
+            state.cust_city: txn.get("city"),
+            state.cust_pincode: txn.get("pin_code"),
+            state.vin_no: txn.get("vin_number"),
+            state.engine_no: txn.get("engine_number"),
+            state.vehicle_regn_no: txn.get("registration_number"),
+            state.car_color: txn.get("color"),
+            state.model_year: txn.get("model_year"),
+            state.cust_file_no: txn.get("customer_file_number"),
+        }
+
+        for widget, value in customer_map.items():
+            if widget and value not in [
+                None,
+                "",
+            ]:
+                widget.set_value(value)
+
+        # ─────────────────────────────
+        # CONDITIONS
+        # ─────────────────────────────
+
+        for key, cb in getattr(
+            state,
+            "condition_cbs",
+            {},
+        ).items():
+            val = txn.get(
+                f"cond_{key}",
+                False,
+            )
+
+            cb.set_value(bool(val))
+        print("BOOKING CHECKLIST:", txn.get("booking_checklist"))
+
+        print("DELIVERY CHECKLIST:", txn.get("delivery_checklist"))
+
+        # ─────────────────────────────
+        # BOOKING CHECKLIST
+        # ─────────────────────────────
+        for key, cb in state.booking_cbs.items():
+            cb.set_value(
+                bool(
+                    txn.get(
+                        f"bk_checks_{key}",
+                        False,
+                    )
+                )
+            )
+        # ─────────────────────────────
+        # DELIVERY CHECKLIST
+        # ─────────────────────────────
+        for key, cb in state.delivery_cbs.items():
+            cb.set_value(
+                bool(
+                    txn.get(
+                        f"del_checks_{key}",
+                        False,
+                    )
+                )
+            )
+        # ─────────────────────────────
+        # PRICE INPUTS
+        # ─────────────────────────────
+        await _fs_try_price_preload(
+            state,
+        )
+        for (
+            name,
+            inp,
+        ) in getattr(
+            state,
+            "price_inputs",
+            {},
+        ).items():
+            val = txn.get(f"{name}_actual")
+
+            if val not in [
+                None,
+                "",
+            ]:
+                inp.set_value(val)
+
+        # ─────────────────────────────
+        # DISCOUNT INPUTS
+        # ─────────────────────────────
+
+        for (
+            name,
+            inp,
+        ) in getattr(
+            state,
+            "discount_inputs",
+            {},
+        ).items():
+            val = txn.get(f"{name}_actual")
+
+            if val not in [
+                None,
+                "",
+            ]:
+                inp.set_value(val)
+
+        # ─────────────────────────────
+        # SUMMARY FIELDS
+        # ─────────────────────────────
+
+        if state.total_discount_booking:
+            state.total_discount_booking.set_value(
+                txn.get(
+                    "discount_booking",
+                    0,
+                )
+            )
+
+        if getattr(state, "other_discount_delivery", None):
+            state.other_discount_delivery.set_value(
+                txn.get(
+                    "other_discount_delivery",
+                    0,
+                )
+            )
+
+        if state.adjustment_input:
+            state.adjustment_input.set_value(
+                txn.get(
+                    "adjustment_booking",
+                    0,
+                )
+            )
+        hydrate_invoice_section(
+            state,
+            txn,
+        )
+
+        hydrate_payment_section(
+            state,
+            txn,
+        )
+
+        hydrate_audit_section(
+            state,
+            txn,
+        )
+
+        hydrate_accessories_section(
+            state,
+            txn,
+        )
+
+        # ─────────────────────────────
+        # UI REFRESH
+        # ─────────────────────────────
+
+        refresh_visibility(state)
+
+        _fs_update_live(state)
+
+        _fs_revalidate(state)
+
+    finally:
+        state.is_hydrating = False
+
+
+def hydrate_invoice_section(
+    state: FormState,
+    txn: dict,
+):
+
+    mapping = {
+        "invoice_number": state.invoice_number,
+        "invoice_date": state.invoice_date,
+        "ex_showroom_price": state.invoice_ex_showroom,
+        "discount": state.invoice_discount,
+        "taxable_value": state.invoice_taxable_value,
+        "cgst": state.invoice_cgst,
+        "sgst": state.invoice_sgst,
+        "igst": state.invoice_igst,
+        "cess": state.invoice_cess,
+        "total": state.invoice_total,
+    }
+
+    for key, widget in mapping.items():
+        if not widget:
+            continue
+
+        value = txn.get(
+            key,
+            "",
+        )
+
+        if value is None:
+            value = ""
+
+        widget.set_value(value)
+
+
+def hydrate_payment_section(
+    state: FormState,
+    txn: dict,
+):
+
+    payment = txn.get(
+        "payment_details",
+        {},
+    )
+
+    mapping = {
+        "cash": state.payment_cash,
+        "bank": state.payment_bank,
+        "finance": state.payment_finance,
+        "exchange": state.payment_exchange,
+    }
+
+    for key, widget in mapping.items():
+        if widget:
+            widget.set_value(
+                payment.get(
+                    key,
+                    0,
+                )
+            )
+
+
+def hydrate_audit_section(
+    state: FormState,
+    txn: dict,
+):
+
+    if state.audit_obs:
+        state.audit_obs.set_value(
+            txn.get(
+                "audit_observations",
+                "",
+            )
+        )
+
+    if state.audit_action:
+        state.audit_action.set_value(
+            txn.get(
+                "audit_actions",
+                "",
+            )
+        )
+
+
+def hydrate_accessories_section(
+    state: FormState,
+    txn: dict,
+):
+
+    accessories = txn.get(
+        "accessories",
+        [],
+    )
+
+    if not accessories:
+        return
+
+    selected_ids = []
+
+    total = 0
+
+    for acc in accessories:
+        acc_id = acc.get("id")
+
+        if acc_id:
+            selected_ids.append(acc_id)
+
+            total += acc.get(
+                "listed_price",
+                0,
+            )
+
+    if state.acc_select:
+        state.acc_select.set_value(selected_ids)
+
+    if state.acc_total_label:
+        state.acc_total_label.set_text(f"Total: ₹{total:,}")
+
+    charged = (
+        txn.get(
+            "Accessories_actual",
+            0,
+        )
+        or total
+    )
+
+    if state.acc_charged:
+        state.acc_charged.set_value(charged)
+
+
+# ══════════════════════════════════════════════════════════════
+#   PAGE 2: FORM
+# ══════════════════════════════════════════════════════════════
+@ui.page("/form")
+@protected_page
+async def form_page(
+    stage: str = "booking", mode: str = "booking", transaction_id: int | None = None
+) -> None:
+
+    state = FormState()
+
+    state.stage = stage
+    state.mode = mode
+
+    state.transaction_id = transaction_id
+    state.txn_id = transaction_id
+
+    state.is_edit_mode = bool(transaction_id)
+
+    state.is_delivery = stage == "delivery"
+
+    state.is_direct_delivery = mode == "direct"
+
+    state.transaction_data = None
+
+    # Detect edit mode from query param
+    if state.booking_id:
+        pass
+
+    await load_reference_data(state)
+    # TEMP explicit form mode resolution
+    # ─────────────────────────────────────────────
+
+    await resolve_form_mode(state, stage, transaction_id, mode)
+
+    # Breadcrumb label
+    bc = f"Edit Entry #{state.txn_id}" if state.edit_mode else "New Entry"
+    render_topbar(bc)
+
+    # ─────────────────────────────────────────────
+    # Load transaction data
+    # ─────────────────────────────────────────────
+    await load_transaction(state)
+
+    with ui.element("div").classes("max-w-[1200px] mx-auto p-6"):
+        # ─────────────────────────────────────────────
+        # MODE BANNER
+        # ─────────────────────────────────────────────
+        banner_modes = {
+            "booking_edit": {
+                "title": (f"✏️ Editing Booking #{state.txn_id}"),
+                "color": ("bg-blue-100 text-blue-800 border-blue-200"),
+            },
+            "delivery_from_booking": {
+                "title": (f"📦 Converting Booking #{state.txn_id} to Delivery"),
+                "color": ("bg-amber-100 text-amber-800 border-amber-200"),
+            },
+            "delivery_edit": {
+                "title": (f"✏️ Editing Delivery #{state.txn_id}"),
+                "color": ("bg-green-100 text-green-800 border-green-200"),
+            },
+        }
+
+        banner = banner_modes.get(state.form_mode)
+
+        if banner:
+            variant_label = state.transaction_data.get("variant_name") or ""
+
+            with ui.row().classes("items-center gap-3 mb-4"):
+                ui.label(
+                    f"{banner['title']}"
+                    f"{(' — ' + variant_label) if variant_label else ''}"
+                ).classes(
+                    f"{banner['color']} "
+                    "border px-3 py-1 rounded-md "
+                    "text-[12px] font-medium"
+                )
+
+                ui.label("Fields pre-filled from saved data").classes(
+                    "text-[11px] text-gray-400"
+                )
+
+        build_form(state)
+
+    # ─────────────────────────────────────────────
+    # Hydrate form
+    # ─────────────────────────────────────────────
+    if state.transaction_data:
+        await hydrate_form(state, state.transaction_data)
+
+    update_invoice_tax_visibility(state)
+
+    state.form_ready = True
+    attach_form_handlers(state)
+
+    refresh_visibility(state)
+
+    _fs_update_live(state)
+
+    _fs_revalidate(state)
+
+
+# ══════════════════════════════════════════════════════════════
+# RUN
+# ══════════════════════════════════════════════════════════════
 def build_complaint_dealership_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
@@ -5871,36 +7871,6 @@ def build_complaint_remarks_section(state: FormState) -> None:
             )
 
 
-def build_live_bar(state: FormState) -> None:
-    with ui.row().classes(
-        "w-full bg-[#0F1623] text-white p-3 px-6 rounded-xl items-center gap-6 shadow-lg mb-4"
-    ):
-        ui.label("LIVE TOTALS").classes(
-            "text-[10px] font-bold tracking-[1.2px] text-white/40 uppercase"
-        )
-        ui.element("div").classes("w-[1px] h-4 bg-white/10")
-
-        with ui.row().classes("items-center gap-2"):
-            ui.label("Allowable Discount (As per Price List):").classes(
-                "text-[11px] text-white/50"
-            )
-            state.lbl_allowed_lv = ui.label("₹0").classes(
-                "text-[16px] font-bold text-white mono"
-            )
-
-        with ui.row().classes("items-center gap-2"):
-            ui.label("Discount Given:").classes("text-[11px] text-white/50")
-            state.lbl_discount_lv = ui.label("₹0").classes(
-                "text-[16px] font-bold text-white mono"
-            )
-
-        with ui.row().classes("items-center gap-2"):
-            ui.label("Excess Discount:").classes("text-[11px] text-white/50")
-            state.lbl_excess_lv = ui.label("—").classes(
-                "text-[16px] font-bold text-white/30 mono"
-            )
-
-
 def build_complaint_action_bar(state: FormState) -> None:
     with ui.row().classes(
         "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
@@ -5945,893 +7915,117 @@ def build_complaint_action_bar(state: FormState) -> None:
         )
 
 
-def build_action_bar(state: FormState) -> None:
-    with ui.row().classes(
-        "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
-    ) as banner:
-        state.error_banner = banner
-        ui.label("⚠️").classes("text-red-500")
-        state.error_msg_label = ui.label("").classes(
-            "text-red-800 text-[13px] font-medium"
-        )
+def populate_from_complaint(state: FormState, complaint: dict):
+    import asyncio
 
-    state.error_banner.set_visibility(False)
-
-    with ui.row().classes("w-full items-center justify-between py-4"):
-        ui.button("← Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes(
-            "text-gray-500 text-[13px] hover:text-gray-800"
-        ).props("flat no-caps")
-        state.submit_btn = (
-            ui.button(
-                "Save Entry" if not state.edit_mode else "Update Entry",
-                on_click=lambda: _fs_handle_submit(state),
-            )
-            .classes(
-                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
-            )
-            .props("no-caps unelevated")
-        )
-
-
-# ══════════════════════════════════════════════════════════════
-# FORM EVENT HANDLERS
-# ══════════════════════════════════════════════════════════════
-async def _fs_on_car_change(car_id, state: FormState) -> None:
-    state.car_id = car_id
-    state.variant_id = None
-    if state.variant_select is None:
-        return
-    state.variant_select.set_value(None)
-    state.variant_select.options = {}
-    state.variant_select.update()
-    _fs_clear_prices(state)
-    if not car_id:
-        return
-    try:
-        variants = await api_get(f"/cars/{car_id}/variants")
-        state.variant_select.options = {
-            v["id"]: v["full_variant_name"]
-            for v in sorted(
-                variants, key=lambda x: (x.get("full_variant_name") or "").lower()
-            )
-        }
-        state.variant_select.update()
-    except Exception as ex:
-        _fs_show_error(state, f"Failed to load variants: {ex}")
-
-
-async def _fs_on_variant_change(variant_id, state: FormState) -> None:
-    state.variant_id = variant_id
-
-    # force UI sync before validation
-    await ui.run_javascript("")
-
-    _fs_revalidate(state)
-
-    if variant_id:
-        await _fs_try_price_preload(state)
-
-
-async def _fs_try_price_preload(state: FormState) -> None:
-    """Call GET /price-list/preview when both variant + date are known."""
-    # Extract booking date from available sources
-    booking_date = None
-    if state.booking_date and state.booking_date.value and state.model_year.value:
-        booking_date = state.booking_date.value
-    elif state.delivery_date and state.delivery_date.value and state.model_year.value:
-        booking_date = state.delivery_date.value
-    if not state.variant_id or not booking_date or not state.model_year:
+    if not complaint:
         return
 
-    try:
-        booking_date = state.booking_date.value
-        model_year = state.model_year.value
-        preview = await api_get(
-            f"/price-list/preview?variant_id={state.variant_id}&booking_date={booking_date}&model_year={model_year}"
-        )
-        # ── Store listed prices (source of truth) ──
-        state.listed_prices = preview or {}
-        filled = 0
-
-        for name, value in state.listed_prices.items():
-            if value is None:
-                continue
-
-            formatted = f"₹{int(value):,}"
-
-            # ── Update Listed Price Labels ──
-            if name in state.price_listed_labels:
-                state.price_listed_labels[name].set_text(formatted)
-
-            if name in state.discount_listed_labels:
-                state.discount_listed_labels[name].set_text(formatted)
-
-            # ── Auto-fill ONLY if toggle is ON ──
-            if name in state.price_match_toggles:
-                toggle = state.price_match_toggles[name]
-                inp = state.price_inputs.get(name)
-
-                if toggle.value and inp:
-                    inp.set_value(int(value))
-                    inp.props("readonly")
-                    filled += 1
-
-            if name in state.discount_match_toggles:
-                toggle = state.discount_match_toggles[name]
-                inp = state.discount_inputs.get(name)
-
-                if toggle.value and inp:
-                    inp.set_value(int(value))
-                    inp.props("readonly")
-                    filled += 1
-
-        if state.invoice_ex_showroom:
-            # Match main.py line 1516
-            val = state.listed_prices.get("Ex Showroom Price", 0)
-            state.invoice_ex_showroom.set_value(val)
-
-        _fs_update_live(state)
-
-        if filled:
-            ui.notify(
-                f"✓ {filled} field{'s' if filled > 1 else ''} synced with listed price.",
-                type="info",
-                position="top-right",
-                timeout=2500,
-            )
-
-    except Exception as e:
-        print(e)
-        pass  # best-effort; silently skip if endpoint missing
-
-
-def _fs_update_live(state) -> None:
-    # ── 1. PRICE TOTALS ─────────────────────────────────────────────
-
-    total_listed = 0
-    total_charged = 0
-
-    for name, inp in state.price_inputs.items():
-        row = state.price_rows.get(name)
-
-        if row is not None and not row.visible:
-            dl = state.price_diff_labels.get(name)
-            if dl:
-                dl.set_text("—")
-                dl.style("color:#9CA3AF")
-            continue
-
-        toggle = state.price_match_toggles.get(name)
-        is_active = (toggle.value if toggle else False) or bool(
-            inp.value and str(inp.value).strip()
-        )
-
-        listed_val = int(state.listed_prices.get(name) or 0)
-        charged_val = int(parsed_val(inp))
-
-        if is_active:
-            total_listed += listed_val
-
-        total_charged += charged_val
-
-        dl = state.price_diff_labels.get(name)
-        if dl:
-            if not is_active:
-                dl.set_text("—")
-                dl.style("color:#9CA3AF")
-            else:
-                diff = listed_val - charged_val
-                if diff > 0:
-                    dl.set_text(f"₹{diff:,}")
-                    dl.style("color:#DC2626; font-weight:600")
-                else:
-                    dl.set_text("₹0")
-                    dl.style("color:#9CA3AF")
-
-    total_diff = total_listed - total_charged
-
-    if getattr(state, "lbl_total_listed_price", None):
-        state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
-
-    if getattr(state, "lbl_total_charged_price", None):
-        state.lbl_total_charged_price.set_text(f"₹{total_charged:,}")
-
-    if getattr(state, "lbl_total_diff_price", None):
-        if total_diff > 0:
-            state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
-            state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
-        else:
-            state.lbl_total_diff_price.set_text("₹0")
-            state.lbl_total_diff_price.style("color:#9CA3AF")
-
-    # ── 2. ACCESSORIES ──────────────────────────────────────────────
-    acc_listed = 0
-    acc_charged = 0
-
-    if getattr(state, "acc_total_label", None) and getattr(state, "acc_charged", None):
-        try:
-            raw = state.acc_total_label.text
-            acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
-        except Exception:
-            # log error
-            acc_listed = 0
-
-        acc_charged = int(parsed_val(state.acc_charged))
-
-    acc_diff = acc_listed - acc_charged
-
-    # ── 3. DISCOUNT TOTALS (LIKE PRICE) ─────────────────────────
-
-    total_allowed_discount = 0
-    total_given_discount = 0
-
-    for name, inp in state.discount_inputs.items():
-        row = state.discount_rows.get(name)
-
-        if row is not None and not row.visible:
-            dl = state.discount_diff_labels.get(name)
-            if dl:
-                dl.set_text("—")
-                dl.style("color:#9CA3AF")
-            continue
-
-        toggle = state.discount_match_toggles.get(name)
-        is_active = (toggle.value if toggle else False) or bool(
-            inp.value and str(inp.value).strip()
-        )
-
-        allowed_val = int(state.listed_prices.get(name) or 0)
-        given_val = int(parsed_val(inp))
-        # counts all visible rows in the allowed vl
-        total_allowed_discount += allowed_val
-
-        total_given_discount += given_val
-
-        # ── per-row diff
-        dl = state.discount_diff_labels.get(name)
-        if dl:
-            diff = given_val - allowed_val
-
-            if diff > 0:
-                dl.set_text(f"₹{diff:,}")
-                dl.style("color:#DC2626; font-weight:600")
-            else:
-                dl.set_text("₹0")
-                dl.style("color:#9CA3AF")
-
-    # ── 4. EXCESS CALCULATION ───────────────────────────────────────
-    adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
-
-    total_discount_given = int(
-        total_diff
-        # + acc_diff
-        + int(parsed_val(getattr(state, "total_discount_booking", None)))
-        + total_given_discount
-        + int(parsed_val(getattr(state, "other_discount_delivery", None)))
-        - adjustment
-    )
-
-    excess = int(max(0, total_discount_given - total_allowed_discount))
-
-    # ── 5. UPDATE LABELS ────────────────────────────────────────────
-    if state.total_allowed:
-        state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
-
-    if state.total_given:
-        state.total_given.set_text(f"₹{total_discount_given:,}")
-
-    if state.lbl_allowed_lv:
-        state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
-
-    if state.lbl_discount_lv:
-        state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
-
-    if getattr(state, "lbl_excess_discount", None):
-        state.lbl_excess_discount.set_text(f"₹{excess:,}")
-        state.lbl_excess_discount.style(
-            "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
-        )
-
-    if getattr(state, "lbl_excess_lv", None):
-        state.lbl_excess_lv.set_text(f"₹{excess:,}")
-        state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
-
-
-def _fs_update_visibility(state: FormState) -> None:
-
-    def is_checked(key: str) -> bool:
-        cb = state.condition_cbs.get(key)
-        return bool(cb and cb.value)
-
-    def norm(s: str) -> str:
-        return re.sub(r"[^a-zA-Z0-9]", "", s).lower()
-
-    discount_visibility_rules = {
-        # norm("Extra Kitty On TR cases"): is_checked("tr_case"),
-        norm("Additional For POI /Corporate Customers"): is_checked("corporate")
-        or is_checked("govt_employee"),
-        norm("Additional For Exchange Customers"): is_checked("exchange"),
-        norm("Additional For Scrappage Customers"): is_checked("scrap"),
-        norm("Additional For Upward Sales Customers"): is_checked("upgrade"),
-        norm("Additional Loyalty (EV TO EV)"): is_checked("loyalty_ev_ev"),
-        norm("Additional Loyalty (ICE TO EV)"): is_checked("loyalty_ice_ev"),
-        norm("Green Bonus"): is_checked("green_bonus"),
-    }
-
-    price_visibility_rules = {
-        norm("Accessories"): is_checked("acc_kit"),
-        norm("FasTag"): is_checked("fastag"),
-        norm("Extended Warranty"): is_checked("ext_warr"),
-        norm("AMC"): is_checked("amc"),
-        # norm("TCS"): is_checked("tcs"),
-        norm("Insurance (With Depreciation Cover)"): not is_checked("self_insurance"),
-        norm("Insurance"): not is_checked("self_insurance"),
-    }
-
-    for name, row in state.discount_rows.items():
-        n_name = norm(name)
-        if n_name in discount_visibility_rules:
-            row.set_visibility(discount_visibility_rules[n_name])
-
-    for name, row in state.price_rows.items():
-        n_name = norm(name)
-        if n_name in price_visibility_rules:
-            row.set_visibility(price_visibility_rules[n_name])
-
-    _fs_update_live(state)
-
-
-def _fs_revalidate(state: FormState) -> None:
-    _fs_update_visibility(state)
-    ok, msg = state.is_valid()
-
-    if state.submit_btn:
-        state.submit_btn.set_enabled(ok)
-
-    if state.error_banner and state.error_msg_label:
-        if not ok:
-            state.error_msg_label.set_text(msg)
-            state.error_banner.set_visibility(True)
-        else:
-            state.error_banner.set_visibility(False)
-
-
-def _fs_clear_prices(state: FormState) -> None:
-    for inp in state.price_inputs.values():
-        inp.set_value(None)
-
-
-def _fs_show_error(state: FormState, msg: str) -> None:
-    if state.error_banner and state.error_msg_label:
-        state.error_msg_label.set_text(msg)
-        state.error_banner.set_visibility(True)
-
-
-def _fs_clear_error(state: FormState) -> None:
-    if state.error_banner and state.error_msg_label:
-        state.error_banner.set_visibility(False)
-        state.error_msg_label.set_text("")
-
-
-# ══════════════════════════════════════════════════════════════
-# SUBMIT HANDLER
-# ══════════════════════════════════════════════════════════════
-async def _fs_handle_submit(state: FormState) -> None:
-    if not state.error_banner or not state.error_msg_label:
-        return
-
-    valid, msg = state.is_valid()
-    if not valid:
-        state.error_msg_label.set_text(msg)
-        state.error_banner.set_visibility(True)
-        return
-
-    payload = build_payload(state)
-
-    try:
-        if state.stage == "delivery":
-            if state.txn_id:
-                await api_put(f"/transactions/{state.txn_id}", payload)
-                ui.notify("Delivery Data saved", color="green", type="positive")
-            else:
-                await api_post("/transactions", payload)
-                ui.notify(
-                    "Delivery Created Successfully", color="green", type="positive"
-                )
-        else:
-            await api_post("/transactions", payload)
-            ui.notify("Booking Created Successfully", color="green", type="positive")
-
-    except Exception as e:
-        state.error_msg_label.set_text(str(e))
-        state.error_banner.set_visibility(True)
-
-
-def build_payload(state: FormState) -> dict:
-
-    def val(x):
-        return x.value if x else None
-
-    def lbl_val(x, chr_slice=1):
-        val = x.text[chr_slice:].strip().replace(",", "").replace(".", "")
-        return int(val) if val else None
-
-    def intval(x):
-        if not x:
-            return 0
-        v = x.value
-        if not v:
-            return 0
-        try:
-            v_str = str(v).replace(",", "").strip()
-            import re
-
-            if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
-                return int(eval(v_str))
-            return int(v_str)
-        except Exception:
-            return 0
-
-    # ─────────────────────────────
-    # COMPONENTS (CRITICAL)
-    # ─────────────────────────────
-    actual_amounts = {}
-    allowed_amounts = {}
-
-    # Price components
-    for name, inp in state.price_inputs.items():
-        row = state.price_rows.get(name)
-        if row is not None and not row.visible:
-            actual_amounts[name] = 0
-        else:
-            actual_amounts[name] = intval(inp)
-
-    # Discount components
-    for name, row in state.discount_rows.items():
-        if row.visible:
-            inp = state.discount_inputs.get(name)
-            actual_amounts[name] = intval(inp) if inp else 0
-        else:
-            actual_amounts[name] = 0
-
-    for name, value in state.listed_prices.items():
-        price_row = state.price_rows.get(name)
-        discount_row = state.discount_rows.get(name)
-
-        # ── PRICE COMPONENT ─────────────────────────
-        if price_row:
-            if price_row.visible:
-                allowed_amounts[name] = value  # ALWAYS include
-            else:
-                allowed_amounts[name] = 0
-
-        # ── DISCOUNT COMPONENT ─────────────────────
-        elif discount_row:
-            if discount_row.visible:
-                allowed_amounts[name] = value
-            else:
-                allowed_amounts[name] = 0
-
-        # ── SAFETY (unknown component) ──────────────
-        else:
-            allowed_amounts[name] = value
-
-    # ─────────────────────────────
-    # CONDITIONS
-    # ─────────────────────────────
-    conditions = {key: (cb.value or False) for key, cb in state.condition_cbs.items()}
-    user = get_user()
-    # ─────────────────────────────
-    # DELIVERY CHECKS
-    # ─────────────────────────────
-    delivery_checks = {
-        key: (cb.value or False) for key, cb in state.delivery_cbs.items()
-    }
-
-    booking_checks = {key: (cb.value or False) for key, cb in state.booking_cbs.items()}
-
-    # ─────────────────────────────
-    # ACCESSORIES
-    # ─────────────────────────────
-    # selected_ids list (for backend model logic)
-    selected_acc_ids = state.acc_select.value or []
-
-    # helper for flat listing
-    items_list = []
-    for aid in selected_acc_ids:
-        acc_info = state.accessory_map.get(int(aid))
-        if acc_info:
-            items_list.append(
-                {"id": aid, "name": acc_info["name"], "price": acc_info["listed_price"]}
-            )
-
-    total_listed = sum(item["price"] for item in items_list)
-
-    accessories_details = {
-        "items": items_list,
-        "charged_amount": intval(state.acc_charged),
-        "allowed_amount": total_listed,
-    }
-
-    # ─────────────────────────────
-    # INVOICE
-    # ─────────────────────────────
-    invoice_details = {
-        "invoice_number": val(state.invoice_number),
-        "invoice_date": val(state.invoice_date),
-        "ex_showroom_price": intval(state.invoice_ex_showroom),
-        "discount": intval(state.invoice_discount),
-        "taxable_value": intval(state.invoice_taxable_value),
-        "cgst": intval(state.invoice_cgst),
-        "sgst": intval(state.invoice_sgst),
-        "igst": intval(state.invoice_igst),
-        "cess": intval(state.invoice_cess),
-        "total": intval(state.invoice_total),
-    }
-
-    # ─────────────────────────────
-    # PAYMENT
-    # ─────────────────────────────
-    payment_details = {
-        "cash": intval(state.payment_cash),
-        "bank": intval(state.payment_bank),
-        "finance": intval(state.payment_finance),
-        "exchange": intval(state.payment_exchange),
-    }
-
-    # ─────────────────────────────
-    # MAIN PAYLOAD
-    # ─────────────────────────────
-    print(user)
-    payload = {
-        # ── REQUIRED ──
-        "variant_id": state.variant_id,
-        "booking_date": val(state.booking_date),
-        "booking_amt": intval(state.booking_amt),
-        "booking_receipt_num": val(state.booking_receipt_num),
-        "outlet_id": state.outlet_id,
-        "sales_executive_id": state.executive_id,
-        "user_id": user.get("id"),
-        # ── CUSTOMER ──
-        "customer": {
-            "name": val(state.cust_name),
-            "mobile_number": val(state.cust_mobile),
-            "email": val(state.cust_email),
-            "pan_number": val(state.cust_pan),
-            "aadhar_number": val(state.cust_aadhar),
-            "address": val(state.cust_address),
-            "city": val(state.cust_city),
-            "pin_code": val(state.cust_pincode),
-        },
-        # ── VEHICLE ──
-        "customer_file_number": val(state.cust_file_no),
-        "vin_number": val(state.vin_no),
-        "color": val(state.car_color),
-        "engine_number": val(state.engine_no),
-        "model_year": val(state.model_year),
-        "registration_number": val(state.vehicle_regn_no),
-        "registration_date": val(state.regn_date),
-        "price_adjustment": val(state.adjustment_input),
-        # ── CORE LOGIC ──
-        "actual_amounts": actual_amounts,
-        "allowed_amounts": allowed_amounts,
-        "conditions": conditions,
-        "delivery_checks": delivery_checks,
-        # ── JSON SECTIONS ──
-        "accessories_details": accessories_details,
-        "accessory_ids": selected_acc_ids,  # Explicitly for TransactionService
-        "invoice_details": invoice_details,
-        "payment_details": payment_details,
-        # ── OPTIONAL FUTURE SAFE ──
-        "finance_details": {},
-        "exchange_details": {},
-        # ── AUDIT INFO ──
-        "audit_info": {
-            "observations": val(state.audit_obs),
-            "actions": val(state.audit_action),
-        },
-    }
-
-    if state.stage == "booking":
-        payload["stage"] = "booking"
-        payload["booking_checklist"] = booking_checks
-        payload["booking_file_incomplete"] = any(
-            v is not True for v in booking_checks.values()
-        )
-        payload["discount_booking"] = intval(
-            state.total_discount_booking
-        )  # this is the discount given that doesn't fall under any head OTHER DISCOUNT
-
-        payload["total_discount_booking"] = lbl_val(
-            state.lbl_discount_lv
-        )  # after adding differences and subtracting price adjustment
-        payload["price_offered_booking"] = lbl_val(state.lbl_total_offered_price)
-        payload["adjustment_booking"] = intval(state.adjustment_input)
-        payload["excess_booking"] = lbl_val(state.lbl_excess_discount)
-
-    elif state.stage == "delivery":
-        payload["stage"] = "delivery"
-        payload["booking_id"] = state.booking_id
-        payload["delivery_date"] = val(state.delivery_date)
-        payload["is_direct_delivery"] = state.is_direct_delivery
-        payload["overrides"] = state.overrides
-        payload["delivery_file_incomplete"] = any(
-            v is not True for v in delivery_checks.values()
-        )
-        payload["adjustment_delivery"] = intval(state.adjustment_input)
-        payload["other_discount_delivery"] = intval(state.other_discount_delivery)
-        payload["total_actual_discount"] = lbl_val(state.total_given)
-        payload["total_allowed_discount"] = lbl_val(state.total_allowed)
-        payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
-
-    print("ADJUSTMENT Booking", payload.get("adjustment_booking"))
-    print("ADJUSTMENT Delivery", payload.get("adjustment_delivery"))
-
-    return payload
-
-
-# ══════════════════════════════════════════════════════════════
-# PREFILL FORM FROM EXISTING TRANSACTION (edit mode)
-# ══════════════════════════════════════════════════════════════
-async def _fs_prefill(state: FormState, txn: dict) -> None:
-    """
-    Populate all form fields from a fetched transaction dict.
-    Called after the UI is fully built in edit mode.
-    """
-    # Customer
-    cust = txn.get("customer", {})
+    # --- Customer details ---
     if state.cust_name:
-        state.cust_name.set_value(cust.get("name", ""))
+        state.cust_name.set_value(complaint.get("customer_name", ""))
     if state.cust_mobile:
-        state.cust_mobile.set_value(cust.get("mobile_number", ""))
+        state.cust_mobile.set_value(complaint.get("customer_mobile", ""))
     if state.cust_email:
-        state.cust_email.set_value(cust.get("email", "") or "")
+        state.cust_email.set_value(complaint.get("email", ""))
+    if state.cust_address:
+        state.cust_address.set_value(complaint.get("customer_address", ""))
+    if state.cust_city:
+        state.cust_city.set_value(complaint.get("customer_city", ""))
+    if state.cust_pincode:
+        state.cust_pincode.set_value(complaint.get("customer_pin", ""))
+    if state.cust_pan:
+        state.cust_pan.set_value(complaint.get("customer_pan", ""))
+    if state.cust_aadhar:
+        state.cust_aadhar.set_value(complaint.get("customer_aadhar", ""))
 
-    # Booking date
-    bd = txn.get("booking_date")
-    if bd and state.booking_date:
-        state.booking_date.set_value(bd)
+    # --- Quotation & Booking ---
+    if state.comp_quotation_no:
+        state.comp_quotation_no.set_value(complaint.get("quotation_number", ""))
+    if state.comp_quotation_date:
+        state.comp_quotation_date.set_value(complaint.get("quotation_date", ""))
+    if state.comp_net_offered:
+        state.comp_net_offered.set_value(complaint.get("net_offered_price", ""))
+    if state.comp_total_offered:
+        state.comp_total_offered.set_value(complaint.get("total_offered_price", ""))
+    if state.comp_tcs:
+        state.comp_tcs.set_value(complaint.get("tcs_amount", ""))
+    if state.comp_booking_file_no:
+        state.comp_booking_file_no.set_value(complaint.get("booking_file_number", ""))
+    if state.comp_receipt_no:
+        state.comp_receipt_no.set_value(complaint.get("receipt_number", ""))
+    if state.comp_booking_amt:
+        state.comp_booking_amt.set_value(complaint.get("booking_amount", ""))
+    if state.comp_mode_of_payment:
+        state.comp_mode_of_payment.set_value(complaint.get("mode_of_payment", ""))
+    if state.comp_instrument_date:
+        state.comp_instrument_date.set_value(complaint.get("instrument_date", ""))
+    if state.comp_instrument_no:
+        state.comp_instrument_no.set_value(complaint.get("instrument_number", ""))
+    if state.comp_bank_name:
+        state.comp_bank_name.set_value(complaint.get("bank_name", ""))
 
-    # Outlet / executive
-    if txn.get("outlet_id") and state.outlet_select:
-        state.outlet_select.set_value(txn["outlet_id"])
-        state.outlet_id = txn["outlet_id"]
-    if txn.get("sales_executive_id") and state.exec_select:
-        state.exec_select.set_value(txn["sales_executive_id"])
-        state.executive_id = txn["sales_executive_id"]
+    # --- Vehicle ---
+    if state.vin_no:
+        state.vin_no.set_value(complaint.get("vin_number", ""))
+    if state.engine_no:
+        state.engine_no.set_value(complaint.get("engine_number", ""))
+    if state.vehicle_regn_no:
+        state.vehicle_regn_no.set_value(complaint.get("registration_number", ""))
+    if state.regn_date:
+        state.regn_date.set_value(complaint.get("registration_date", ""))
+    if state.car_color:
+        state.car_color.set_value(complaint.get("car_color", ""))
 
-    # Car → triggers variant dropdown load
-    car_id = txn.get("car_id")
-    if car_id and state.car_select:
-        state.car_select.set_value(car_id)
-        state.car_id = car_id
-        # Load variants for this car
-        try:
-            variants = await api_get(f"/cars/{car_id}/variants")
-            state.variant_select.options = {
-                v["id"]: v["full_variant_name"] for v in variants
-            }
-            state.variant_select.update()
-        except Exception:
-            pass
+    # --- Dealerships (CRITICAL ORDER) ---
+    dlr = complaint.get("complainant_dealer_name")
 
-    # Variant
-    variant_id = txn.get("variant_id")
-    if variant_id and state.variant_select:
-        state.variant_select.set_value(variant_id)
-        state.variant_id = variant_id
+    if dlr:
+        state.complainant_dealership.set_value(dlr)
 
-    # Conditions
-    conds = txn.get("conditions", {})
-    for key, cb in state.condition_cbs.items():
-        cb.set_value(bool(conds.get(key, False)))
+        if hasattr(state, "_handle_complainant_change"):
+            asyncio.create_task(state._handle_complainant_change(dlr))
 
-    # Actual amounts → fill price
-    amounts = txn.get("actual_amounts", {})
-    for name, inp in state.price_inputs.items():
-        if name in amounts:
-            inp.set_value(amounts[name])
-            if amounts[name] > 0 and name in state.price_match_toggles:
-                state.price_match_toggles[name].set_value(True)
+    comp_dlr = complaint.get("complainee_dealer_name")
 
-    # Accessories
-    acc_details = txn.get("accessories_details", {})
-    if state.acc_select:
-        # Reconstruct selected IDs from transaction (backend 'accessories' key holds list of objects)
-        selected_ids = [acc["id"] for acc in txn.get("accessories", [])]
-        state.acc_select.set_value(selected_ids)
+    if comp_dlr:
+        if hasattr(state, "_handle_complainee_change"):
+            asyncio.create_task(state._handle_complainee_change(comp_dlr))
 
-    if state.acc_charged:
-        state.acc_charged.set_value(acc_details.get("charged_amount", 0))
-
-    if state.accessory_allowed:
-        state.accessory_allowed.set_value(acc_details.get("allowed_amount", 0))
-
-    # Delivery checks
-    delv = txn.get("delivery_checks", {})
-    for key, cb in state.delivery_cbs.items():
-        cb.set_value(bool(delv.get(key, False)))
-
-    # Audit
-    audit = txn.get("audit_info", {})
-    if state.audit_obs:
-        state.audit_obs.set_value(audit.get("observations", ""))
-    if state.audit_action:
-        state.audit_action.set_value(audit.get("follow_up_action", ""))
-
-    # Refresh live calc
-    _fs_update_live(state)
-    _fs_revalidate(state)
-
-
-# TODO: for booking MIS form the vehicle details will not include the vin, engine details. and add fuel type to the form.
-# ══════════════════════════════════════════════════════════════
-#   PAGE 2: FORM
-# ══════════════════════════════════════════════════════════════
-@ui.page("/form")
-@protected_page
-async def form_page(
-    stage: str = "booking", mode: str = "booking", transaction_id: int | None = None
-) -> None:
-    state = FormState()
-
-    state.stage = stage
-    state.mode = mode
-    state.txn_id = transaction_id
-    state.is_direct_delivery = mode == "direct"
-    txn_data = None
-
-    if transaction_id and stage == "delivery":
-        state.booking_id = transaction_id
-        state.edit_mode = True
-    if transaction_id and stage == "booking":
-        state.form_mode = "booking_edit"
-
-        try:
-            txn_data = await api_get(f"/transactions/{transaction_id}")
-            state.booking_data = txn_data
-
-        except Exception as e:
-            print(str(e))
-            ui.notify("Failed to load booking data", type="negative")
-    # Detect edit mode from query param
-    if state.booking_id:
-        pass
-
-    # Breadcrumb label
-    bc = f"Edit Entry #{state.txn_id}" if state.edit_mode else "New Entry"
-    render_topbar(bc)
-
-    # Fetch reference data
-    ref = await fetch_reference_data()
-    state.cars = ref["cars"]
-    state.variants = ref["variants"]
-    state.components = ref["components"]
-    state.outlets = ref["outlets"]
-    state.executives = ref["executives"]
-    state.accessory_map = {acc["id"]: acc for acc in ref["accessories"]}
-    txn_data = None
-
-    if state.stage == "delivery":
-        txn_data = await resolve_form_mode(state, transaction_id)
-
-    with ui.element("div").classes("max-w-[1200px] mx-auto p-6"):
-        # ── Edit mode indicator ──────────────────────────
-        if state.form_mode in ["delivery_from_booking", "delivery_edit"]:
-            variant_label = (
-                txn_data.get("variant_name") or txn_data.get("variant") or ""
+    # --- Delayed dependent fields ---
+    def set_dependent_fields():
+        if state.complainant_showroom:
+            state.complainant_showroom.set_value(
+                complaint.get("complainant_showroom_name")
             )
 
-            with ui.row().classes("items-center gap-3 mb-4"):
-                if state.form_mode == "delivery_from_booking":
-                    title = f"📦 Converting Booking #{state.txn_id} to Delivery"
+        if state.complainee_dealership:
+            state.complainee_dealership.set_value(
+                complaint.get("complainee_dealer_name")
+            )
 
-                elif state.form_mode == "delivery_edit":
-                    title = f"✏️ Editing Delivery #{state.txn_id}"
+        if state.complainee_showroom:
+            state.complainee_showroom.set_value(
+                complaint.get("complainee_showroom_name")
+            )
 
-                ui.label(
-                    f"{title} {(' — ' + variant_label) if variant_label else ''}"
-                ).classes(
-                    "bg-amber-100 text-amber-800 border border-amber-200 px-3 py-1 rounded-md text-[12px] font-medium"
-                )
+    ui.timer(0.2, set_dependent_fields, once=True)
 
-                ui.label("Fields pre-filled from saved data").classes(
-                    "text-[11px] text-gray-400"
-                )
+    # --- Remarks ---
+    if state.complaint_date:
+        state.complaint_date.set_value(complaint.get("date_of_complaint", ""))
+    if state.complainant_remarks:
+        state.complainant_remarks.set_value(complaint.get("remarks_complainant", ""))
+    if state.complainee_aa_name:
+        state.complainee_aa_name.set_value(complaint.get("remark_complainee_aa", ""))
+    if state.complainant_aa_remarks:
+        state.complainant_aa_remarks.set_value(complaint.get("remark_admin", ""))
 
-        # ── Different Forms ────────────────────────────────
-        if state.form_mode == "booking_create":
-            with ui.row().classes("w-full justify-between items-center"):
-                ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
-                # ui.checkbox("Is File Incomplete?").classes("text-bold ml-auto")
+    if state.complaint_status:
+        state.complaint_status.set_value(complaint.get("status", ""))
 
-            build_vehicle_section(state)
-            build_booking_section(state)
-            build_customer_section(state)
-            build_conditions_section(state)
-            build_accessories_section(state)
-            build_prices_section(state)
-            build_booking_checklist_section(state)
-            build_audit_section(state)
-
-        elif state.form_mode == "booking_edit":
-            with ui.row().classes("w-full justify-between items-center"):
-                ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
-                ui.checkbox("Is File Incomplete?").classes("text-bold ml-auto")
-
-            build_vehicle_section(state)
-            build_booking_section(state)
-            build_customer_section(state)
-            build_conditions_section(state)
-            build_accessories_section(state)
-            build_prices_section(state)
-            build_booking_checklist_section(state)
-            build_audit_section(state)
-
-        elif state.form_mode == "delivery_direct_create":
-            ui.label("Direct Delivery MIS Form").classes("text-2xl text-bold mb-5")
-
-            build_vehicle_section(state)
-            build_booking_section(state)
-            build_customer_section(state)
-            build_conditions_section(state)
-            build_accessories_section(state)
-            build_prices_section(state)
-            build_delivery_checklist_section(state)
-            build_invoice_section(state)
-            build_payment_section(state)
-            build_audit_section(state)
-
-        elif state.form_mode == "delivery_from_booking":
-            ui.label("Delivery (From Booking)").classes("text-2xl text-bold mb-5")
-
-            build_vehicle_section(state)
-            build_booking_section(state)
-            build_customer_section(state)
-            build_conditions_section(state)
-            build_accessories_section(state)
-
-            # Only delivery additions
-            build_prices_section(state)
-            build_delivery_checklist_section(state)
-            build_invoice_section(state)
-            build_payment_section(state)
-            build_audit_section(state)
-
-        elif state.form_mode == "delivery_edit":
-            ui.label("Edit Delivery Entry").classes("text-2xl text-bold mb-5")
-
-            build_vehicle_section(state)
-            build_booking_section(state)
-            build_customer_section(state)
-            build_conditions_section(state)
-            build_accessories_section(state)
-            build_prices_section(state)
-            build_delivery_checklist_section(state)
-            build_invoice_section(state)
-            build_payment_section(state)
-            build_audit_section(state)
-
-        build_live_bar(state)
-        build_action_bar(state)
-
-        # Ensure button state is correct on first render
-        _fs_revalidate(state)
-
-    # ── Prefill after UI is built (edit mode) ───────────
-    if state.form_mode == "booking_edit":
-        populate_from_booking(state, state.booking_data)
-
-    elif state.form_mode == "delivery_from_booking":
-        populate_from_booking(state, state.booking_data)
-
-    elif state.form_mode == "delivery_edit" and txn_data:
-        populate_from_delivery(state, txn_data)
-
-
-# ══════════════════════════════════════════════════════════════
-# RUN
-# ══════════════════════════════════════════════════════════════
+    # --- Variant mapping ---
+    _map_car_and_variant(state, complaint)
 
 
 def build_complaint_payload(state: FormState) -> dict:
