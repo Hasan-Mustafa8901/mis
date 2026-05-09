@@ -173,12 +173,15 @@ class PriceList(SQLModel, table=True):
     name: Optional[str] = None
     created_at: datetime = Field(default_factory=get_ist_now)
 
-    items: List["PriceListItem"] = Relationship(back_populates="price_list")
+    items: List["PriceListItem"] = Relationship(
+        back_populates="price_list",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
 
 class PriceListItem(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    price_list_id: int = Field(foreign_key="pricelist.id")
+    price_list_id: int = Field(foreign_key="pricelist.id", ondelete="CASCADE")
     variant_id: int = Field(foreign_key="variant.id")
     component_id: int = Field(foreign_key="discountcomponent.id")
 
