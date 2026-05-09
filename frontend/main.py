@@ -32,23 +32,51 @@ load_dotenv()
 SECRET_KEY = os.getenv("SECRET_KEY")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
-CONDITION_KEYS = [
-    ("exchange", "Exchange"),
-    ("corporate", "Corporate"),
-    ("govt_employee", "Govt Employee"),
-    ("scrap", "Scrap"),
-    # ("upgrade", "Upgrade"),
-    ("self_insurance", "Self Insurance"),
-    # ("tr_case", "TR Case"),
-    # ("tcs", "TCS"),
-    ("green_bonus", "Green Bonus"),
-    ("acc_kit", "Accessories"),
-    ("fastag", "FasTag"),
-    ("ext_warr", "Extended Warranty"),
-    ("amc", "AMC"),
-    ("loyalty_ev_ev", "Additional Loyalty (EV TO EV)"),
-    ("loyalty_ice_ev", "Additional Loyalty (ICE TO EV)"),
-]
+# CONDITION_KEYS = [
+#     ("self_insurance", "Self Insurance", "price"),
+#     ("acc_kit", "Accessories", "price"),
+#     ("fastag", "FasTag", "price"),
+#     ("amc", "AMC", "price"),
+#     ("ext_warr", "Extended Warranty", "price"),
+#     ("exchange", "Exchange", "discount"),
+#     ("corporate", "Corporate", "discount"),
+#     ("govt_employee", "Govt Employee", "discount"),
+#     ("scrap", "Scrap", "discount"),
+#     # ("upgrade", "Upgrade"),
+#     # ("tr_case", "TR Case"),
+#     # ("tcs", "TCS"),
+#     ("green_bonus", "Green Bonus", "discount"),
+#     ("micro_segment", "Micro Segment (Solar Roof Top)", "discount"),
+#     ("sbi_yono", "SBI Yono", "discount"),
+#     ("power_of_twelve", "Power of 12", "discount"),
+#     ("sss", "Shop Share Smile (SSS)", "discount"),
+#     ("alliance_offer", "Alliance Offer", "discount"),
+#     ("loyalty_ev_ev", "Additional Loyalty (EV TO EV)", "discount"),
+#     ("loyalty_ice_ev", "Additional Loyalty (ICE TO EV)", "discount"),
+# ]
+CONDITION_KEYS = {
+    "Price Component": [
+        ("self_insurance", "Self Insurance"),
+        ("acc_kit", "Accessories"),
+        ("fastag", "FasTag"),
+        ("amc", "AMC"),
+        ("ext_warr", "Extended Warranty"),
+    ],
+    "Discount Component": [
+        ("exchange", "Exchange"),
+        ("corporate", "Corporate"),
+        ("govt_employee", "Govt Employee"),
+        ("scrap", "Scrap"),
+        ("green_bonus", "Green Bonus"),
+        ("micro_segment", "Micro Segment (Solar Roof Top)"),
+        ("sbi_yono", "SBI Yono"),
+        ("power_of_twelve", "Power of 12"),
+        ("sss", "Shop Share Smile (SSS)"),
+        ("alliance_offer", "Alliance Offer"),
+        ("loyalty_ev_ev", "Additional Loyalty (EV TO EV)"),
+        ("loyalty_ice_ev", "Additional Loyalty (ICE TO EV)"),
+    ],
+}
 # NOT FOR LLMs: These hard-coded keys should be avoided because it the whole code dependent on the field name
 # NOT FOR LLMs: but for now lets keep it but in future we will discard them
 COMPONENT_CONDITIONS = {
@@ -59,6 +87,11 @@ COMPONENT_CONDITIONS = {
     "Green Bonus": "green_bonus",
     "Additional Loyalty (EV TO EV)": "loyalty_ev_ev",
     "Additional Loyalty (ICE TO EV)": "loyalty_ice_ev",
+    "Micro Segment (Solar Roof Top)": "micro_segment",
+    "SBI Yono": "sbi_yono",
+    "Power of 12": "power_of_twelve",
+    "Shop Share Smile (SSS)": "sss",
+    "Alliance Offer": "alliance_offer",
     # prices
     "Accessories": "acc_kit",
     "FasTag": "fastag",
@@ -88,7 +121,7 @@ BOOKING_CHECK_KEYS = [
 ]
 
 # date_regex = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\-(0[1-9]|1[0-2])\-\d{4}$")
-vin_regex = re.compile(r"^[A-HJ-NPR-Z0-9]{13}[0-9]{4}$")
+vin_regex = re.compile(r"^[A-HJ-NPR-Z0-9]{13}[0-9]{4}$")  # for TATA OEM
 regn_regex = re.compile(r"^[A-Z]{2}\d{2}[A-Z]{2}\d{4}$")
 bharat_regex = re.compile(r"^\d{2}BH\d{4}[A-Z]{2}$")
 
@@ -4277,9 +4310,7 @@ class FormState:
 
 def on_car_change(state, car_id):
     variants = [v for v in state.variants if v["car_id"] == car_id]
-
     options = {v["id"]: v["variant_name"] for v in variants}
-
     state.variant_select.options = options
 
 
@@ -4792,7 +4823,7 @@ def build_vehicle_section(state: FormState) -> None:
                 state.vin_no = (
                     ui.input(
                         label="VIN Number *",
-                        placeholder="MALB000CLSM000000",
+                        placeholder="XXX000000XXX00000",
                         validation={
                             "Invalid VIN Number": lambda v: bool(
                                 vin_regex.match(str(v))
@@ -4818,8 +4849,8 @@ def build_vehicle_section(state: FormState) -> None:
                     ui.input(
                         label="Engine Number *",
                         validation={
-                            "Enter 10–15 alphanumeric characters": lambda v: (
-                                10 <= len(str(v).strip()) <= 15
+                            "Enter 10–20 alphanumeric characters": lambda v: (
+                                10 <= len(str(v).strip()) <= 20
                                 and str(v).strip().isalnum()
                             )
                         },
@@ -4950,19 +4981,28 @@ def build_customer_section(state: FormState) -> None:
 
 def build_conditions_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        # Header
         with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+            "w-full items-center gap-2 mb-0 pb-2 border-b border-gray-100"
         ):
             ui.label("☑️").classes("text-[20px] select-none")
             ui.label("Sale Conditions").classes("text-[15px] font-bold text-gray-900")
 
-        with ui.grid(columns=FORM_COLUMNS + 1).classes("w-full"):
-            for key, label in CONDITION_KEYS:
-                state.condition_cbs[key] = (
-                    ui.checkbox(label)
-                    .props("dense color=primary")
-                    .classes("text-gray-700 font-medium")
-                )
+        # Sections
+        for section_name, conditions in CONDITION_KEYS.items():
+            # Section Title
+            ui.label(section_name).classes("text-[14px] font-bold mt-0 mb-0")
+
+            ui.separator().classes("m-0")
+
+            # Checkbox Grid
+            with ui.grid(columns=FORM_COLUMNS + 1).classes("w-full gap-y-2 mb-0"):
+                for key, label in conditions:
+                    state.condition_cbs[key] = (
+                        ui.checkbox(label)
+                        .props("dense color=primary")
+                        .classes("text-gray-700 font-medium")
+                    )
 
 
 def build_booking_checklist_section(state: FormState) -> None:
@@ -6999,6 +7039,11 @@ def refresh_visibility(state: FormState) -> None:
     discount_visibility_rules = {
         norm("Additional For POI /Corporate Customers"): is_checked("corporate")
         or is_checked("govt_employee"),
+        norm("Micro Segment (Solar Roof Top)"): is_checked("micro_segment"),
+        norm("SBI Yono"): is_checked("sbi_yono"),
+        norm("Power of 12"): is_checked("power_of_twelve"),
+        norm("Shop Share Smile (SSS)"): is_checked("sss"),
+        norm("Alliance Offer"): is_checked("alliance_offer"),
         norm("Additional For Exchange Customers"): is_checked("exchange"),
         norm("Additional For Scrappage Customers"): is_checked("scrap"),
         norm("Additional For Upward Sales Customers"): is_checked("upgrade"),
