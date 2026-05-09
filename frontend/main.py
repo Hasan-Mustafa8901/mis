@@ -2564,8 +2564,6 @@ class ReportingState:
 # ══════════════════════════════════════════════════════════════
 #                   PAGE: DAILY REPORTING
 # ══════════════════════════════════════════════════════════════
-
-
 @ui.page("/daily-reporting")
 @protected_page
 async def daily_reporting_page() -> None:
@@ -2907,270 +2905,540 @@ async def daily_reporting_page() -> None:
 
         refresh_detail_dialog(rows)
 
-    def open_detail_dialog(tt: str, d: str, col: str, dates: list = []) -> None:
-        _dlg_state["tt"] = tt
-        _dlg_state["d"] = d
-        _dlg_state["col"] = col
-        _dlg_state["dates"] = dates
-        ttype = "Booking" if tt == "booking" else "Delivery"
-        col_label = "Files Pending" if col == "files_pending" else "Files Incomplete"
-        _dlg_state["title_el"].set_text(f"📋 {col_label} — {d}  ({ttype})")
-        detail_dlg.open()
-        # Schedule async fetch after dialog is open
-        asyncio.create_task(_fetch_and_show_dialog())
+    def open_detail_dialog(row, column) -> None:
+        ...
+        # _dlg_state["tt"] = tt
+        # _dlg_state["d"] = d
+        # _dlg_state["col"] = col
+        # _dlg_state["dates"] = dates
+        # ttype = "Booking" if tt == "booking" else "Delivery"
+        # col_label = "Files Pending" if col == "files_pending" else "Files Incomplete"
+        # _dlg_state["title_el"].set_text(f"📋 {col_label} — {d}  ({ttype})")
+        # detail_dlg.open()
+        # # Schedule async fetch after dialog is open
+        # asyncio.create_task(_fetch_and_show_dialog())
+
+    def render_clickable_cell(
+        value,
+        column,
+        row,
+        highlight=False,
+    ):
+
+        bg = "background:#FFF7ED;" if highlight else ""
+
+        with (
+            ui.element("td")
+            .style(TABLE_DATA_STYLE + ";cursor:pointer;" + bg)
+            .on(
+                "click",
+                lambda: open_detail_dialog(
+                    row=row,
+                    column=column,
+                ),
+            )
+        ):
+            ui.label(str(value or 0)).style(
+                "font-family:monospace;font-size:14px;font-weight:700;text-align:center"
+            )
 
     # ── Shared cell styles ───────────────────────────────────
-    TH_S = (
-        "border:1px solid #D1D5DB;padding:9px 14px;text-align:center;"
-        "font-size:12px;font-weight:700;text-transform:uppercase;"
-        "letter-spacing:.07em;color:#6B7280;background:#F9FAFB;white-space:nowrap"
+    TABLE_HEADER_STYLE = (
+        "border:1px solid #D1D5DB; padding:9px 14px; text-align:center;"
+        "font-size:12px; font-weight:700; text-transform:capitalize;"
+        "letter-spacing:.07em; color:#6B7280; background:#F9FAFB;"
+        "white-space: normal; word-break: break-word; line-height:1.2;"
     )
-    TD_S = (
+    TABLE_DATA_STYLE = (
         "border:1px solid #E5E7EB;padding:6px 10px;"
         "font-size:15px;vertical-align:middle;text-align:center"
     )
-    TF_S = (
+    TABLE_FOOTER_STYLE = (
         "border:1px solid #D1D5DB;padding:9px 14px;text-align:center;"
         "font-size:15px;font-weight:700;background:#ECEEF2;color:#111827"
     )
 
     # ── Table builder ────────────────────────────────────────
-    def build_table(stage: str, dates: list, parent) -> None:
+    def build_table(stage: str, dates: list, parent, rows) -> None:
         with parent:
             with ui.element("table").style(
                 "width:100%;border-collapse:collapse;border:1px solid #D1D5DB;"
                 "table-layout:auto;font-family:Inter,sans-serif"
             ):
-                # ── THEAD ─────────────────────────────────────────
                 with ui.element("thead"):
+                    # =================================================
+                    # HEADER ROW 1
+                    # =================================================
                     with ui.element("tr"):
-                        headers = [
-                            ("Date", "140px"),
-                            ("Total Count", "130px"),
-                            ("Files Received", "130px"),
-                            ("Files Pending", "130px"),
-                            ("Files Incomplete", "130px"),
-                            ("Files Verified", "130px"),
-                            ("Files in MIS", "130px"),
-                            ("Difference", "120px"),
-                        ]
-                        for hdr, w in headers:
-                            with ui.element("th").style(TH_S + f";width:{w}"):
-                                ui.label(hdr)
+                        # DATE
+                        with (
+                            ui.element("th")
+                            .props('rowspan="2"')
+                            .style(TABLE_HEADER_STYLE + ";min-width:100px")
+                        ):
+                            ui.label("Date")
 
-                # ── TBODY ─────────────────────────────────────────
-                with ui.element("tbody"):
-                    for date_idx, date in enumerate(dates):
-                        r = compute_row(stage, date)
-                        is_today = date == today_str
-                        is_locked = date in rstate.locked_dates
+                        # TOTAL
+                        with (
+                            ui.element("th")
+                            .props('rowspan="2"')
+                            .style(
+                                TABLE_HEADER_STYLE
+                                + ";min-width:100px;word-break: break-all;"
+                            )
+                        ):
+                            ui.label("Total Count")
 
-                        if is_today:
-                            row_bg = "background:#EFF6FF"
-                        elif date_idx % 2 == 1:
-                            row_bg = "background:#FAFAFA"
+                        # FILES RECEIVED GROUP
+                        with (
+                            ui.element("th")
+                            .props('rowspan="2"')
+                            .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                        ):
+                            ui.label("Files Received")
+                        # FILES PENDING GROUP
+                        with (
+                            ui.element("th")
+                            .props('rowspan="2"')
+                            .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                        ):
+                            ui.label("Files Pending")
+                        # FILES OUT OF SCOPE
+                        with (
+                            ui.element("th")
+                            .props('rowspan="2"')
+                            .style(
+                                TABLE_HEADER_STYLE
+                                + ";min-width:100px;white-space:nowrap;"
+                            )
+                        ):
+                            ui.html("Files<br>Out of Scope")
+                        # FILES OUT OF SCOPE
+                        with (
+                            ui.element("th")
+                            .props('rowspan="2"')
+                            .style(TABLE_HEADER_STYLE + ";min-width:100px")
+                        ):
+                            ui.html("Files<br>To Be Verified")
+                        # FILES OUT OF SCOPE
+                        with (
+                            ui.element("th")
+                            .props('rowspan="2"')
+                            .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                        ):
+                            ui.label("Files Incomplete")
+
+                        # FILES VERIFIED GROUP
+                        with (
+                            ui.element("th")
+                            .props('colspan="2"')
+                            .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                        ):
+                            ui.label("Files Verified")
+
+                        if stage == "booking":
+                            # FILES not verified
+                            with (
+                                ui.element("th")
+                                .props('rowspan="2"')
+                                .style(
+                                    TABLE_HEADER_STYLE
+                                    + ";min-width:100px;white-space:nowrap;"
+                                )
+                            ):
+                                ui.html("Files<br>Not Verified")
                         else:
-                            row_bg = "background:#FFFFFF"
+                            # FILES not verified
+                            with (
+                                ui.element("th")
+                                .props('rowspan="2"')
+                                .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                            ):
+                                ui.label("Rejected Files Delivered")
+
+                    # =================================================
+                    # HEADER ROW 2
+                    # =================================================
+                    with ui.element("tr"):
+                        verified_headers = [
+                            "Approved",
+                            "Rejected",
+                        ]
+
+                        for h in verified_headers:
+                            with ui.element("th").style(
+                                TABLE_HEADER_STYLE
+                                + ";background:#F0FDF4;white-space:nowrap;"
+                            ):
+                                ui.label(h)
+
+                # ── TABLE BODY ─────────────────────────────────────────
+                with ui.element("tbody"):
+                    for idx, row in enumerate(rows):
+                        is_today = row["date"] == today_str
+
+                        row_bg = (
+                            "background:#EFF6FF"
+                            if is_today
+                            else (
+                                "background:#FAFAFA"
+                                if idx % 2
+                                else "background:#FFFFFF"
+                            )
+                        )
 
                         with ui.element("tr").style(row_bg):
-                            from datetime import datetime
-
-                            date = datetime.strptime(date, r"%Y-%m-%d").strftime(
-                                "%d/%m/%Y"
-                            )
-                            # ── Date ───────────────────────────────
-                            with ui.element("td").style(TD_S + ";white-space:nowrap"):
-                                if is_today:
-                                    with ui.row().classes(
-                                        "items-center justify-center gap-1.5"
-                                    ):
-                                        ui.label(date).style(
-                                            "font-weight:700;color:#2563EB;font-size:14px"
-                                        )
-                                        ui.label("TODAY").style(
-                                            "background:#DBEAFE;color:#1D4ED8;font-size:10px;"
-                                            "padding:1px 7px;border-radius:10px;font-weight:800;"
-                                            "letter-spacing:.04em"
-                                        )
-                                else:
-                                    ui.label(date).style(
-                                        "font-weight:500;color:#374151;font-size:14px"
-                                    )
-
-                            # ── Total Count (editable text input) ──
-                            with ui.element("td").style(TD_S):
-                                total_count_inp = (
-                                    ui.input(
-                                        value=str(r["tc"]) if r["tc"] else "",
-                                        placeholder="0",
-                                        on_change=lambda e, _tt=stage, _d=date: (
-                                            rstate.row_data.setdefault(
-                                                (_tt, _d), {}
-                                            ).__setitem__(
-                                                "total_count",
-                                                int(e.value)
-                                                if (e.value or "").isdigit()
-                                                else 0,
-                                            ),
-                                            refresh_computed_row(_tt, _d, dates),
-                                        ),
-                                    )
-                                    .props(
-                                        f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
-                                    )
-                                    .classes("w-full text-center")
-                                    .style(
-                                        "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
-                                    )
-                                )
-
-                            # ── Files Received (editable text input) ──
-                            with ui.element("td").style(TD_S):
-                                fr_inp = (
-                                    ui.input(
-                                        value=str(r["fr"]) if r["fr"] else "",
-                                        placeholder="0",
-                                        on_change=lambda e, _tt=stage, _d=date: (
-                                            rstate.row_data.setdefault(
-                                                (_tt, _d), {}
-                                            ).__setitem__(
-                                                "files_received",
-                                                int(e.value)
-                                                if (e.value or "").isdigit()
-                                                else 0,
-                                            ),
-                                            refresh_computed_row(_tt, _d, dates),
-                                        ),
-                                    )
-                                    .props(
-                                        f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
-                                    )
-                                    .classes("w-full text-center")
-                                    .style(
-                                        "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
-                                    )
-                                )
-
-                            # ── Files Pending (computed + clickable for dialog) ──
-                            fp_color = "#92400E" if r["fp"] > 0 else "#10B981"
-                            fp_weight = "700" if r["fp"] > 0 else "600"
-                            with (
-                                ui.element("td")
-                                .style(
-                                    TD_S + ";cursor:pointer;background:#FFF7ED"
-                                    if r["fp"] > 0
-                                    else TD_S + ";cursor:pointer"
-                                )
-                                .on(
-                                    "click",
-                                    lambda _, _tt=stage, _d=date: open_detail_dialog(
-                                        _tt, _d, "files_pending"
-                                    ),
-                                )
+                            # =========================================
+                            # DATE
+                            # =========================================
+                            with ui.element("td").style(
+                                TABLE_DATA_STYLE + ";white-space:nowrap"
                             ):
-                                fp_lbl = ui.label(str(r["fp"])).style(
-                                    f"font-family:monospace;font-size:15px;"
-                                    f"font-weight:{fp_weight};color:{fp_color};text-align:center"
-                                )
-                                rstate.label_refs[(stage, date, "files_pending")] = (
-                                    fp_lbl
+                                ui.label(row["date"]).style(
+                                    "font-weight:600;color:#374151"
                                 )
 
-                            # ── Files Incomplete (clickable label → opens dialog, count = dialog rows) ──
-                            fi_count = r["fi"]
-                            fi_color = "#92400E" if fi_count > 0 else "#10B981"
-                            fi_weight = "700" if fi_count > 0 else "600"
-                            with (
-                                ui.element("td")
-                                .style(
-                                    TD_S + ";cursor:pointer;background:#FFF7ED"
-                                    if fi_count > 0
-                                    else TD_S + ";cursor:pointer"
-                                )
-                                .on(
-                                    "click",
-                                    lambda _, _tt=stage, _d=date, _dates=dates: (
-                                        open_detail_dialog(
-                                            _tt, _d, "files_incomplete", _dates
-                                        )
-                                    ),
-                                )
-                            ):
-                                fi_lbl = ui.label(str(fi_count)).style(
-                                    f"font-family:monospace;font-size:15px;"
-                                    f"font-weight:{fi_weight};color:{fi_color};text-align:center"
-                                )
-                                rstate.label_refs[(stage, date, "file_incomplete")] = (
-                                    fi_lbl
-                                )
-
-                            # ── Files Verified (user entry) ──
-                            with ui.element("td").style(TD_S):
-                                ui.input(
-                                    value=str(r["fv"]) if r["fv"] else "",
-                                    placeholder="0",
-                                    on_change=lambda e, _tt=stage, _d=date: (
-                                        rstate.row_data.setdefault(
-                                            (_tt, _d), {}
-                                        ).__setitem__(
-                                            "files_verified",
-                                            int(e.value)
-                                            if (e.value or "").isdigit()
-                                            else 0,
-                                        ),
-                                        refresh_computed_row(_tt, _d, dates),
-                                    ),
-                                ).props(
-                                    f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
-                                ).classes("w-full text-center").style(
-                                    "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
-                                )
-
-                            # ── Files in MIS (editable text input) ──
-                            with ui.element("td").style(TD_S):
-                                ui.label(str(r["fm"])).style(
-                                    "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
-                                )
-                            # ── Difference (computed: fv - fm) ──
-                            diff_color = (
-                                "#EF4444"
-                                if r["diff"] < 0
-                                else ("#10B981" if r["diff"] == 0 else "#F59E0B")
+                            # =========================================
+                            # TOTAL COUNT
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["total_count"],
+                                column="total_count",
+                                row=row,
                             )
-                            with ui.element("td").style(TD_S):
-                                diff_lbl = ui.label(str(r["diff"])).style(
-                                    f"font-family:monospace;font-size:15px;"
-                                    f"font-weight:700;color:{diff_color};text-align:center"
+
+                            # =========================================
+                            # FILES RECEIVED
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["files_received"],
+                                column="files_received",
+                                row=row,
+                            )
+
+                            # =========================================
+                            # FILES PENDING
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["files_pending"],
+                                column="files_pending",
+                                row=row,
+                                highlight=(row["files_pending"] > 0),
+                            )
+
+                            # =========================================
+                            # OUT OF SCOPE
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["files_out_of_scope"],
+                                column="files_out_of_scope",
+                                row=row,
+                            )
+
+                            # =========================================
+                            # TO BE VERIFIED
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["files_to_be_verified"],
+                                column="files_to_be_verified",
+                                row=row,
+                            )
+
+                            # =========================================
+                            # INCOMPLETE
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["files_incomplete"],
+                                column="files_incomplete",
+                                row=row,
+                                highlight=(row["files_incomplete"] > 0),
+                            )
+
+                            # =========================================
+                            # APPROVED
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["files_approved"],
+                                column="files_approved",
+                                row=row,
+                            )
+
+                            # =========================================
+                            # REJECTED
+                            # =========================================
+                            render_clickable_cell(
+                                value=row["files_rejected"],
+                                column="files_rejected",
+                                row=row,
+                            )
+
+                            # =========================================
+                            # LAST COLUMN
+                            # =========================================
+                            if stage == "booking":
+                                render_clickable_cell(
+                                    value=row["files_not_verified"],
+                                    column="files_not_verified",
+                                    row=row,
                                 )
-                                rstate.label_refs[(stage, date, "difference")] = (
-                                    diff_lbl
+
+                            else:
+                                render_clickable_cell(
+                                    value=row["rejected_files_delivered"],
+                                    column="rejected_files_delivered",
+                                    row=row,
                                 )
+                # with ui.element("tbody"):
+                #     for date_idx, date in enumerate(dates):
+                #         r = compute_row(stage, date)
+                #         is_today = date == today_str
+                #         is_locked = date in rstate.locked_dates
+
+                #         if is_today:
+                #             row_bg = "background:#EFF6FF"
+                #         elif date_idx % 2 == 1:
+                #             row_bg = "background:#FAFAFA"
+                #         else:
+                #             row_bg = "background:#FFFFFF"
+
+                #         with ui.element("tr").style(row_bg):
+                #             from datetime import datetime
+
+                #             date = datetime.strptime(date, r"%Y-%m-%d").strftime(
+                #                 "%d/%m/%Y"
+                #             )
+                #             # ── Date ───────────────────────────────
+                #             with ui.element("td").style(
+                #                 TABLE_DATA_STYLE + ";white-space:nowrap"
+                #             ):
+                #                 if is_today:
+                #                     with ui.row().classes(
+                #                         "items-center justify-center gap-1.5"
+                #                     ):
+                #                         ui.label(date).style(
+                #                             "font-weight:700;color:#2563EB;font-size:14px"
+                #                         )
+                #                         ui.label("TODAY").style(
+                #                             "background:#DBEAFE;color:#1D4ED8;font-size:10px;"
+                #                             "padding:1px 7px;border-radius:10px;font-weight:800;"
+                #                             "letter-spacing:.04em"
+                #                         )
+                #                 else:
+                #                     ui.label(date).style(
+                #                         "font-weight:500;color:#374151;font-size:14px"
+                #                     )
+
+                #             # ── Total Count (editable text input) ──
+                #             with ui.element("td").style(TABLE_DATA_STYLE):
+                #                 total_count_inp = (
+                #                     ui.input(
+                #                         value=str(r["tc"]) if r["tc"] else "",
+                #                         placeholder="0",
+                #                         on_change=lambda e, _tt=stage, _d=date: (
+                #                             rstate.row_data.setdefault(
+                #                                 (_tt, _d), {}
+                #                             ).__setitem__(
+                #                                 "total_count",
+                #                                 int(e.value)
+                #                                 if (e.value or "").isdigit()
+                #                                 else 0,
+                #                             ),
+                #                             refresh_computed_row(_tt, _d, dates),
+                #                         ),
+                #                     )
+                #                     .props(
+                #                         f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
+                #                     )
+                #                     .classes("w-full text-center")
+                #                     .style(
+                #                         "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                #                     )
+                #                 )
+
+                #             # ── Files Received (editable text input) ──
+                #             with ui.element("td").style(TABLE_DATA_STYLE):
+                #                 fr_inp = (
+                #                     ui.input(
+                #                         value=str(r["fr"]) if r["fr"] else "",
+                #                         placeholder="0",
+                #                         on_change=lambda e, _tt=stage, _d=date: (
+                #                             rstate.row_data.setdefault(
+                #                                 (_tt, _d), {}
+                #                             ).__setitem__(
+                #                                 "files_received",
+                #                                 int(e.value)
+                #                                 if (e.value or "").isdigit()
+                #                                 else 0,
+                #                             ),
+                #                             refresh_computed_row(_tt, _d, dates),
+                #                         ),
+                #                     )
+                #                     .props(
+                #                         f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
+                #                     )
+                #                     .classes("w-full text-center")
+                #                     .style(
+                #                         "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                #                     )
+                #                 )
+
+                #             # ── Files Pending (computed + clickable for dialog) ──
+                #             fp_color = "#92400E" if r["fp"] > 0 else "#10B981"
+                #             fp_weight = "700" if r["fp"] > 0 else "600"
+                #             with (
+                #                 ui.element("td")
+                #                 .style(
+                #                     TABLE_DATA_STYLE
+                #                     + ";cursor:pointer;background:#FFF7ED"
+                #                     if r["fp"] > 0
+                #                     else TABLE_DATA_STYLE + ";cursor:pointer"
+                #                 )
+                #                 .on(
+                #                     "click",
+                #                     lambda _, _tt=stage, _d=date: open_detail_dialog(
+                #                         _tt, _d, "files_pending"
+                #                     ),
+                #                 )
+                #             ):
+                #                 fp_lbl = ui.label(str(r["fp"])).style(
+                #                     f"font-family:monospace;font-size:15px;"
+                #                     f"font-weight:{fp_weight};color:{fp_color};text-align:center"
+                #                 )
+                #                 rstate.label_refs[(stage, date, "files_pending")] = (
+                #                     fp_lbl
+                #                 )
+
+                #             # ── Files Incomplete (clickable label → opens dialog, count = dialog rows) ──
+                #             fi_count = r["fi"]
+                #             fi_color = "#92400E" if fi_count > 0 else "#10B981"
+                #             fi_weight = "700" if fi_count > 0 else "600"
+                #             with (
+                #                 ui.element("td")
+                #                 .style(
+                #                     TABLE_DATA_STYLE
+                #                     + ";cursor:pointer;background:#FFF7ED"
+                #                     if fi_count > 0
+                #                     else TABLE_DATA_STYLE + ";cursor:pointer"
+                #                 )
+                #                 .on(
+                #                     "click",
+                #                     lambda _, _tt=stage, _d=date, _dates=dates: (
+                #                         open_detail_dialog(
+                #                             _tt, _d, "files_incomplete", _dates
+                #                         )
+                #                     ),
+                #                 )
+                #             ):
+                #                 fi_lbl = ui.label(str(fi_count)).style(
+                #                     f"font-family:monospace;font-size:15px;"
+                #                     f"font-weight:{fi_weight};color:{fi_color};text-align:center"
+                #                 )
+                #                 rstate.label_refs[(stage, date, "file_incomplete")] = (
+                #                     fi_lbl
+                #                 )
+
+                #             # ── Files Verified (user entry) ──
+                #             with ui.element("td").style(TABLE_DATA_STYLE):
+                #                 ui.input(
+                #                     value=str(r["fv"]) if r["fv"] else "",
+                #                     placeholder="0",
+                #                     on_change=lambda e, _tt=stage, _d=date: (
+                #                         rstate.row_data.setdefault(
+                #                             (_tt, _d), {}
+                #                         ).__setitem__(
+                #                             "files_verified",
+                #                             int(e.value)
+                #                             if (e.value or "").isdigit()
+                #                             else 0,
+                #                         ),
+                #                         refresh_computed_row(_tt, _d, dates),
+                #                     ),
+                #                 ).props(
+                #                     f'type="number" min="0" step="1" outlined dense {"readonly" if is_locked else ""}'
+                #                 ).classes("w-full text-center").style(
+                #                     "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                #                 )
+
+                #             # ── Files in MIS (editable text input) ──
+                #             with ui.element("td").style(TABLE_DATA_STYLE):
+                #                 ui.label(str(r["fm"])).style(
+                #                     "font-family:monospace;font-size:15px;font-weight:600;text-align:center"
+                #                 )
+                #             # ── Difference (computed: fv - fm) ──
+                #             diff_color = (
+                #                 "#EF4444"
+                #                 if r["diff"] < 0
+                #                 else ("#10B981" if r["diff"] == 0 else "#F59E0B")
+                #             )
+                #             with ui.element("td").style(TABLE_DATA_STYLE):
+                #                 diff_lbl = ui.label(str(r["diff"])).style(
+                #                     f"font-family:monospace;font-size:15px;"
+                #                     f"font-weight:700;color:{diff_color};text-align:center"
+                #                 )
+                #                 rstate.label_refs[(stage, date, "difference")] = (
+                #                     diff_lbl
+                #                 )
 
                 # ── TFOOT ─────────────────────────────────────────
+                footer_columns = [
+                    "total_count",
+                    "files_received",
+                    "files_pending",
+                    "files_out_of_scope",
+                    "files_to_be_verified",
+                    "files_incomplete",
+                    "files_approved",
+                    "files_rejected",
+                ]
+
+                if stage == "booking":
+                    footer_columns.append("files_not_verified")
+                else:
+                    footer_columns.append("rejected_files_delivered")
+
+                def get_total(column: str) -> int:
+                    return sum(r.get(column, 0) or 0 for r in rows)
+
                 with ui.element("tfoot"):
                     with ui.element("tr").style(
                         "background:#ECEEF2;border-top:2px solid #D1D5DB"
                     ):
-                        with ui.element("td").style(TF_S):
+                        # TOTAL LABEL
+                        with ui.element("td").style(TABLE_FOOTER_STYLE):
                             ui.label("TOTAL").style(
                                 "font-size:12px;font-weight:800;letter-spacing:.06em;color:#374151"
                             )
-                        for col_key in [
-                            "total_count",
-                            "files_received",
-                            "files_pending",
-                            "file_incomplete",
-                            "files_verified",
-                            "files_in_mis",
-                            "difference",
-                        ]:
-                            with ui.element("td").style(TF_S):
-                                lbl = ui.label("0").style(
+
+                        # TOTAL VALUES
+                        for column in footer_columns:
+                            with ui.element("td").style(TABLE_FOOTER_STYLE):
+                                ui.label(str(get_total(column))).style(
                                     "font-family:monospace;font-size:15px;font-weight:700;color:#111827"
                                 )
-                                rstate.total_refs[(stage, col_key)] = lbl
+        #         with ui.element("tfoot"):
+        #             with ui.element("tr").style(
+        #                 "background:#ECEEF2;border-top:2px solid #D1D5DB"
+        #             ):
+        #                 with ui.element("td").style(TABLE_FOOTER_STYLE):
+        #                     ui.label("TOTAL").style(
+        #                         "font-size:12px;font-weight:800;letter-spacing:.06em;color:#374151"
+        #                     )
+        #                 for col_key in [
+        #                     "total_count",
+        #                     "files_received",
+        #                     "files_pending",
+        #                     "file_incomplete",
+        #                     "files_verified",
+        #                     "files_in_mis",
+        #                     "difference",
+        #                 ]:
+        #                     with ui.element("td").style(TABLE_FOOTER_STYLE):
+        #                         lbl = ui.label("0").style(
+        #                             "font-family:monospace;font-size:15px;font-weight:700;color:#111827"
+        #                         )
+        #                         rstate.total_refs[(stage, col_key)] = lbl
 
-        recompute_totals(stage, dates)
+        # recompute_totals(stage, dates)
 
     # ── Date range helpers ────────────────────────────────────
     _today = get_ist_today()
@@ -3229,8 +3497,49 @@ async def daily_reporting_page() -> None:
         delivery_dates_state["v"] = del_dates
         booking_wrap.clear()
         delivery_wrap.clear()
-        build_table("booking", bking_dates, booking_wrap)
-        build_table("delivery", del_dates, delivery_wrap)
+        rows = [
+            {
+                "date": "2026-06-01",
+                "total_count": 25,
+                "files_received": 20,
+                "files_pending": 5,
+                "files_out_of_scope": 1,
+                "files_to_be_verified": 19,
+                "files_incomplete": 2,
+                "files_approved": 5,
+                "files_rejected": 12,
+                "files_not_verified": 0,
+            },
+            {
+                "date": "2026-06-02",
+                "total_count": 18,
+                "files_received": 16,
+                "files_pending": 2,
+                "files_out_of_scope": 0,
+                "files_to_be_verified": 16,
+                "files_incomplete": 1,
+                "files_approved": 12,
+                "files_rejected": 2,
+                "files_not_verified": 1,
+            },
+        ]
+        build_table("booking", bking_dates, booking_wrap, rows)
+
+        rows = [
+            {
+                "date": "2026-06-01",
+                "total_count": 10,
+                "files_received": 8,
+                "files_pending": 2,
+                "files_out_of_scope": 0,
+                "files_to_be_verified": 8,
+                "files_incomplete": 1,
+                "files_approved": 6,
+                "files_rejected": 1,
+                "rejected_files_delivered": 1,
+            }
+        ]
+        build_table("delivery", del_dates, delivery_wrap, rows)
 
     async def download_report():
 
@@ -3253,30 +3562,23 @@ async def daily_reporting_page() -> None:
                     params=params,
                     timeout=60,
                 )
-
                 response.raise_for_status()
-
                 filename = "daily-report.xlsx"
-
                 content_disposition = response.headers.get("Content-Disposition")
-
                 if content_disposition and "filename=" in content_disposition:
                     filename = (
                         content_disposition.split("filename=")[-1]
                         .replace('"', "")
                         .strip()
                     )
-
                 ui.download(
                     src=response.content,
                     filename=filename,
                 )
-
                 ui.notify(
                     "Report downloaded successfully",
                     type="positive",
                 )
-
         except Exception as e:
             ui.notify(
                 f"Download failed: {str(e)}",
@@ -3363,7 +3665,7 @@ async def daily_reporting_page() -> None:
                     range_select = (
                         ui.select(
                             options=_RANGE_OPTIONS,
-                            value="custom",
+                            value="today",
                             label="Date Range",
                         )
                         .classes("w-52")
@@ -3402,7 +3704,7 @@ async def daily_reporting_page() -> None:
                         ui.element("div").classes(
                             "w-2.5 h-2.5 rounded-full bg-[#6366F1]"
                         )
-                        ui.label("Booking Details").classes(
+                        ui.label("Booking Report").classes(
                             "text-[13px] font-bold text-gray-800"
                         )
                     ui.label(
@@ -3425,7 +3727,7 @@ async def daily_reporting_page() -> None:
                         ui.element("div").classes(
                             "w-2.5 h-2.5 rounded-full bg-[#10B981]"
                         )
-                        ui.label("Delivery Details").classes(
+                        ui.label("Delivery Report").classes(
                             "text-[13px] font-bold text-gray-800"
                         )
                     ui.label(
