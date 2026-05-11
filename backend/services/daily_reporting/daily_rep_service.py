@@ -11,10 +11,7 @@ def display_daily_report(
     outlet_id: int | None,
     dealership_id: int | None,
 ):
-    print("OUTLET ID:", outlet_id)
-    print("DEALERSHIP ID:", dealership_id)
-    print("FROM:", report_from)
-    print("TO:", report_to)
+
     booking_stmt = select(DailyBooking).where(
         DailyBooking.date >= report_from,
         DailyBooking.date <= report_to,
@@ -44,17 +41,12 @@ def display_daily_report(
 
         delivery_stmt = delivery_stmt.where(DailyDelivery.outlet_id == outlet_id)
 
-    all_bookings = session.exec(select(DailyBooking)).all()
-    print("ALL BOOKINGS", all_bookings)
-
     # =======
     # FETCH
     # =======
     bookings = session.exec(booking_stmt).all()
 
     deliveries = session.exec(delivery_stmt).all()
-    print("BOOKINGS: ", bookings)
-    print("DELIVERIES: ", deliveries)
 
     # =========
     # RESPONSE

@@ -32,6 +32,5 @@ def get_daily_report(
     report = display_daily_report(
         session, report_from, report_to, outlet_id, dealership_id
     )
-    print(report)
 
     return report
