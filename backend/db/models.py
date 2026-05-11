@@ -47,7 +47,7 @@ FLAG_DURATIONS = {
 class MISRecordType(str, Enum):
     ENQUIRY = "enquiry"
     BOOKING = "booking"
-    DELIVERY = "Delivery"
+    DELIVERY = "delivery"
 
 
 class MISMatchingStatus(str, Enum):
@@ -391,15 +391,25 @@ class EditRequest(SQLModel, table=True):
 
 class DailyBooking(SQLModel, table=True):
     __table_args__ = (
-        UniqueConstraint("date", "outlet_id", name="uq_booking_date_outlet"),
+        UniqueConstraint(
+            "date",
+            "outlet_id",
+            name="uq_booking_date_outlet",
+        ),
     )
-    id: Optional[int] = Field(default=None, primary_key=True)
+
+    id: int | None = Field(default=None, primary_key=True)
     date: date
     outlet_id: int = Field(foreign_key="outlet.id")
     number_bookings: int
     file_received: int
     files_pending: int
     files_verified: int
+    files_out_of_scope: int
+    files_incomplete: int
+    files_approved: int
+    files_rejected: int
+    files_not_verified: int
     is_locked: bool = False
 
 
@@ -414,6 +424,11 @@ class DailyDelivery(SQLModel, table=True):
     file_received: int
     files_pending: int
     files_verified: int
+    files_out_of_scope: int
+    files_incomplete: int
+    files_approved: int
+    files_rejected: int
+    rejected_but_delivered: int
     is_locked: bool = False
 
 

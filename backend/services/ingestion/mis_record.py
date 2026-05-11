@@ -11,6 +11,7 @@ from db.models import (
     MISMatchingStatus,
     DailyBooking,
     DailyDelivery,
+    Transaction,
 )
 
 from services.ingestion.excel_parser import (
@@ -180,9 +181,7 @@ class MISUploadService:
             if not record.approved and not record.rejected and not record.out_of_scope:
                 grouped[group_key]["pending"] += 1
 
-        # -------------------------------------------------
         # UPDATE DAILY TABLES
-        # -------------------------------------------------
         for (record_date, record_type), counts in grouped.items():
             if record_type == MISRecordType.BOOKING:
                 daily = session.exec(
@@ -243,6 +242,9 @@ class MISUploadService:
         record_type: MISRecordType,
     ):
 
+        # =====================================================
+        # FETCH MIS RECORDS
+        # =====================================================
         records = session.exec(
             select(MISRecord).where(
                 MISRecord.outlet_id == outlet_id,
@@ -251,21 +253,66 @@ class MISUploadService:
             )
         ).all()
 
+        # =====================================================
+        # COUNTS
+        # =====================================================
         total = len(records)
 
-        received = sum(1 for r in records if r.received)
+        files_received = len([r for r in records if r.received])
 
-        verified = sum(1 for r in records if r.approved)
+        files_pending = len([r for r in records if not r.received])
 
-        pending = sum(
-            1
-            for r in records
-            if (not r.approved and not r.rejected and not r.out_of_scope)
+        files_out_of_scope = len([r for r in records if r.out_of_scope])
+
+        files_approved = len([r for r in records if r.approved])
+
+        files_rejected = len([r for r in records if r.rejected])
+
+        files_not_verified = len(
+            [
+                r
+                for r in records
+                if (
+                    r.received
+                    and not r.out_of_scope
+                    and not r.approved
+                    and not r.rejected
+                )
+            ]
         )
 
-        # ----------------------------------------
-        # BOOKING
-        # ----------------------------------------
+        files_verified = files_approved + files_rejected
+
+        # INCOMPLETE FILES
+        if record_type == MISRecordType.BOOKING:
+            files_incomplete = session.exec(
+                select(Transaction).where(
+                    Transaction.outlet_id == outlet_id,
+                    Transaction.booking_date == record_date,
+                    Transaction.booking_file_incomplete.is_(True),
+                )
+            ).all()
+
+        else:
+            files_incomplete = session.exec(
+                select(Transaction).where(
+                    Transaction.outlet_id == outlet_id,
+                    Transaction.delivery_date == record_date,
+                    Transaction.delivery_file_incomplete.is_(True),
+                )
+            ).all()
+
+        files_incomplete = len(files_incomplete)
+
+        rejected_but_delivered = len(
+            [
+                r
+                for r in records
+                if (r.rejected and record_type == MISRecordType.DELIVERY)
+            ]
+        )
+
+        # BOOKING SUMMARY
         if record_type == MISRecordType.BOOKING:
             daily = session.exec(
                 select(DailyBooking).where(
@@ -282,17 +329,36 @@ class MISUploadService:
                     file_received=0,
                     files_pending=0,
                     files_verified=0,
+                    files_out_of_scope=0,
+                    files_incomplete=0,
+                    files_approved=0,
+                    files_rejected=0,
+                    files_not_verified=0,
                 )
+
                 session.add(daily)
 
             daily.number_bookings = total
-            daily.file_received = received
-            daily.files_verified = verified
-            daily.files_pending = pending
 
-        # ----------------------------------------
-        # DELIVERY
-        # ----------------------------------------
+            daily.file_received = files_received
+
+            daily.files_pending = files_pending
+
+            daily.files_verified = files_verified
+
+            daily.files_out_of_scope = files_out_of_scope
+
+            daily.files_incomplete = files_incomplete
+
+            daily.files_approved = files_approved
+
+            daily.files_rejected = files_rejected
+
+            daily.files_not_verified = files_not_verified
+
+        # =====================================================
+        # DELIVERY SUMMARY
+        # =====================================================
         elif record_type == MISRecordType.DELIVERY:
             daily = session.exec(
                 select(DailyDelivery).where(
@@ -309,14 +375,36 @@ class MISUploadService:
                     file_received=0,
                     files_pending=0,
                     files_verified=0,
+                    files_out_of_scope=0,
+                    files_incomplete=0,
+                    files_approved=0,
+                    files_rejected=0,
+                    rejected_but_delivered=0,
                 )
+
                 session.add(daily)
 
             daily.number_deliveries = total
-            daily.file_received = received
-            daily.files_verified = verified
-            daily.files_pending = pending
 
+            daily.file_received = files_received
+
+            daily.files_pending = files_pending
+
+            daily.files_verified = files_verified
+
+            daily.files_out_of_scope = files_out_of_scope
+
+            daily.files_incomplete = files_incomplete
+
+            daily.files_approved = files_approved
+
+            daily.files_rejected = files_rejected
+
+            daily.rejected_but_delivered = rejected_but_delivered
+
+        # =====================================================
+        # SAVE
+        # =====================================================
         session.commit()
 
     # =====================================================

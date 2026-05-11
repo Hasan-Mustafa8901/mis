@@ -13,3 +13,4 @@ test_daily_report.py
 test_report.py
 test_report_empty.py
 implementation_*.md
+daily_report_generator_old.py

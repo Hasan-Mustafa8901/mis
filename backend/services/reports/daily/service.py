@@ -4,6 +4,7 @@ from datetime import date
 
 from sqlmodel import Session
 
+from db.models import MISRecordType
 from schemas.reports.daily_weekly_reports import (
     DailyReportData,
     StageReport,
@@ -14,7 +15,14 @@ from services.reports.daily.queries import (
     get_delivery_reconciliation,
     get_booking_discount_summary,
     get_delivery_discount_summary,
-    get_pending_files,
+    get_delivery_pending_files,
+    get_booking_docs_pending,
+    get_booking_pending_files,
+    get_delivery_docs_pending,
+    get_booking_out_of_scope,
+    get_delivery_out_of_scope,
+    get_delayed_files,
+    get_rejected_files_delivered,
 )
 
 
@@ -33,48 +41,166 @@ class DailyReportService:
             raise ValueError("start_date cannot be greater than end_date")
 
         booking_stage = StageReport(
-            reconciliation=get_booking_reconciliation(
-                session, start_date, end_date, dealership_id, outlet_id
+            reconciliation=(
+                get_booking_reconciliation(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
             ),
-            discount=get_booking_discount_summary(
-                session,
-                start_date,
-                end_date,
-                dealership_id,
-                outlet_id,
+            discount=(
+                get_booking_discount_summary(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
             ),
         )
 
         delivery_stage = StageReport(
-            reconciliation=get_delivery_reconciliation(
-                session, start_date, end_date, dealership_id, outlet_id
+            reconciliation=(
+                get_delivery_reconciliation(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
             ),
-            discount=get_delivery_discount_summary(
-                session, start_date, end_date, dealership_id, outlet_id
+            discount=(
+                get_delivery_discount_summary(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
             ),
         )
+
+        # =====================================================
+        # REPORT DATE
+        # =====================================================
         if start_date == end_date:
             report_date = end_date.strftime("%d/%m/%Y")
+
         else:
             report_date = {
                 "from": start_date.strftime("%d/%m/%Y"),
                 "to": end_date.strftime("%d/%m/%Y"),
             }
 
+        # =====================================================
+        # REPORT DATA
+        # =====================================================
         report = DailyReportData(
             report_date=report_date,
             booking=booking_stage,
             delivery=delivery_stage,
-            files_pending=get_pending_files(
-                session,
-                start_date,
-                end_date,
-                dealership_id,
-                outlet_id,
+            # =====================================
+            # BOOKING FILES PENDING
+            # =====================================
+            booking_files_pending=(
+                get_booking_pending_files(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
             ),
-            docs_pending=[],
+            # =====================================
+            # DELIVERY FILES PENDING
+            # =====================================
+            delivery_files_pending=(
+                get_delivery_pending_files(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
+            # =====================================
+            # BOOKING DOCS PENDING
+            # =====================================
+            booking_docs_pending=(
+                get_booking_docs_pending(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
+            # =====================================
+            # DELIVERY DOCS PENDING
+            # =====================================
+            delivery_docs_pending=(
+                get_delivery_docs_pending(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
+            booking_out_of_scope=(
+                get_booking_out_of_scope(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
+            delivery_out_of_scope=(
+                get_delivery_out_of_scope(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
+            booking_delay_files=(
+                get_delayed_files(
+                    session,
+                    start_date,
+                    end_date,
+                    MISRecordType.BOOKING,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
+            delivery_delay_files=(
+                get_delayed_files(
+                    session,
+                    start_date,
+                    end_date,
+                    MISRecordType.DELIVERY,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
+            rejected_files_delivered=(
+                get_rejected_files_delivered(
+                    session,
+                    start_date,
+                    end_date,
+                    dealership_id,
+                    outlet_id,
+                )
+            ),
         )
 
+        # =====================================================
+        # EXCEL PAYLOAD
+        # =====================================================
         return cls._to_excel_payload(report)
 
     @staticmethod
@@ -122,6 +248,43 @@ class DailyReportService:
                 "Excess Discount Cases(out of Verified cases)": report.delivery.discount.excess_discount_verified_cases,
                 "Zero Discount Cases(out of Verified cases)": report.delivery.discount.zero_discount_cases,
             },
-            "files_pending": [row.model_dump() for row in report.files_pending],
-            "docs_pending": [row.model_dump() for row in report.docs_pending],
+            # =====================================
+            # BOOKING FILES PENDING
+            # =====================================
+            "booking_files_pending": [
+                row.model_dump() for row in report.booking_files_pending
+            ],
+            # =====================================
+            # DELIVERY FILES PENDING
+            # =====================================
+            "delivery_files_pending": [
+                row.model_dump() for row in report.delivery_files_pending
+            ],
+            # =====================================
+            # BOOKING DOCS PENDING
+            # =====================================
+            "booking_docs_pending": [
+                row.model_dump() for row in report.booking_docs_pending
+            ],
+            # =====================================
+            # DELIVERY DOCS PENDING
+            # =====================================
+            "delivery_docs_pending": [
+                row.model_dump() for row in report.delivery_docs_pending
+            ],
+            "booking_out_of_scope": [
+                row.model_dump() for row in report.booking_out_of_scope
+            ],
+            "delivery_out_of_scope": [
+                row.model_dump() for row in report.delivery_out_of_scope
+            ],
+            "booking_delay_files": [
+                row.model_dump() for row in report.booking_delay_files
+            ],
+            "delivery_delay_files": [
+                row.model_dump() for row in report.delivery_delay_files
+            ],
+            "rejected_files_delivered": [
+                row.model_dump() for row in report.rejected_files_delivered
+            ],
         }

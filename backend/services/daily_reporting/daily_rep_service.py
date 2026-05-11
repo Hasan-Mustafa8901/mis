@@ -1,60 +1,102 @@
-from db.models import DailyBooking, DailyDelivery, Transaction
+from db.models import DailyBooking, DailyDelivery, Transaction, Outlet, Dealership
 from sqlmodel import Session, select
-from datetime import date
+from datetime import date, datetime
 from typing import List
 
 
 def display_daily_report(
-    session: Session, report_from: date, report_to: date, outlet_id
+    session: Session,
+    report_from: date,
+    report_to: date,
+    outlet_id: int | None,
+    dealership_id: int | None,
 ):
-
-    stmt = select(DailyBooking).where(
+    print("OUTLET ID:", outlet_id)
+    print("DEALERSHIP ID:", dealership_id)
+    print("FROM:", report_from)
+    print("TO:", report_to)
+    booking_stmt = select(DailyBooking).where(
         DailyBooking.date >= report_from,
         DailyBooking.date <= report_to,
-        DailyBooking.outlet_id == outlet_id,
     )
-    bookings = session.exec(stmt).all()
 
-    stmt = select(DailyDelivery).where(
+    delivery_stmt = select(DailyDelivery).where(
         DailyDelivery.date >= report_from,
         DailyDelivery.date <= report_to,
-        DailyDelivery.outlet_id == outlet_id,
     )
-    deliveries = session.exec(stmt).all()
 
-    report = {
-        "date": report_from.isoformat(),
+    # =========================================
+    # FILTERING
+    # =========================================
+    if dealership_id:
+        outlets = session.exec(
+            select(Outlet).where(Outlet.dealership_id == dealership_id)
+        ).all()
+
+        outlet_ids = [o.id for o in outlets]
+
+        booking_stmt = booking_stmt.where(DailyBooking.outlet_id.in_(outlet_ids))
+
+        delivery_stmt = delivery_stmt.where(DailyDelivery.outlet_id.in_(outlet_ids))
+
+    elif outlet_id:
+        booking_stmt = booking_stmt.where(DailyBooking.outlet_id == outlet_id)
+
+        delivery_stmt = delivery_stmt.where(DailyDelivery.outlet_id == outlet_id)
+
+    all_bookings = session.exec(select(DailyBooking)).all()
+    print("ALL BOOKINGS", all_bookings)
+
+    # =======
+    # FETCH
+    # =======
+    bookings = session.exec(booking_stmt).all()
+
+    deliveries = session.exec(delivery_stmt).all()
+    print("BOOKINGS: ", bookings)
+    print("DELIVERIES: ", deliveries)
+
+    # =========
+    # RESPONSE
+    # =========
+    return {
         "bookings": [
             {
+                "date": b.date.isoformat(),
                 "outlet_id": b.outlet_id,
-                "number_bookings": b.number_bookings,
-                "file_received": b.file_received,
+                "total_count": b.number_bookings,
+                "files_received": b.file_received,
                 "files_pending": b.files_pending,
-                "files_verified": b.files_verified,
+                "files_out_of_scope": (b.files_out_of_scope or 0),
+                "files_to_be_verified": (b.files_not_verified or 0),
+                "files_incomplete": (b.files_incomplete or 0),
+                "files_approved": (b.files_approved or 0),
+                "files_rejected": (b.files_rejected or 0),
+                "files_not_verified": (b.files_not_verified or 0),
             }
             for b in bookings
         ],
         "deliveries": [
             {
+                "date": d.date.isoformat(),
                 "outlet_id": d.outlet_id,
-                "number_deliveries": d.number_deliveries,
-                "file_received": d.file_received,
+                "total_count": d.number_deliveries,
+                "files_received": d.file_received,
                 "files_pending": d.files_pending,
-                "files_verified": d.files_verified,
+                "files_out_of_scope": (d.files_out_of_scope or 0),
+                "files_to_be_verified": (d.files_verified or 0),
+                "files_incomplete": (d.files_incomplete or 0),
+                "files_approved": (d.files_approved or 0),
+                "files_rejected": (d.files_rejected or 0),
+                "rejected_files_delivered": (d.rejected_but_delivered or 0),
             }
             for d in deliveries
         ],
     }
-    return report
 
 
 def convert_to_date_type(val):
-    from datetime import datetime
-
     return datetime.strptime(val, r"%d/%m/%Y").date()
-
-
-from sqlmodel import select
 
 
 def upsert_booking(session, data):
