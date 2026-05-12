@@ -17,7 +17,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
-from utils_old import get_ist_today  # , disp_date, date_for_input
+from utils_old import get_ist_today, disp_date  # , date_for_input
 from dotenv import load_dotenv
 
 import os
@@ -1843,7 +1843,8 @@ class MISState:
 
 
 def delete_entry(txn_ids: list) -> None:
-    pass
+    for id in txn_ids:
+        pass
 
 
 async def load_master_data(mstate):
@@ -2602,10 +2603,11 @@ async def daily_reporting_page() -> None:
         # =====================================================
         if dialog_type == "total_count":
             headers = [
-                ("S.No", "60px"),
+                ("S.No", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
-                ("Mobile", "130px"),
+                ("Mobile", "80px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Received", "120px"),
             ]
@@ -2615,59 +2617,65 @@ async def daily_reporting_page() -> None:
         # =====================================================
         elif dialog_type == "files_received":
             headers = [
-                ("S.No", "60px"),
+                ("S.No", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
                 ("Mobile", "130px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
-                ("Out Of Scope", "140px"),
                 ("Remarks", "220px"),
+                ("Out Of Scope", "140px"),
             ]
         elif dialog_type == "files_out_of_scope":
             headers = [
-                ("S.No.", "60px"),
+                ("S.No.", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
                 ("Mobile", "130px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Reason", "260px"),
             ]
         elif dialog_type == "files_to_be_verified":
             headers = [
-                ("S.No", "60px"),
+                ("S.No", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
                 ("Mobile", "130px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Approve", "120px"),
-                ("Reject", "120px"),
                 ("Reason", "220px"),
+                ("Reject", "120px"),
             ]
         elif dialog_type == "files_incomplete":
             headers = [
-                ("S.No", "60px"),
+                ("S.No", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
                 ("Mobile", "130px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Reason", "260px"),
             ]
 
         elif dialog_type == "files_approved":
             headers = [
-                ("S.No", "60px"),
+                ("S.No", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
                 ("Mobile", "130px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Approved", "120px"),
             ]
         elif dialog_type == "files_rejected":
             headers = [
-                ("S.No", "60px"),
+                ("S.No", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
                 ("Mobile", "130px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Rejected", "120px"),
                 ("Reason", "240px"),
@@ -2678,10 +2686,11 @@ async def daily_reporting_page() -> None:
         # =====================================================
         else:
             headers = [
-                ("S.No", "60px"),
+                ("S.No", "40px"),
                 ("Date", "130px"),
                 ("Customer Name", ""),
                 ("Mobile", "130px"),
+                ("Car Model", "100px"),
                 ("TL", "120px"),
             ]
 
@@ -2747,7 +2756,8 @@ async def daily_reporting_page() -> None:
                                 # DATE
                                 # =====================================
                                 with ui.element("td").style(TD):
-                                    ui.label(row.get("date", "—")).style(
+                                    date = disp_date(row.get("date"))
+                                    ui.label(date if date else "—").style(
                                         "font-size:13px;color:#374151;font-weight:500"
                                     )
 
@@ -2771,6 +2781,20 @@ async def daily_reporting_page() -> None:
                                     ui.label(
                                         row.get(
                                             "customer_mobile",
+                                            "—",
+                                        )
+                                    ).style(
+                                        "font-family:monospace;"
+                                        "font-size:13px;"
+                                        "color:#374151"
+                                    )
+                                # =====================================
+                                # CAR MODEL
+                                # =====================================
+                                with ui.element("td").style(TD):
+                                    ui.label(
+                                        row.get(
+                                            "car_model",
                                             "—",
                                         )
                                     ).style(
@@ -2916,17 +2940,18 @@ async def daily_reporting_page() -> None:
                                     # =====================================
                                     # REASON INPUT
                                     # =====================================
-                                    reason_input = (
-                                        ui.input(
-                                            value=row.get(
-                                                "rejection_reason",
-                                                "",
-                                            ),
-                                            placeholder="Reason",
+                                    with ui.element("td").style(TD):
+                                        reason_input = (
+                                            ui.input(
+                                                value=row.get(
+                                                    "rejection_reason",
+                                                    "",
+                                                ),
+                                                placeholder="Reason",
+                                            )
+                                            .props("dense outlined")
+                                            .classes("w-44")
                                         )
-                                        .props("dense outlined")
-                                        .classes("w-44")
-                                    )
 
                                     # =====================================
                                     # REJECT COLUMN
@@ -2962,13 +2987,6 @@ async def daily_reporting_page() -> None:
                                             f"disable={str(row.get('approved', False)).lower()}"
                                         )
 
-                                    # =====================================
-                                    # REASON COLUMN
-                                    # =====================================
-                                    with ui.element("td").style(
-                                        TD + ";text-align:left"
-                                    ):
-                                        reason_input
                                 # File APPROVED
                                 elif dialog_type == "files_approved":
                                     with ui.element("td").style(TD):
@@ -3011,7 +3029,7 @@ async def daily_reporting_page() -> None:
     # Build dialog once
     with (
         ui.dialog() as detail_dlg,
-        ui.card().classes("w-[900px] max-w-[98vw] p-6 rounded-xl shadow-2xl"),
+        ui.card().classes("w-[1000px] max-w-[100vw] p-6 rounded-xl shadow-2xl"),
     ):
         with ui.row().classes("w-full items-center justify-between mb-4"):
             title_el = ui.label("Details").classes(
@@ -3055,11 +3073,39 @@ async def daily_reporting_page() -> None:
                 "stage": _dlg_state["tt"],
                 "column": _dlg_state["col"],
             }
-            print(params)
-            rows = await api_get(
-                "/mis/details",
-                params,
-            )
+            # =====================================
+            # DERIVED VERIFIED (DELIVERY ONLY)
+            # =====================================
+            if _dlg_state["tt"] == "delivery" and _dlg_state["col"] == "files_verified":
+                to_verify_rows = await api_get(
+                    "/mis/details",
+                    {
+                        "record_date": _dlg_state["d"],
+                        "stage": "delivery",
+                        "column": "files_to_be_verified",
+                    },
+                )
+
+                incomplete_rows = await api_get(
+                    "/mis/details",
+                    {
+                        "record_date": _dlg_state["d"],
+                        "stage": "delivery",
+                        "column": "files_incomplete",
+                    },
+                )
+
+                incomplete_ids = {row["id"] for row in incomplete_rows}
+
+                rows = [
+                    row for row in to_verify_rows if row["id"] not in incomplete_ids
+                ]
+
+            else:
+                rows = await api_get(
+                    "/mis/details",
+                    params,
+                )
         except Exception as e:
             print("ERROR: While Loading EBD data", e)
             # ui.notify("ERROR: While Loading EBD data", type="negative")
@@ -3093,12 +3139,13 @@ async def daily_reporting_page() -> None:
 
         # TITLE MAP
         title_map = {
-            "total_count": "Total Files",
+            "total_count": "Total Count",
             "files_received": "Files Received",
             "files_pending": "Files Pending",
             "files_out_of_scope": "Files Out Of Scope",
             "files_to_be_verified": "Files To Be Verified",
             "files_incomplete": "Files Incomplete",
+            "files_verified": "Files Verified",
             "files_approved": "Files Approved",
             "files_rejected": "Files Rejected",
             "files_not_verified": "Files Not Verified",
@@ -3111,7 +3158,8 @@ async def daily_reporting_page() -> None:
         )
 
         # TITLE
-        _dlg_state["title_el"].set_text(f"{label} — {row.get('date')}")
+        date_ = disp_date(row.get("date"))
+        _dlg_state["title_el"].set_text(f"{label} — {date_}")
 
         # OPEN
         detail_dlg.open()
@@ -3232,12 +3280,20 @@ async def daily_reporting_page() -> None:
                             ui.label("Files Incomplete")
 
                         # FILES VERIFIED GROUP
-                        with (
-                            ui.element("th")
-                            .props('colspan="2"')
-                            .style(TABLE_HEADER_STYLE + ";min-width:100px;")
-                        ):
-                            ui.label("Files Verified")
+                        if stage == "booking":
+                            with (
+                                ui.element("th")
+                                .props('colspan="2"')
+                                .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                            ):
+                                ui.label("Files Verified")
+                        else:
+                            with (
+                                ui.element("th")
+                                .props('rowspan="2"')
+                                .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                            ):
+                                ui.label("Files Verified")
 
                         if stage == "booking":
                             # FILES not verified
@@ -3263,17 +3319,18 @@ async def daily_reporting_page() -> None:
                     # HEADER ROW 2
                     # =================================================
                     with ui.element("tr"):
-                        verified_headers = [
-                            "Approved",
-                            "Rejected",
-                        ]
+                        if stage == "booking":
+                            verified_headers = [
+                                "Approved",
+                                "Rejected",
+                            ]
 
-                        for h in verified_headers:
-                            with ui.element("th").style(
-                                TABLE_HEADER_STYLE
-                                + ";background:#F0FDF4;white-space:nowrap;"
-                            ):
-                                ui.label(h)
+                            for h in verified_headers:
+                                with ui.element("th").style(
+                                    TABLE_HEADER_STYLE
+                                    + ";background:#F0FDF4;white-space:nowrap;"
+                                ):
+                                    ui.label(h)
 
                 # ── TABLE BODY ─────────────────────────────────────────
                 with ui.element("tbody"):
@@ -3298,9 +3355,7 @@ async def daily_reporting_page() -> None:
                             with ui.element("td").style(
                                 TABLE_DATA_STYLE + ";white-space:nowrap"
                             ):
-                                date = datetime.strptime(
-                                    row["date"], r"%Y-%m-%d"
-                                ).strftime(r"%d/%m/%Y")
+                                date = disp_date(row.get("date"))
                                 ui.label(date).style("font-weight:600;color:#374151")
 
                             # =========================================
@@ -3365,22 +3420,35 @@ async def daily_reporting_page() -> None:
                             )
 
                             # =========================================
-                            # APPROVED
+                            # VERIFIED
                             # =========================================
-                            render_clickable_cell(
-                                value=None if is_placeholder else row["files_approved"],
-                                column="files_approved",
-                                row=row,
-                            )
+                            if stage == "booking":
+                                # APPROVED
+                                render_clickable_cell(
+                                    value=None
+                                    if is_placeholder
+                                    else row["files_approved"],
+                                    column="files_approved",
+                                    row=row,
+                                )
 
-                            # =========================================
-                            # REJECTED
-                            # =========================================
-                            render_clickable_cell(
-                                value=None if is_placeholder else row["files_rejected"],
-                                column="files_rejected",
-                                row=row,
-                            )
+                                # REJECTED
+                                render_clickable_cell(
+                                    value=None
+                                    if is_placeholder
+                                    else row["files_rejected"],
+                                    column="files_rejected",
+                                    row=row,
+                                )
+
+                            else:
+                                render_clickable_cell(
+                                    value=None
+                                    if is_placeholder
+                                    else row["files_verified"],
+                                    column="files_verified",
+                                    row=row,
+                                )
 
                             # =========================================
                             # LAST COLUMN
@@ -3411,21 +3479,23 @@ async def daily_reporting_page() -> None:
                     "files_out_of_scope",
                     "files_to_be_verified",
                     "files_incomplete",
-                    "files_approved",
-                    "files_rejected",
                 ]
 
                 if stage == "booking":
-                    footer_columns.append("files_not_verified")
+                    footer_columns.extend(
+                        ["files_approved", "files_rejected", "files_not_verified"]
+                    )
                 else:
-                    footer_columns.append("rejected_files_delivered")
+                    footer_columns.extend(
+                        ["files_verified", "rejected_files_delivered"]
+                    )
 
                 def get_total(column: str) -> int:
                     return sum(r.get(column, 0) or 0 for r in rows)
 
                 with ui.element("tfoot"):
                     with ui.element("tr").style(
-                        "background:#ECEEF2;border-top:2px solid #D1D5DB"
+                        "background:#ECEEF2;border-top:2px solid #D1D5DB;"
                     ):
                         # TOTAL LABEL
                         with ui.element("td").style(TABLE_FOOTER_STYLE):
@@ -3548,6 +3618,20 @@ async def daily_reporting_page() -> None:
             delivery_rows,
             "delivery",
         )
+        # =====================================
+        # DERIVED VERIFIED COUNTS
+        # =====================================
+        for row in booking_rows:
+            row["files_verified"] = max(
+                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)),
+                0,
+            )
+
+        for row in delivery_rows:
+            row["files_verified"] = max(
+                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)),
+                0,
+            )
 
         # =====================================
         # RENDER
@@ -3795,8 +3879,7 @@ async def daily_reporting_page() -> None:
             # ── Booking Card ───────────────────────────────────
             with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
                 with ui.row().classes(
-                    "w-full items-center justify-between px-5 py-3 "
-                    "border-b border-gray-100 bg-white"
+                    "w-full items-center justify-between px-5 py-3 bg-white h-2"
                 ):
                     with ui.row().classes("items-center gap-2"):
                         ui.element("div").classes(
@@ -3805,9 +3888,9 @@ async def daily_reporting_page() -> None:
                         ui.label("Booking Report").classes(
                             "text-[13px] font-bold text-gray-800"
                         )
-                    ui.label(
-                        "Click 'Files Pending' or  on 'Files Incomplete' to see details"
-                    ).classes("text-[11px] text-gray-400")
+                    ui.label("Click on any cell to see details").classes(
+                        "text-[11px] text-gray-600"
+                    )
 
                 booking_wrap = (
                     ui.element("div")
@@ -3818,8 +3901,7 @@ async def daily_reporting_page() -> None:
             # ── Delivery Card ──────────────────────────────────
             with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
                 with ui.row().classes(
-                    "w-full items-center justify-between px-5 py-3 "
-                    "border-b border-gray-100 bg-white"
+                    "w-full items-center justify-between px-5 py-3 bg-white h-2"
                 ):
                     with ui.row().classes("items-center gap-2"):
                         ui.element("div").classes(
@@ -3828,9 +3910,9 @@ async def daily_reporting_page() -> None:
                         ui.label("Delivery Report").classes(
                             "text-[13px] font-bold text-gray-800"
                         )
-                    ui.label(
-                        "Click 'Files Pending' or  on 'Files Incomplete' to see details"
-                    ).classes("text-[11px] text-gray-400")
+                    ui.label("Click on any cell to see details").classes(
+                        "text-[11px] text-gray-600"
+                    )
 
                 delivery_wrap = (
                     ui.element("div")
@@ -3853,12 +3935,11 @@ async def daily_reporting_page() -> None:
 
                 async def handle_mis_upload(e):
                     try:
-                        user = get_user()
+                        # user = get_user()
                         status_label.text = "Uploading..."
                         status_label.classes("text-blue-500")
                         payload = {
-                            "outlet_id": user.get("outlet_id")
-                            or 1,  # temporarily make it 1 change it later
+                            "outlet_id": rstate.outlet_select.value,  # temporarily make it 1 change it later
                         }
                         response = await api_post_file(
                             "/mis/upload-ebd",
@@ -3885,7 +3966,7 @@ async def daily_reporting_page() -> None:
                     auto_upload=True,
                 ).props('accept=".xlsx,.xls"')
 
-    # ── Wire controls ─────────────────────────────────────────
+    # Wire controls
     def _get_current_range():
         return range_select.value or "custom"
 

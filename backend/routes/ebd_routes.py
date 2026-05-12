@@ -1,5 +1,4 @@
 # backend/api/routes/mis.py
-
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -52,7 +51,6 @@ def get_mis_details(
             outlet_id,
             dealership_id,
         )
-
     return response
 
 

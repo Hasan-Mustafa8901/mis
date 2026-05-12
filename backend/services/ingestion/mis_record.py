@@ -66,19 +66,14 @@ class MISUploadService:
                 if not customer_name:
                     continue
 
-                record_date = MISUploadService.parse_date(row.get("record_date"))
+                record_date = MISUploadService.parse_date(row.get("date"))
 
                 if not record_date:
                     continue
 
-                customer_mobile = MISUploadService.clean_mobile(
-                    row.get("customer_mobile")
-                )
-
+                customer_mobile = MISUploadService.clean_mobile(row.get("mobile"))
                 car_model = MISUploadService.clean_str(row.get("car_model"))
-
                 team_leader = MISUploadService.clean_str(row.get("team_leader"))
-
                 # -----------------------------------
                 # DUPLICATE CHECK
                 # -----------------------------------
@@ -118,19 +113,15 @@ class MISUploadService:
                     raw_data=MISUploadService.make_json_safe(row.to_dict()),
                     created_at=get_ist_now(),
                 )
-
+                print(record)
                 session.add(record)
 
                 total_created += 1
 
-        # -----------------------------------
         # SAVE
-        # -----------------------------------
         session.commit()
 
-        # -----------------------------------
         # SYNC DAILY SUMMARY
-        # -----------------------------------
         MISUploadService.sync_daily_summary(
             session=session,
             outlet_id=outlet_id,
@@ -242,9 +233,7 @@ class MISUploadService:
         record_type: MISRecordType,
     ):
 
-        # =====================================================
         # FETCH MIS RECORDS
-        # =====================================================
         records = session.exec(
             select(MISRecord).where(
                 MISRecord.outlet_id == outlet_id,
@@ -253,9 +242,7 @@ class MISUploadService:
             )
         ).all()
 
-        # =====================================================
         # COUNTS
-        # =====================================================
         total = len(records)
 
         files_received = len([r for r in records if r.received])
@@ -265,7 +252,6 @@ class MISUploadService:
         files_out_of_scope = len([r for r in records if r.out_of_scope])
 
         files_approved = len([r for r in records if r.approved])
-
         files_rejected = len([r for r in records if r.rejected])
 
         files_not_verified = len(
@@ -356,9 +342,7 @@ class MISUploadService:
 
             daily.files_not_verified = files_not_verified
 
-        # =====================================================
         # DELIVERY SUMMARY
-        # =====================================================
         elif record_type == MISRecordType.DELIVERY:
             daily = session.exec(
                 select(DailyDelivery).where(
@@ -402,9 +386,7 @@ class MISUploadService:
 
             daily.rejected_but_delivered = rejected_but_delivered
 
-        # =====================================================
         # SAVE
-        # =====================================================
         session.commit()
 
     # =====================================================
@@ -429,8 +411,9 @@ class MISUploadService:
 
         if len(mobile) < 10:
             return None
-
-        return mobile[-10:]
+        if mobile.startswith(("+91", "0")):
+            return mobile[-10:]
+        return mobile
 
     @staticmethod
     def parse_date(value):
