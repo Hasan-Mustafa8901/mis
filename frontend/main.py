@@ -192,6 +192,15 @@ async def api_get(path: str, params=None):
         return r.json()
 
 
+async def api_delete(path: str):
+    async with httpx.AsyncClient() as client:
+        r = await client.delete(
+            f"{BASE_URL}{path}", headers=get_auth_headers(), timeout=10
+        )
+        r.raise_for_status()
+        return r.json()
+
+
 async def api_post(path: str, payload: dict):
     async with httpx.AsyncClient() as client:
         r = await client.post(
@@ -576,7 +585,7 @@ def clear_label(column_name: str):
     )
 
 
-def render_table(transactions, stage: str = "booking"):
+def render_table(transactions, state, stage: str = "booking"):
     """
     Renders the MIS transaction table using AG Grid (ui.aggrid).
     """
@@ -607,8 +616,6 @@ def render_table(transactions, stage: str = "booking"):
             tok in k
             for tok in (
                 "_actual",
-                # "_allowed",
-                # "_diff",
                 "total_",
                 "price",
                 "amount",
@@ -714,6 +721,7 @@ def render_table(transactions, stage: str = "booking"):
         .classes("w-full h-100")
         .style("font-family:Inter,sans-serif;font-size:13px;")
     )
+    state.grid = grid
 
     def create_dialog(txn_id):
         with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
@@ -1873,10 +1881,8 @@ class MISState:
 
         self.stage: str = "booking"
         self.month: str | None = None
-
-
-def delete_entry(txn_ids: list) -> None:
-    pass
+        self.grid = None
+        self.selected_ids: list[int] = []
 
 
 async def load_master_data(mstate):
@@ -1897,6 +1903,31 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     mstate.selected_outlet = None
     mstate.stage = stage
     mstate.month = month
+
+    async def get_selected_ids():
+        if not mstate.grid:
+            return []
+        rows: list[dict] = await mstate.grid.get_selected_rows()  # type: ignore
+        ids = [r["id"] for r in rows if r.get("id")]
+        mstate.selected_ids = ids
+        return ids
+
+    async def delete_entry() -> None:
+        txn_ids = await get_selected_ids()
+        try:
+            if not txn_ids:
+                ui.notify("Select atleast one entry.", type="info")
+                return
+
+            for id in txn_ids:
+                await api_delete(f"/transactions/{id}")
+            ui.notify("Deleted the entry successfully", type="positive")
+
+            await load_data()
+
+        except Exception as e:
+            print("ERROR: error occured while deletion", e)
+            ui.notify("Error Occured", type="negative")
 
     def reset_filters():
         mstate.selected_dealer = None
@@ -2020,7 +2051,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                 with mstate.table_container:
                     mstate.table_container.clear()
-                    render_table(data, stage=mstate.stage)
+                    render_table(data, mstate, stage=mstate.stage)
 
             mstate._load_tasks = asyncio.create_task(_run())
 
@@ -2102,7 +2133,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                 ## Delete Button
                 with (
-                    ui.button()
+                    ui.button(on_click=delete_entry)
                     .classes(
                         "bg-[#FF0000] text-white font-semibold text-[13px] px-4.5 py-2 rounded-[7px] shadow-sm ml-auto"
                     )
