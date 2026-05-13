@@ -131,7 +131,7 @@ def get_mis_data(
                 row.matching_status.value if row.matching_status else None
             ),
             "transaction_id": row.transaction_id,
-            "remarks": row.rejection_reason or row.out_of_scope_reason,
+            "remarks": row.out_of_scope_reason,
         }
         for row in rows
     ]

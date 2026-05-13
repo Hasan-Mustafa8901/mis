@@ -4,7 +4,7 @@ from datetime import date
 
 from sqlmodel import Session
 
-from db.models import MISRecordType
+from db.models import MISRecordType, Dealership, Outlet
 from schemas.reports.daily_weekly_reports import (
     DailyReportData,
     StageReport,
@@ -81,6 +81,10 @@ class DailyReportService:
                 )
             ),
         )
+        scope: str = cls.get_scope_label(
+            session=session, dealership_id=dealership_id, outlet_id=outlet_id
+        )
+        print(scope)
 
         # =====================================================
         # REPORT DATE
@@ -99,6 +103,7 @@ class DailyReportService:
         # =====================================================
         report = DailyReportData(
             report_date=report_date,
+            scope=scope,
             booking=booking_stage,
             delivery=delivery_stage,
             # =====================================
@@ -210,6 +215,7 @@ class DailyReportService:
 
         return {
             "report_date": report.report_date,
+            "scope": report.scope,
             "booking": {
                 "Total Cases Reported": report.booking.reconciliation.total_cases_reported,
                 "Files Received": report.booking.reconciliation.files_received,
@@ -288,3 +294,40 @@ class DailyReportService:
                 row.model_dump() for row in report.rejected_files_delivered
             ],
         }
+
+    @staticmethod
+    def get_scope_label(
+        session: Session,
+        dealership_id: int | None = None,
+        outlet_id: int | None = None,
+    ) -> str:
+        """
+        Returns report scope label.
+
+        Priority:
+        1. Outlet
+        2. Dealership
+        3. All Showrooms
+        """
+
+        # OUTLET
+        if outlet_id:
+            outlet = session.get(
+                Outlet,
+                outlet_id,
+            )
+
+            if outlet:
+                return outlet.name
+
+        # DEALERSHIP
+        if dealership_id:
+            dealership = session.get(
+                Dealership,
+                dealership_id,
+            )
+
+            if dealership:
+                return dealership.name
+        # Default
+        return "All Showrooms"

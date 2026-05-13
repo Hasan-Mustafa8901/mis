@@ -97,6 +97,7 @@ class StageReport(BaseModel):
 
 class DailyReportData(BaseModel):
     report_date: str | dict
+    scope: str
     booking: StageReport
     delivery: StageReport
 

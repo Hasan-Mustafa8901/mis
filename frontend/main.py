@@ -2554,6 +2554,8 @@ class ReportingState:
         self.selected_outlet: int | None = None
         self.dealer_select: ui.select | None = None
         self.outlet_select: ui.select | None = None
+        self.report_from: date | str = ""
+        self.report_to: date | str = ""
         self.dealerships: dict = {}
         self.outlets: dict = {}
 
@@ -2569,6 +2571,8 @@ async def daily_reporting_page() -> None:
     render_topbar("Daily Reporting")
 
     today_str = get_ist_today().isoformat()
+    rstate.report_from = today_str
+    rstate.report_to = today_str
 
     # ── Generic detail dialog (Pending & Incomplete) ─────────
     _dlg_state: dict = {
@@ -2906,86 +2910,117 @@ async def daily_reporting_page() -> None:
                                         ).style("font-size:13px;color:#374151;")
                                 elif dialog_type == "files_to_be_verified":
                                     # =====================================
-                                    # APPROVE COLUMN
+                                    # BOOKING → INTERACTIVE
                                     # =====================================
-                                    with ui.element("td").style(TD):
+                                    if _dlg_state["tt"] == "booking":
+                                        # =====================================
+                                        # APPROVE COLUMN
+                                        # =====================================
+                                        with ui.element("td").style(TD):
 
-                                        async def toggle_approve(
-                                            e,
-                                            record_id=row["id"],
-                                        ):
+                                            async def toggle_approve(
+                                                e,
+                                                record_id=row["id"],
+                                            ):
 
-                                            await api_post(
-                                                "/mis/toggle-approve",
-                                                {
-                                                    "mis_record_id": record_id,
-                                                    "value": e.value,
-                                                },
+                                                await api_post(
+                                                    "/mis/toggle-approve",
+                                                    {
+                                                        "mis_record_id": record_id,
+                                                        "value": e.value,
+                                                    },
+                                                )
+
+                                                await _fetch_and_show_dialog()
+
+                                                await reload_current_range()
+
+                                            ui.checkbox(
+                                                value=row.get(
+                                                    "approved",
+                                                    False,
+                                                ),
+                                                on_change=toggle_approve,
+                                            ).props(
+                                                f"disable={str(row.get('rejected', False)).lower()}"
                                             )
 
-                                            await _fetch_and_show_dialog()
+                                        # =====================================
+                                        # REASON INPUT
+                                        # =====================================
+                                        with ui.element("td").style(TD):
+                                            reason_input = (
+                                                ui.input(
+                                                    value=row.get(
+                                                        "rejection_reason",
+                                                        "",
+                                                    ),
+                                                    placeholder="Reason",
+                                                )
+                                                .props("dense outlined")
+                                                .classes("w-44")
+                                            )
 
-                                            await reload_current_range()
+                                        # =====================================
+                                        # REJECT COLUMN
+                                        # =====================================
+                                        with ui.element("td").style(TD):
 
-                                        ui.checkbox(
-                                            value=row.get(
-                                                "approved",
-                                                False,
-                                            ),
-                                            on_change=toggle_approve,
-                                        ).props(
-                                            f"disable={str(row.get('rejected', False)).lower()}"
-                                        )
+                                            async def toggle_reject(
+                                                e,
+                                                record_id=row["id"],
+                                                inp=reason_input,
+                                            ):
 
-                                    # =====================================
-                                    # REASON INPUT
-                                    # =====================================
-                                    with ui.element("td").style(TD):
-                                        reason_input = (
-                                            ui.input(
+                                                await api_post(
+                                                    "/mis/toggle-reject",
+                                                    {
+                                                        "mis_record_id": record_id,
+                                                        "value": e.value,
+                                                        "reason": (inp.value or ""),
+                                                    },
+                                                )
+
+                                                await _fetch_and_show_dialog()
+
+                                                await reload_current_range()
+
+                                            ui.checkbox(
                                                 value=row.get(
+                                                    "rejected",
+                                                    False,
+                                                ),
+                                                on_change=toggle_reject,
+                                            ).props(
+                                                f"disable={str(row.get('approved', False)).lower()}"
+                                            )
+
+                                    # =====================================
+                                    # DELIVERY → READ ONLY
+                                    # =====================================
+                                    else:
+                                        with ui.element("td").style(TD):
+                                            status = (
+                                                "Verified"
+                                                if (
+                                                    row.get("approved")
+                                                    or row.get("rejected")
+                                                )
+                                                else "-"
+                                            )
+
+                                            ui.label(status)
+
+                                        with ui.element("td").style(TD):
+                                            ui.label(
+                                                row.get(
                                                     "rejection_reason",
                                                     "",
-                                                ),
-                                                placeholder="Reason",
-                                            )
-                                            .props("dense outlined")
-                                            .classes("w-44")
-                                        )
-
-                                    # =====================================
-                                    # REJECT COLUMN
-                                    # =====================================
-                                    with ui.element("td").style(TD):
-
-                                        async def toggle_reject(
-                                            e,
-                                            record_id=row["id"],
-                                            inp=reason_input,
-                                        ):
-
-                                            await api_post(
-                                                "/mis/toggle-reject",
-                                                {
-                                                    "mis_record_id": record_id,
-                                                    "value": e.value,
-                                                    "reason": (inp.value or ""),
-                                                },
+                                                )
                                             )
 
-                                            await _fetch_and_show_dialog()
-
-                                            await reload_current_range()
-
-                                        ui.checkbox(
-                                            value=row.get(
-                                                "rejected",
-                                                False,
-                                            ),
-                                            on_change=toggle_reject,
-                                        ).props(
-                                            f"disable={str(row.get('approved', False)).lower()}"
-                                        )
+                                        with ui.element("td").style(TD):
+                                            ui.label("-")
 
                                 # File APPROVED
                                 elif dialog_type == "files_approved":
@@ -3605,22 +3640,17 @@ async def daily_reporting_page() -> None:
             )
 
             delivery_rows.append(row)
-
-        # =====================================
-        # PLACEHOLDER ROWS
-        # =====================================
+        # Placeholder
         booking_rows = ensure_today_row(
             booking_rows,
             "booking",
         )
-
+        # Placeholder
         delivery_rows = ensure_today_row(
             delivery_rows,
             "delivery",
         )
-        # =====================================
         # DERIVED VERIFIED COUNTS
-        # =====================================
         for row in booking_rows:
             row["files_verified"] = max(
                 (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)),
@@ -3654,27 +3684,23 @@ async def daily_reporting_page() -> None:
 
     async def reload_current_range():
         selection = range_select.value or "today"
-        await on_range_change(
-            type(
-                "E",
-                (),
-                {"value": selection},
-            )()
-        )
+        await on_range_change(type("E", (), {"value": selection})())
 
     async def download_report():
-
         try:
-            params = {
-                "start_date": from_inp.value,
-                "end_date": to_inp.value,
-            }
-            # Optional filters
-            # if "selected_dealership_id" in locals() and selected_dealership_id:
-            #     params["dealership_id"] = selected_dealership_id
+            if not rstate.selected_dealer and not rstate.selected_outlet:
+                ui.notify("Select atleast a dealership or a showroom.", type="info")
+                return
 
-            # if "selected_outlet_id" in locals() and selected_outlet_id:
-            #     params["outlet_id"] = selected_outlet_id
+            params = {
+                "start_date": rstate.report_from,
+                "end_date": rstate.report_to,
+            }
+            if rstate.selected_outlet:
+                params["outlet_id"] = rstate.selected_outlet
+
+            elif rstate.selected_dealer:
+                params["dealership_id"] = rstate.selected_dealer
 
             async with httpx.AsyncClient() as client:
                 response = await client.get(
@@ -3936,6 +3962,12 @@ async def daily_reporting_page() -> None:
                 async def handle_mis_upload(e):
                     try:
                         # user = get_user()
+                        if not rstate.outlet_select.value:
+                            ui.notify(
+                                "Please select a showroom to upload file.",
+                                type="warning",
+                            )
+                            return
                         status_label.text = "Uploading..."
                         status_label.classes("text-blue-500")
                         payload = {
@@ -3955,6 +3987,7 @@ async def daily_reporting_page() -> None:
                         status_label.text = f"✅ Upload successful ({created} records)"
 
                         status_label.classes("text-green-600")
+                        # ui.upload.clear()
 
                     except Exception as ex:
                         status_label.text = f"❌ {str(ex)}"
@@ -3962,6 +3995,7 @@ async def daily_reporting_page() -> None:
                         status_label.classes("text-red-500")
 
                 ui.upload(
+                    label="Upload EBD Data",
                     on_upload=handle_mis_upload,
                     auto_upload=True,
                 ).props('accept=".xlsx,.xls"')
@@ -3975,33 +4009,50 @@ async def daily_reporting_page() -> None:
         # Show date pickers only for custom
         custom_range_row.set_visibility(selection == "custom")
         if selection == "today":
-            await load_daily_report(today_str, today_str)
+            rstate.report_from = today_str
+            rstate.report_to = today_str
+            await load_daily_report(rstate.report_from, rstate.report_to)
+
         elif selection == "yesterday":
             y = _yester.isoformat()  # yesterday
-            await load_daily_report(y, y)
+            rstate.report_from = y
+            rstate.report_to = y
+            await load_daily_report(rstate.report_from, rstate.report_to)
+
         elif selection == "last7":
             week = (_today - timedelta(days=6)).isoformat()
-            await load_daily_report(week, today_str)
+            rstate.report_from = week
+            rstate.report_to = today_str
+            await load_daily_report(rstate.report_from, rstate.report_to)
+
         elif selection == "last15":
             fd = (_today - timedelta(days=14)).isoformat()
-            await load_daily_report(fd, today_str)
+            rstate.report_from = fd
+            rstate.report_to = today_str
+            await load_daily_report(rstate.report_from, rstate.report_to)
 
         elif selection == "last30":
-            fd = (_today - timedelta(days=29)).isoformat()
-            await load_daily_report(fd, today_str)
+            tn = (_today - timedelta(days=29)).isoformat()
+            rstate.report_from = tn
+            rstate.report_to = today_str
+            await load_daily_report(rstate.report_from, rstate.report_to)
+
         elif selection == "last60":
-            fd = (_today - timedelta(days=59)).isoformat()
-            await load_daily_report(fd, today_str)
+            fnine = (_today - timedelta(days=59)).isoformat()
+            rstate.report_from = fnine
+            rstate.report_to = today_str
+            await load_daily_report(rstate.report_from, rstate.report_to)
 
         elif selection == "last90":
-            fd = (_today - timedelta(days=89)).isoformat()
-            await load_daily_report(fd, today_str)
+            enine = (_today - timedelta(days=89)).isoformat()
+            rstate.report_from = enine
+            rstate.report_to = today_str
+            await load_daily_report(rstate.report_from, rstate.report_to)
 
         else:
-            await load_daily_report(
-                from_inp.value or today_str,
-                to_inp.value or today_str,
-            )
+            rstate.report_from = from_inp.value or today_str
+            rstate.report_to = to_inp or today_str
+            await load_daily_report(rstate.report_from, rstate.report_to)
 
     async def on_from_change(e):
         if _get_current_range() == "custom":

@@ -389,6 +389,43 @@ class MISUploadService:
         # SAVE
         session.commit()
 
+    @staticmethod
+    def sync_transaction_daily_summary(
+        session: Session,
+        transaction: Transaction,
+    ):
+        """
+        Sync daily booking/delivery summaries
+        after transaction create/update.
+
+        Handles:
+        - incomplete files
+        - delivery stage transitions
+        - booking updates
+        """
+
+        # =====================================
+        # BOOKING SYNC
+        # =====================================
+        if transaction.booking_date:
+            MISUploadService.sync_single_daily_summary(
+                session=session,
+                outlet_id=transaction.outlet_id,
+                record_date=transaction.booking_date,
+                record_type=MISRecordType.BOOKING,
+            )
+
+        # =====================================
+        # DELIVERY SYNC
+        # =====================================
+        if transaction.delivery_date:
+            MISUploadService.sync_single_daily_summary(
+                session=session,
+                outlet_id=transaction.outlet_id,
+                record_date=transaction.delivery_date,
+                record_type=MISRecordType.DELIVERY,
+            )
+
     # =====================================================
     # HELPERS
     # =====================================================

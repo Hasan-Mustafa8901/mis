@@ -103,14 +103,17 @@ def generate_daily_report(backend_data=None):
     if backend_data is None:
         backend_data = {}
 
-    # ── Resolve report date ───────────────────────────────────────────────────
+    # Get scope of the Report
+    report_scope = backend_data.get("scope", "")
+
+    # ── Resolve report date
     raw_date = backend_data.get("report_date", "")
 
-    # ── Single Date ───────────────────────────────────────────
+    # ── Single Date
     if isinstance(raw_date, (date, datetime)):
         date_str = raw_date.strftime("%d/%m/%Y")
 
-    # ── Date Interval ─────────────────────────────────────────
+    # ── Date Interval
     elif isinstance(raw_date, dict):
         from_date = raw_date.get("from")
         to_date = raw_date.get("to")
@@ -171,7 +174,7 @@ def generate_daily_report(backend_data=None):
     # ── Workbook / sheet ──────────────────────────────────────────────────────
     wb = Workbook()
     ws = wb.active
-    ws.title = "Daily Report"
+    ws.title = f"Report for {report_scope}"
 
     # ── Styles ────────────────────────────────────────────────────────────────
     font_bold = Font(name="Times New Roman", bold=True, color="000000")
@@ -200,7 +203,11 @@ def generate_daily_report(backend_data=None):
     # ── Helpers ───────────────────────────────────────────────────────────────
     def write_title(row_start):
         ws.merge_cells(f"A{row_start}:E{row_start + 1}")
-        c = ws.cell(row=row_start, column=1, value=f"Daily Report As on ({date_str})")
+        c = ws.cell(
+            row=row_start,
+            column=1,
+            value=f"Report for {report_scope}\nAs on ({date_str})",
+        )
         c.font = font_head
         c.alignment = align_center
         c.fill = fill_grey

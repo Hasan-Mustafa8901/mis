@@ -14,6 +14,7 @@ from db.models import (
     Accessory,
     User,
 )
+from services.ingestion.mis_record import MISUploadService
 
 # from services.discount.discount_service import DiscountService
 from datetime import datetime, date
@@ -280,6 +281,10 @@ class TransactionService:
 
         session.add(transaction)
         session.commit()
+        # sync the dalily delivery table
+        MISUploadService.sync_transaction_daily_summary(
+            session=session, transaction=transaction
+        )
         session.refresh(transaction)
 
         return {
@@ -336,6 +341,10 @@ class TransactionService:
 
         session.add(transaction)
         session.commit()
+        # sync with the daily delivery table
+        MISUploadService.sync_transaction_daily_summary(
+            session=session, transaction=transaction
+        )
         session.refresh(transaction)
 
         return {
@@ -381,6 +390,11 @@ class TransactionService:
 
         session.add(transaction)
         session.commit()
+
+        # sync with the daily booking table
+        MISUploadService.sync_transaction_daily_summary(
+            session=session, transaction=transaction
+        )
         session.refresh(transaction)
 
         return {
