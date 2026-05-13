@@ -400,39 +400,47 @@ class DailyBooking(SQLModel, table=True):
             name="uq_booking_date_outlet",
         ),
     )
-
     id: int | None = Field(default=None, primary_key=True)
     date: date
     outlet_id: int = Field(foreign_key="outlet.id")
-    number_bookings: int
-    file_received: int
-    files_pending: int
-    files_verified: int
-    files_out_of_scope: int
-    files_incomplete: int
-    files_approved: int
-    files_rejected: int
-    files_not_verified: int
-    is_locked: bool = False
+    number_bookings: int = Field(default=0)
+    file_received: int = Field(default=0)
+    files_pending: int = Field(default=0)
+    files_verified: int = Field(default=0)
+    files_out_of_scope: int = Field(default=0)
+    files_incomplete: int = Field(default=0)
+    files_approved: int = Field(default=0)
+    files_rejected: int = Field(default=0)
+    files_not_verified: int = Field(default=0)
+    is_locked: bool = Field(default=False)
 
 
 class DailyDelivery(SQLModel, table=True):
     __table_args__ = (
-        UniqueConstraint("date", "outlet_id", name="uq_delivery_date_outlet"),
+        UniqueConstraint(
+            "date",
+            "outlet_id",
+            name="uq_delivery_date_outlet",
+        ),
     )
-    id: Optional[int] = Field(default=None, primary_key=True)
+
+    id: int | None = Field(
+        default=None,
+        primary_key=True,
+    )
+
     date: date
     outlet_id: int = Field(foreign_key="outlet.id")
-    number_deliveries: int
-    file_received: int
-    files_pending: int
-    files_verified: int
-    files_out_of_scope: int
-    files_incomplete: int
-    files_approved: int
-    files_rejected: int
-    rejected_but_delivered: int
-    is_locked: bool = False
+    number_deliveries: int = Field(default=0)
+    file_received: int = Field(default=0)
+    files_pending: int = Field(default=0)
+    files_verified: int = Field(default=0)
+    files_out_of_scope: int = Field(default=0)
+    files_incomplete: int = Field(default=0)
+    files_approved: int = Field(default=0)
+    files_rejected: int = Field(default=0)
+    rejected_but_delivered: int = Field(default=0)
+    is_locked: bool = Field(default=False)
 
 
 class MISRecord(SQLModel, table=True):
