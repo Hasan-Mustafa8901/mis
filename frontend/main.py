@@ -1948,7 +1948,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
         transactions = all_transactions
     else:
         transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
-        print(len(transactions))
+        print(f"No of Delivery in MIS: {len(transactions)}")
 
     # Get months for sidebar grouping (from the filtered set)
     month_map = defaultdict(list)
@@ -4812,22 +4812,6 @@ class FormState:
         def _val_upper(f):
             return (f.value or "").strip().upper() if f else ""
 
-        print(
-            "OUTLET VALUE:",
-            self.outlet_select.value,
-            type(self.outlet_select.value),
-        )
-        print(
-            "VARIANT VALUE:",
-            self.variant_select.value,
-            type(self.variant_select.value),
-        )
-        print(
-            "CAR VALUE:",
-            self.car_select.value,
-            type(self.car_select.value),
-        )
-
         if self.variant_id in [None, "", 0]:
             return False, "Please select a Car and Variant."
 
@@ -5188,7 +5172,6 @@ async def resolve_form_mode(
     transaction_id: int | None,
     mode: str | None,
 ):
-    print(f"STAGE: {stage}, TRANS ID: {transaction_id}, MODE: {mode}")
     txn_data = None
 
     # ─────────────────────────────────────────────
@@ -5251,11 +5234,6 @@ async def resolve_form_mode(
         state.booking_data = txn_data
 
         state.txn_id = transaction_id
-
-    print(
-        "FORM MODE:",
-        state.form_mode,
-    )
 
     return txn_data
 
@@ -6486,8 +6464,6 @@ def attach_form_handlers(state):
 
             car_id = state.car_select.value
 
-            print("CAR SELECT VALUE:", car_id)
-
             await _fs_on_car_change(
                 car_id,
                 state,
@@ -6510,9 +6486,6 @@ def attach_form_handlers(state):
                 return
 
             variant_id = state.variant_select.value
-
-            print("VARIANT SELECT VALUE:", variant_id)
-
             await _fs_on_variant_change(
                 variant_id,
                 state,
@@ -6649,10 +6622,8 @@ async def _fs_on_car_change(
     *,
     preserve_variant=False,
 ):
-    print("from _fs_on_car_change:LIVE UPDATE")
 
     state.car_id = car_id
-    print("RECEIVED CAR ID:", car_id, type(car_id))
 
     if state.variant_select is None:
         return
@@ -6692,7 +6663,6 @@ async def _fs_on_car_change(
 
 
 async def _fs_on_variant_change(variant_id, state: FormState) -> None:
-    print("from _fs_on_variant_change, LIVE UPDATE")
     state.variant_id = variant_id
 
     if variant_id:
@@ -6775,7 +6745,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
             )
 
     except Exception as e:
-        print(e)
+        print("ERROR: in preloading the price list: ", e)
         pass  # best-effort; silently skip if endpoint missing
 
 
@@ -7075,147 +7045,6 @@ def _fs_update_live(state) -> None:
         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
 
 
-# def _fs_update_live(state) -> None:
-
-#     if not state.form_ready:
-#         return
-#     # ── 1. PRICE TOTALS ─────────────────────────────────────────────
-#     print("_fs_update_live: LIVE UPDATE")
-#     total_listed = 0
-#     total_charged = 0
-
-#     for name, inp in state.price_inputs.items():
-#         row = state.price_rows.get(name)
-#         toggle = state.price_match_toggles.get(name)
-
-#         listed_val = int(state.listed_prices.get(name) or 0)
-#         charged_val = int(parsed_val(inp))
-
-#         is_active = row is None or state.visible_price_rows.get(name, True)
-
-#         if is_active:
-#             total_listed += listed_val
-
-#         total_charged += charged_val
-
-#         dl = state.price_diff_labels.get(name)
-#         if dl:
-#             if not is_active:
-#                 dl.set_text("—")
-#                 dl.style("color:#9CA3AF")
-#             else:
-#                 diff = listed_val - charged_val
-#                 if diff > 0:
-#                     dl.set_text(f"₹{diff:,}")
-#                     dl.style("color:#DC2626; font-weight:600")
-#                 else:
-#                     dl.set_text("₹0")
-#                     dl.style("color:#9CA3AF")
-
-#     total_diff = total_listed - total_charged
-
-#     if getattr(state, "lbl_total_listed_price", None):
-#         state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
-
-#     if getattr(state, "lbl_total_charged_price", None):
-#         state.lbl_total_charged_price.set_text(f"₹{total_charged:,}")
-
-#     if getattr(state, "lbl_total_diff_price", None):
-#         if total_diff > 0:
-#             state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
-#             state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
-#         else:
-#             state.lbl_total_diff_price.set_text("₹0")
-#             state.lbl_total_diff_price.style("color:#9CA3AF")
-
-#     # ── 2. ACCESSORIES ──────────────────────────────────────────────
-#     acc_listed = 0
-#     acc_charged = 0
-
-#     if getattr(state, "acc_total_label", None) and getattr(state, "acc_charged", None):
-#         try:
-#             raw = state.acc_total_label.text
-#             acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
-#         except Exception:
-#             # log error
-#             acc_listed = 0
-
-#         acc_charged = int(parsed_val(state.acc_charged))
-
-#     acc_diff = acc_listed - acc_charged
-
-#     # ── 3. DISCOUNT TOTALS (LIKE PRICE) ─────────────────────────
-
-#     total_allowed_discount = 0
-#     total_given_discount = 0
-
-#     for name, inp in state.discount_inputs.items():
-#         row = state.discount_rows.get(name)
-
-#         toggle = state.discount_match_toggles.get(name)
-
-#         allowed_val = int(state.listed_prices.get(name) or 0)
-
-#         given_val = int(parsed_val(inp))
-
-#         is_active = state.visible_discount_rows.get(name, True) or row is None
-
-#         if is_active:
-#             # counts all visible rows in the allowed vl
-#             total_allowed_discount += allowed_val
-
-#             total_given_discount += given_val
-
-#         # ── per-row diff
-#         dl = state.discount_diff_labels.get(name)
-#         if dl:
-#             diff = given_val - allowed_val
-
-#             if diff > 0:
-#                 dl.set_text(f"₹{diff:,}")
-#                 dl.style("color:#DC2626; font-weight:600")
-#             else:
-#                 dl.set_text("₹0")
-#                 dl.style("color:#9CA3AF")
-
-#     # ── 4. EXCESS CALCULATION ───────────────────────────────────────
-#     adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
-
-#     total_discount_given = int(
-#         total_diff
-#         # + acc_diff
-#         + int(parsed_val(getattr(state, "total_discount_booking", None)))
-#         + total_given_discount
-#         + int(parsed_val(getattr(state, "other_discount_delivery", None)))
-#         - adjustment
-#     )
-
-#     excess = int(max(0, total_discount_given - total_allowed_discount))
-
-#     # ── 5. UPDATE LABELS ────────────────────────────────────────────
-#     if state.total_allowed:
-#         state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
-
-#     if state.total_given:
-#         state.total_given.set_text(f"₹{total_discount_given:,}")
-
-#     if state.lbl_allowed_lv:
-#         state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
-
-#     if state.lbl_discount_lv:
-#         state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
-
-#     if getattr(state, "lbl_excess_discount", None):
-#         state.lbl_excess_discount.set_text(f"₹{excess:,}")
-#         state.lbl_excess_discount.style(
-#             "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
-#         )
-
-#     if getattr(state, "lbl_excess_lv", None):
-#         state.lbl_excess_lv.set_text(f"₹{excess:,}")
-#         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
-
-
 def get_conditions(state) -> dict:
 
     return {
@@ -7229,11 +7058,9 @@ def get_conditions(state) -> dict:
 
 
 def _fs_revalidate(state: FormState) -> None:
-
     if state.is_hydrating:
         return
 
-    print("from _fs_revalidate: LIVE UPDATE")
     ok, msg = state.is_valid()
 
     if state.submit_btn:
@@ -7311,10 +7138,6 @@ async def _fs_handle_submit(state: FormState) -> None:
         return
 
     payload = build_payload(state)
-    print("EDIT MODE:", state.edit_mode)
-    print("TXN ID:", state.txn_id)
-    print("FORM MODE:", state.form_mode)
-    print("STAGE:", state.stage)
 
     try:
         # ─────────────────────────────────────
@@ -7508,7 +7331,6 @@ def build_payload(state: FormState) -> dict:
         "cess": intval(state.invoice_cess),
         "total": intval(state.invoice_total),
     }
-    print(json.dumps(invoice_details, indent=4))
 
     # ─────────────────────────────
     # PAYMENT
@@ -7523,7 +7345,6 @@ def build_payload(state: FormState) -> dict:
     # ─────────────────────────────
     # MAIN PAYLOAD
     # ─────────────────────────────
-    print(user)
     payload = {
         # ── REQUIRED ──
         "variant_id": (state.variant_select.value if state.variant_select else None),
@@ -7604,10 +7425,6 @@ def build_payload(state: FormState) -> dict:
         payload["total_actual_discount"] = lbl_val(state.total_given)
         payload["total_allowed_discount"] = lbl_val(state.total_allowed)
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
-
-    print("DELIVERY CHECKLIST", payload.get("delivery_checklist"))
-    print("ADJUSTMENT Booking", payload.get("adjustment_booking"))
-    print("ADJUSTMENT Delivery", payload.get("adjustment_delivery"))
 
     return payload
 
@@ -7720,7 +7537,7 @@ async def load_transaction(state: FormState):
         state.booking_data = txn
 
     except Exception as e:
-        print(str(e))
+        print("ERROR: in loading the transaction: ", str(e))
 
         ui.notify(
             "Failed to load transaction",
@@ -7811,7 +7628,7 @@ async def hydrate_form(
 
         if exec_id and state.exec_select:
             state.exec_select.set_value(exec_id)
-        print("TXN VARIANT ID:", txn.get("variant_id"))
+
         variant_id = txn.get("variant_id")
 
         car_id = None
@@ -7900,9 +7717,6 @@ async def hydrate_form(
             )
 
             cb.set_value(bool(val))
-        print("BOOKING CHECKLIST:", txn.get("booking_checklist"))
-
-        print("DELIVERY CHECKLIST:", txn.get("delivery_checklist"))
 
         # ─────────────────────────────
         # BOOKING CHECKLIST
