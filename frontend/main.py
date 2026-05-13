@@ -1947,7 +1947,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     if stage == "booking":
         transactions = all_transactions
     else:
-        transactions = [t for t in all_transactions if t.get("delivery_date")]
+        transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
 
     # Get months for sidebar grouping (from the filtered set)
     month_map = defaultdict(list)

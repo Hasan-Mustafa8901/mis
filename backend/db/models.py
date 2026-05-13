@@ -1,5 +1,5 @@
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, JSON, UniqueConstraint
+from sqlalchemy import Column, JSON, UniqueConstraint, Enum as SQLEnum
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from services.utils import get_ist_now, get_ist_today
@@ -440,7 +440,17 @@ class MISRecord(SQLModel, table=True):
 
     # Core
     record_date: date = Field(index=True)
-    type: MISRecordType = Field(index=True)
+    type: MISRecordType = Field(
+        sa_column=Column(
+            SQLEnum(
+                MISRecordType,
+                values_callable=lambda obj: [e.value for e in obj],
+                name="misrecordtype",
+            ),
+            nullable=False,
+            index=True,
+        )
+    )
 
     outlet_id: int = Field(foreign_key="outlet.id", index=True)
     dealership_id: int = Field(foreign_key="dealership.id", index=True)
@@ -472,8 +482,15 @@ class MISRecord(SQLModel, table=True):
     )
 
     matching_status: MISMatchingStatus = Field(
+        sa_column=Column(
+            SQLEnum(
+                MISMatchingStatus,
+                values_callable=lambda obj: [e.value for e in obj],
+                name="mismatchingstatus",
+            ),
+            nullable=False,
+        ),
         default=MISMatchingStatus.UNMATCHED,
-        index=True,
     )
 
     matched_automatically: bool = Field(default=False)
