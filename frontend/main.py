@@ -8146,7 +8146,7 @@ def build_complaint_dealership_section(state: FormState) -> None:
 
             async def handle_complainee_change(dlr):
                 if dlr == "X":
-                    state.complainee_showroom.options = {"X": "X"}cls
+                    state.complainee_showroom.options = {"X": "X"}
                     state.complainee_showroom.update()
                     return
 
