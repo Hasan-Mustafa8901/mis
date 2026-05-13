@@ -10,6 +10,8 @@ from db.models import (
     DailyDelivery,
     Transaction,
     Customer,
+    MISRecord,
+    MISRecordType,
     Variant,
     Car,
 )
@@ -20,6 +22,7 @@ from schemas.reports.daily_weekly_reports import (
     PendingFileRow,
 )
 from services.reports.daily.filters import apply_scope_filters
+from services.reports.daily.computations import extract_pending_docs
 
 
 def get_booking_reconciliation(
@@ -399,13 +402,112 @@ def get_delivery_discount_summary(
 # =========================================================
 # PENDING FILES
 # =========================================================
-def get_pending_files(
+def get_booking_pending_files(
     session: Session,
     start_date: date,
     end_date: date,
     dealership_id: int | None,
     outlet_id: int | None,
-) -> list[PendingFileRow]:
+):
+
+    stmt = (
+        select(
+            MISRecord,
+        )
+        .where(
+            MISRecord.type == MISRecordType.BOOKING,
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            ),
+            MISRecord.received.is_(False),
+        )
+        .order_by(MISRecord.record_date.desc())
+    )
+
+    stmt = apply_scope_filters(
+        stmt=stmt,
+        model=MISRecord,
+        dealership_id=dealership_id,
+        outlet_id=outlet_id,
+    )
+
+    rows = session.exec(stmt).all()
+
+    result = []
+
+    for idx, row in enumerate(rows, start=1):
+        result.append(
+            {
+                "sno": idx,
+                "date": row.record_date.strftime("%d/%m/%Y"),
+                "name": row.customer_name,
+                "mobile": row.customer_mobile,
+                "tl": row.team_leader,
+            }
+        )
+
+    return result
+
+
+def get_delivery_pending_files(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    dealership_id: int | None,
+    outlet_id: int | None,
+):
+
+    stmt = (
+        select(
+            MISRecord,
+        )
+        .where(
+            MISRecord.type == MISRecordType.DELIVERY,
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            ),
+            MISRecord.received.is_(False),
+        )
+        .order_by(MISRecord.record_date.desc())
+    )
+
+    stmt = apply_scope_filters(
+        stmt=stmt,
+        model=MISRecord,
+        dealership_id=dealership_id,
+        outlet_id=outlet_id,
+    )
+
+    rows = session.exec(stmt).all()
+
+    result = []
+
+    for idx, row in enumerate(rows, start=1):
+        result.append(
+            {
+                "sno": idx,
+                "date": row.record_date.strftime("%d/%m/%Y"),
+                "name": row.customer_name,
+                "mobile": row.customer_mobile,
+                "tl": row.team_leader,
+            }
+        )
+
+    return result
+
+
+## Pending Docs
+
+
+def get_booking_docs_pending(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    dealership_id: int | None,
+    outlet_id: int | None,
+):
 
     stmt = (
         select(
@@ -417,28 +519,13 @@ def get_pending_files(
             Customer.id == Transaction.customer_id,
         )
         .where(
-            (
-                (
-                    Transaction.booking_date.between(
-                        start_date,
-                        end_date,
-                    )
-                )
-                & (Transaction.booking_file_incomplete == True)
-            )
-            | (
-                (Transaction.delivery_date.is_not(None))
-                & (
-                    Transaction.delivery_date.between(
-                        start_date,
-                        end_date,
-                    )
-                )
-                & (Transaction.delivery_file_incomplete == True)
-            )
+            Transaction.booking_date.between(
+                start_date,
+                end_date,
+            ),
+            Transaction.booking_file_incomplete == True,
         )
-        .order_by(Transaction.created_at.desc())
-        .limit(10)
+        .order_by(Transaction.booking_date.desc())
     )
 
     stmt = apply_scope_filters(
@@ -456,18 +543,315 @@ def get_pending_files(
         rows,
         start=1,
     ):
-        file_type = "Delivery" if txn.delivery_file_incomplete else "Booking"
-
-        report_date = txn.delivery_date if file_type == "Delivery" else txn.booking_date
+        pending_docs = extract_pending_docs(txn.booking_checklist)
 
         result.append(
-            PendingFileRow(
-                sno=idx,
-                date=report_date.strftime("%d/%m/%Y"),
-                name=customer.name,
-                pan=customer.pan_number or "",
-                type=file_type,
-            )
+            {
+                "sno": idx,
+                "date": txn.booking_date.strftime("%d/%m/%Y"),
+                "name": customer.name,
+                "mobile": customer.mobile_number,
+                "tl": txn.team_leader,
+                # =====================================
+                # BOOKING CHECKLIST
+                # =====================================
+                "kyc": ("Pending" if "kyc" in pending_docs else "Received"),
+                "vehicle": ("Pending" if "vehicle" in pending_docs else "Received"),
+                "quotation": ("Pending" if "quotation" in pending_docs else "Received"),
+                "receipts": ("Pending" if "receipts" in pending_docs else "Received"),
+                "accessories_indent": (
+                    "Pending" if "accessories_indent" in pending_docs else "Received"
+                ),
+                "exchange": ("Pending" if "exchange" in pending_docs else "Received"),
+                "md_approval": (
+                    "Pending" if "md_approval" in pending_docs else "Received"
+                ),
+                "corp_id": ("Pending" if "corp_id" in pending_docs else "Received"),
+                "customer_sign": (
+                    "Pending" if "customer_sign" in pending_docs else "Received"
+                ),
+            }
+        )
+
+    return result
+
+
+def get_delivery_docs_pending(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    dealership_id: int | None,
+    outlet_id: int | None,
+):
+
+    stmt = (
+        select(
+            Transaction,
+            Customer,
+        )
+        .join(
+            Customer,
+            Customer.id == Transaction.customer_id,
+        )
+        .where(
+            Transaction.delivery_date.is_not(None),
+            Transaction.delivery_date.between(
+                start_date,
+                end_date,
+            ),
+            Transaction.delivery_file_incomplete == True,
+        )
+        .order_by(Transaction.delivery_date.desc())
+    )
+
+    stmt = apply_scope_filters(
+        stmt=stmt,
+        model=Transaction,
+        dealership_id=dealership_id,
+        outlet_id=outlet_id,
+    )
+
+    rows = session.exec(stmt).all()
+
+    result = []
+
+    for idx, (txn, customer) in enumerate(
+        rows,
+        start=1,
+    ):
+        pending_docs = extract_pending_docs(txn.delivery_checklist)
+
+        result.append(
+            {
+                "sno": idx,
+                "date": txn.delivery_date.strftime("%d/%m/%Y"),
+                "name": customer.name,
+                "mobile": customer.mobile_number,
+                "tl": txn.team_leader,
+                # =====================================
+                # DELIVERY CHECKLIST
+                # =====================================
+                "ledger": ("Pending" if "ledger" in pending_docs else "Received"),
+                "tax_invoice": (
+                    "Pending" if "tax_invoice" in pending_docs else "Received"
+                ),
+                "accessories_indent": (
+                    "Pending" if "accessories_indent" in pending_docs else "Received"
+                ),
+                "insurance": ("Pending" if "insurance" in pending_docs else "Received"),
+                "rto": ("Pending" if "rto" in pending_docs else "Received"),
+                "finance": ("Pending" if "finance" in pending_docs else "Received"),
+                "eval_cert": ("Pending" if "eval_cert" in pending_docs else "Received"),
+            }
+        )
+
+    return result
+
+
+def get_booking_out_of_scope(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    dealership_id: int | None,
+    outlet_id: int | None,
+):
+
+    stmt = (
+        select(MISRecord)
+        .where(
+            MISRecord.type == MISRecordType.BOOKING,
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            ),
+            MISRecord.out_of_scope.is_(True),
+        )
+        .order_by(MISRecord.record_date.desc())
+    )
+
+    stmt = apply_scope_filters(
+        stmt=stmt,
+        model=MISRecord,
+        dealership_id=dealership_id,
+        outlet_id=outlet_id,
+    )
+
+    rows = session.exec(stmt).all()
+
+    result = []
+
+    for idx, row in enumerate(
+        rows,
+        start=1,
+    ):
+        result.append(
+            {
+                "sno": idx,
+                "date": row.record_date.strftime("%d/%m/%Y"),
+                "name": row.customer_name,
+                "mobile": row.customer_mobile,
+                "reason": (row.out_of_scope_reason or ""),
+            }
+        )
+
+    return result
+
+
+def get_delivery_out_of_scope(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    dealership_id: int | None,
+    outlet_id: int | None,
+):
+
+    stmt = (
+        select(MISRecord)
+        .where(
+            MISRecord.type == MISRecordType.DELIVERY,
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            ),
+            MISRecord.out_of_scope.is_(True),
+        )
+        .order_by(MISRecord.record_date.desc())
+    )
+
+    stmt = apply_scope_filters(
+        stmt=stmt,
+        model=MISRecord,
+        dealership_id=dealership_id,
+        outlet_id=outlet_id,
+    )
+
+    rows = session.exec(stmt).all()
+
+    result = []
+
+    for idx, row in enumerate(
+        rows,
+        start=1,
+    ):
+        result.append(
+            {
+                "sno": idx,
+                "date": row.record_date.strftime("%d/%m/%Y"),
+                "name": row.customer_name,
+                "mobile": row.customer_mobile,
+                "reason": (row.out_of_scope_reason or ""),
+            }
+        )
+
+    return result
+
+
+def get_delayed_files(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    stage: MISRecordType,
+    dealership_id: int | None,
+    outlet_id: int | None,
+):
+
+    stmt = (
+        select(MISRecord)
+        .where(
+            MISRecord.type == stage,
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            ),
+            MISRecord.receiving_date.is_not(None),
+        )
+        .order_by(MISRecord.record_date.desc())
+    )
+
+    stmt = apply_scope_filters(
+        stmt=stmt,
+        model=MISRecord,
+        dealership_id=dealership_id,
+        outlet_id=outlet_id,
+    )
+
+    rows = session.exec(stmt).all()
+
+    result = []
+
+    sno = 1
+
+    for row in rows:
+        if not row.receiving_date:
+            continue
+
+        delay_days = (row.receiving_date.date() - row.record_date).days
+
+        if delay_days <= 1:
+            continue
+
+        result.append(
+            {
+                "sno": sno,
+                "record_date": (row.record_date.strftime("%d/%m/%Y")),
+                "receiving_date": (row.receiving_date.strftime("%d/%m/%Y")),
+                "delay_days": delay_days,
+                "name": row.customer_name,
+                "mobile": row.customer_mobile,
+                "tl": row.team_leader,
+            }
+        )
+
+        sno += 1
+
+    return result
+
+
+def get_rejected_files_delivered(
+    session: Session,
+    start_date: date,
+    end_date: date,
+    dealership_id: int | None,
+    outlet_id: int | None,
+):
+
+    stmt = (
+        select(MISRecord)
+        .where(
+            MISRecord.type == MISRecordType.DELIVERY,
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            ),
+            MISRecord.rejected.is_(True),
+        )
+        .order_by(MISRecord.record_date.desc())
+    )
+
+    stmt = apply_scope_filters(
+        stmt=stmt,
+        model=MISRecord,
+        dealership_id=dealership_id,
+        outlet_id=outlet_id,
+    )
+
+    rows = session.exec(stmt).all()
+
+    result = []
+
+    for idx, row in enumerate(
+        rows,
+        start=1,
+    ):
+        result.append(
+            {
+                "sno": idx,
+                "date": row.record_date.strftime("%d/%m/%Y"),
+                "name": row.customer_name,
+                "mobile": row.customer_mobile,
+                "tl": row.team_leader,
+                "reason": (row.rejection_reason or ""),
+            }
         )
 
     return result

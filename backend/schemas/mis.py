@@ -17,3 +17,9 @@ class EmployeeCreate(BaseModel):
     name: str
     outlet_id: int
     designation: str | None = None
+
+
+class MISRecordActionPayload(BaseModel):
+    mis_record_id: int
+
+    reason: str | None = None
