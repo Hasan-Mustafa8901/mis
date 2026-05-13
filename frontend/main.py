@@ -2041,7 +2041,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                 # existing logic
                 if mstate.stage == "delivery":
-                    data = [t for t in data if t.get("delivery_date")]
+                    data = [t for t in data if t.get("stage") == "delivery"]
 
                 if mstate.month:
                     data = [
@@ -8146,7 +8146,7 @@ def build_complaint_dealership_section(state: FormState) -> None:
 
             async def handle_complainee_change(dlr):
                 if dlr == "X":
-                    state.complainee_showroom.options = {"X": "X"}
+                    state.complainee_showroom.options = {"X": "X"}cls
                     state.complainee_showroom.update()
                     return
 
