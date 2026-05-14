@@ -21,7 +21,7 @@ from utils_old import get_ist_today, disp_date  # , date_for_input
 from dotenv import load_dotenv
 
 import os
-from auth_old import get_token, clear_user, protected_page, set_user
+from auth_old import get_token, clear_user, protected_page, set_user, token_is_valid
 
 
 # ══════════════════════════════════════════════════════════════
@@ -173,8 +173,14 @@ ui.add_head_html(
 # API HELPERS
 # ══════════════════════════════════════════════════════════════
 def get_auth_headers():
-    token = app.storage.user.get("token")  # adjust if stored differently
+    token = get_token()  # adjust if stored differently
+
     if not token:
+        return {}
+
+    if not token_is_valid():
+        clear_user()
+        ui.navigate.to("/login")
         return {}
 
     return {
@@ -183,33 +189,76 @@ def get_auth_headers():
     }
 
 
+async def api_request(
+    method: str,
+    path: str,
+    **kwargs,
+):
+
+    headers = kwargs.pop("headers", {})
+
+    auth_headers = get_auth_headers()
+
+    headers.update(auth_headers)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method=method,
+                url=f"{BASE_URL}{path}",
+                headers=headers,
+                timeout=20,
+                **kwargs,
+            )
+
+        # TOKEN EXPIRED / INVALID
+        if response.status_code == 401:
+            clear_user()
+
+            ui.notify(
+                "Session expired. Please login again.",
+                type="warning",
+            )
+
+            ui.navigate.to("/login")
+
+            return None
+
+        response.raise_for_status()
+
+        return response.json()
+
+    except httpx.HTTPStatusError as exc:
+        ui.notify(
+            f"HTTP Error: {exc.response.status_code}",
+            type="negative",
+        )
+
+        raise
+
+    except httpx.ConnectError:
+        ui.notify(
+            "Unable to connect to server",
+            type="negative",
+        )
+
+        raise
+
+
 async def api_get(path: str, params=None):
-    async with httpx.AsyncClient() as client:
-        r = await client.get(
-            f"{BASE_URL}{path}", headers=get_auth_headers(), params=params, timeout=10
-        )
-        r.raise_for_status()
-        return r.json()
-
-
-async def api_delete(path: str):
-    async with httpx.AsyncClient() as client:
-        r = await client.delete(
-            f"{BASE_URL}{path}", headers=get_auth_headers(), timeout=10
-        )
-        r.raise_for_status()
-        return r.json()
+    return await api_request("GET", path, params=params)
 
 
 async def api_post(path: str, payload: dict):
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f"{BASE_URL}{path}", json=payload, headers=get_auth_headers(), timeout=10
-        )
-        if r.status_code == 422:
-            print("422 ERROR: ", r.json())  # debug help
-        r.raise_for_status()
-        return r.json()
+    return await api_request("POST", path, json=payload)
+
+
+async def api_delete(path: str):
+    return await api_request("DELETE", path)
+
+
+async def api_put(path: str, payload: dict):
+    return await api_request("PUT", path, json=payload)
 
 
 # async def api_post_file(path: str, file, data: dict):
@@ -217,49 +266,38 @@ async def api_post(path: str, payload: dict):
 #     headers = {}
 #     if token:
 #         headers["Authorization"] = f"Bearer {token}"
-
-
+#     name = file.file.name
+#     content = await file.file.read()
 #     async with httpx.AsyncClient() as client:
 #         r = await client.post(
 #             f"{BASE_URL}{path}",
-#             files={"file": (file.name, await file.content.read())},
+#             files={
+#                 "file": (name, content)  # ✅ no await
+#             },
 #             data=data,
 #             headers=headers,
 #             timeout=20,
 #         )
 #         r.raise_for_status()
 #         return r.json()
-
-
 async def api_post_file(path: str, file, data: dict):
-    token = app.storage.user.get("token")
     headers = {}
+    token = get_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
+
     name = file.file.name
     content = await file.file.read()
 
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f"{BASE_URL}{path}",
-            files={
-                "file": (name, content)  # no await
-            },
-            data=data,
-            headers=headers,
-            timeout=20,
-        )
-        r.raise_for_status()
-        return r.json()
-
-
-async def api_put(path: str, payload: dict):
-    async with httpx.AsyncClient() as client:
-        r = await client.put(
-            f"{BASE_URL}{path}", json=payload, headers=get_auth_headers(), timeout=10
-        )
-        r.raise_for_status()
-        return r.json()
+    return await api_request(
+        "POST",
+        path,
+        headers=headers,
+        files={
+            "file": (name, content),
+        },
+        data=data,
+    )
 
 
 # ══════════════════════════════════════════════════════════════

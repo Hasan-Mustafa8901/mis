@@ -1,7 +1,33 @@
 # frontend/auth.py
 from nicegui import app, ui
-
 from functools import wraps
+import jwt
+from datetime import datetime, timezone
+
+
+def token_is_valid() -> bool:
+    token = get_token()
+
+    if not token:
+        return False
+
+    try:
+        payload = jwt.decode(
+            token,
+            options={"verify_signature": False},
+        )
+
+        exp = payload.get("exp")
+
+        if not exp:
+            return False
+
+        now = datetime.now(timezone.utc).timestamp()
+
+        return exp > now
+
+    except Exception:
+        return False
 
 
 def set_auth(token: str, roles: list[str]):
@@ -32,15 +58,19 @@ def require_roles(*allowed_roles: str):
 
 
 def is_authenticated():
-    return "token" in app.storage.user
+    return token_is_valid()
 
 
 def protected_page(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        if not is_authenticated():
+
+        if not token_is_valid():
+            clear_user()
+            ui.notify("Session expired. Please login again.")
             ui.navigate.to("/login")
             return
+
         return await func(*args, **kwargs)
 
     return wrapper
