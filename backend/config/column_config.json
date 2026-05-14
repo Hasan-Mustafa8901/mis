@@ -14,7 +14,8 @@
         "customer mobile": "customer_mobile",
         "mobile number": "customer_mobile",
         "car model": "car_model",
-        "tl": "team_leader"
+        "tl": "team_leader",
+        "location":"location"
     },
 
     "price_components": [

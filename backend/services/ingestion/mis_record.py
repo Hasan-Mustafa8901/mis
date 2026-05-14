@@ -3,7 +3,8 @@
 import pandas as pd
 
 from datetime import datetime, date
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
+from services.complaints.query import get_outlet_id_by_name
 
 from db.models import (
     MISRecord,
@@ -33,7 +34,7 @@ class MISUploadService:
     ):
 
         excel_file = pd.ExcelFile(file_path)
-
+        affected_outlets: set[int] = set()
         total_created = 0
 
         for sheet_name in excel_file.sheet_names:
@@ -70,10 +71,20 @@ class MISUploadService:
 
                 if not record_date:
                     continue
-
+                print(row.get("location"))
                 customer_mobile = MISUploadService.clean_mobile(row.get("mobile"))
                 car_model = MISUploadService.clean_str(row.get("car_model"))
                 team_leader = MISUploadService.clean_str(row.get("team_leader"))
+                resolved_outlet_id = get_outlet_id_by_name(
+                    session=session,
+                    name=row.get("location"),
+                )
+                if not outlet_id:
+                    print(f"{row.get('location')} not found.")
+                    continue
+                affected_outlets.add(resolved_outlet_id)
+
+                print(outlet_id)
                 # -----------------------------------
                 # DUPLICATE CHECK
                 # -----------------------------------
@@ -81,7 +92,7 @@ class MISUploadService:
                     select(MISRecord).where(
                         MISRecord.record_date == record_date,
                         MISRecord.type == record_type,
-                        MISRecord.outlet_id == outlet_id,
+                        MISRecord.outlet_id == resolved_outlet_id,
                         MISRecord.customer_name == customer_name,
                         MISRecord.car_model == car_model,
                     )
@@ -103,7 +114,7 @@ class MISUploadService:
                 record = MISRecord(
                     record_date=record_date,
                     type=record_type,
-                    outlet_id=outlet_id,
+                    outlet_id=resolved_outlet_id,
                     dealership_id=dealership_id,
                     customer_name=customer_name,
                     customer_mobile=customer_mobile,
@@ -113,7 +124,6 @@ class MISUploadService:
                     raw_data=MISUploadService.make_json_safe(row.to_dict()),
                     created_at=get_ist_now(),
                 )
-                print(record)
                 session.add(record)
 
                 total_created += 1
@@ -122,10 +132,12 @@ class MISUploadService:
         session.commit()
 
         # SYNC DAILY SUMMARY
-        MISUploadService.sync_daily_summary(
-            session=session,
-            outlet_id=outlet_id,
-        )
+        for affected_outlet_id in affected_outlets:
+            print("OUTLET ID: ", affected_outlet_id)
+            MISUploadService.sync_daily_summary(
+                session=session,
+                outlet_id=affected_outlet_id,
+            )
 
         return {
             "status": "success",
@@ -135,7 +147,6 @@ class MISUploadService:
     # =====================================================
     # DAILY SUMMARY SYNC
     # =====================================================
-
     @staticmethod
     def sync_daily_summary(
         session: Session,
@@ -143,86 +154,26 @@ class MISUploadService:
     ):
 
         records = session.exec(
-            select(MISRecord).where(
+            select(
+                MISRecord.record_date,
+                MISRecord.type,
+            )
+            .where(
                 MISRecord.outlet_id == outlet_id,
             )
+            .distinct()
         ).all()
 
-        grouped = {}
-
-        for record in records:
-            group_key = (record.record_date, record.type)
-
-            if group_key not in grouped:
-                grouped[group_key] = {
-                    "total": 0,
-                    "received": 0,
-                    "verified": 0,
-                    "pending": 0,
-                }
-
-            grouped[group_key]["total"] += 1
-
-            if record.received:
-                grouped[group_key]["received"] += 1
-
-            if record.approved:
-                grouped[group_key]["verified"] += 1
-
-            if not record.approved and not record.rejected and not record.out_of_scope:
-                grouped[group_key]["pending"] += 1
-
-        # UPDATE DAILY TABLES
-        for (record_date, record_type), counts in grouped.items():
-            if record_type == MISRecordType.BOOKING:
-                daily = session.exec(
-                    select(DailyBooking).where(
-                        DailyBooking.date == record_date,
-                        DailyBooking.outlet_id == outlet_id,
-                    )
-                ).first()
-
-                if not daily:
-                    daily = DailyBooking(
-                        date=record_date,
-                        outlet_id=outlet_id,
-                        number_bookings=0,
-                        file_received=0,
-                        files_pending=0,
-                        files_verified=0,
-                    )
-                    session.add(daily)
-
-                daily.number_bookings = counts["total"]
-                daily.file_received = counts["received"]
-                daily.files_verified = counts["verified"]
-                daily.files_pending = counts["pending"]
-
-            elif record_type == MISRecordType.DELIVERY:
-                daily = session.exec(
-                    select(DailyDelivery).where(
-                        DailyDelivery.date == record_date,
-                        DailyDelivery.outlet_id == outlet_id,
-                    )
-                ).first()
-
-                if not daily:
-                    daily = DailyDelivery(
-                        date=record_date,
-                        outlet_id=outlet_id,
-                        number_deliveries=0,
-                        file_received=0,
-                        files_pending=0,
-                        files_verified=0,
-                    )
-                    session.add(daily)
-
-                daily.number_deliveries = counts["total"]
-                daily.file_received = counts["received"]
-                daily.files_verified = counts["verified"]
-                daily.files_pending = counts["pending"]
-
-        session.commit()
+        for (
+            record_date,
+            record_type,
+        ) in records:
+            MISUploadService.sync_single_daily_summary(
+                session=session,
+                outlet_id=outlet_id,
+                record_date=record_date,
+                record_type=record_type,
+            )
 
     ## Optimized Version
     @staticmethod
@@ -233,7 +184,9 @@ class MISUploadService:
         record_type: MISRecordType,
     ):
 
+        # =====================================================
         # FETCH MIS RECORDS
+        # =====================================================
         records = session.exec(
             select(MISRecord).where(
                 MISRecord.outlet_id == outlet_id,
@@ -242,7 +195,9 @@ class MISUploadService:
             )
         ).all()
 
+        # =====================================================
         # COUNTS
+        # =====================================================
         total = len(records)
 
         files_received = len([r for r in records if r.received])
@@ -252,44 +207,75 @@ class MISUploadService:
         files_out_of_scope = len([r for r in records if r.out_of_scope])
 
         files_approved = len([r for r in records if r.approved])
+
         files_rejected = len([r for r in records if r.rejected])
 
-        files_not_verified = len(
-            [
-                r
-                for r in records
-                if (
-                    r.received
-                    and not r.out_of_scope
-                    and not r.approved
-                    and not r.rejected
-                )
-            ]
-        )
+        files_scanned = len([r for r in records if r.scanned])
 
-        files_verified = files_approved + files_rejected
+        files_in_mis = len([r for r in records if r.transaction_id])
 
+        # =====================================================
         # INCOMPLETE FILES
+        # =====================================================
         if record_type == MISRecordType.BOOKING:
             files_incomplete = session.exec(
-                select(Transaction).where(
+                select(func.count(Transaction.id)).where(
                     Transaction.outlet_id == outlet_id,
                     Transaction.booking_date == record_date,
                     Transaction.booking_file_incomplete.is_(True),
                 )
-            ).all()
+            ).one()
 
         else:
             files_incomplete = session.exec(
-                select(Transaction).where(
+                select(func.count(Transaction.id)).where(
                     Transaction.outlet_id == outlet_id,
                     Transaction.delivery_date == record_date,
                     Transaction.delivery_file_incomplete.is_(True),
                 )
-            ).all()
+            ).one()
 
-        files_incomplete = len(files_incomplete)
+        # =====================================================
+        # VERIFIED LOGIC
+        # =====================================================
 
+        # ---------------------------------------------
+        # BOOKING
+        # verified = approved + rejected
+        # ---------------------------------------------
+        if record_type == MISRecordType.BOOKING:
+            files_verified = files_approved + files_rejected
+
+            files_not_verified = len(
+                [
+                    r
+                    for r in records
+                    if (
+                        r.received
+                        and not r.out_of_scope
+                        and not r.approved
+                        and not r.rejected
+                    )
+                ]
+            )
+
+        # ---------------------------------------------
+        # DELIVERY
+        # verified =
+        # received - out_of_scope - incomplete
+        # ---------------------------------------------
+        else:
+            files_to_be_verified = len(
+                [r for r in records if (r.received and not r.out_of_scope)]
+            )
+
+            files_verified = files_to_be_verified - files_incomplete
+
+            files_not_verified = 0
+
+        # =====================================================
+        # REJECTED BUT DELIVERED
+        # =====================================================
         rejected_but_delivered = len(
             [
                 r
@@ -298,7 +284,9 @@ class MISUploadService:
             ]
         )
 
+        # =====================================================
         # BOOKING SUMMARY
+        # =====================================================
         if record_type == MISRecordType.BOOKING:
             daily = session.exec(
                 select(DailyBooking).where(
@@ -311,15 +299,6 @@ class MISUploadService:
                 daily = DailyBooking(
                     date=record_date,
                     outlet_id=outlet_id,
-                    number_bookings=0,
-                    file_received=0,
-                    files_pending=0,
-                    files_verified=0,
-                    files_out_of_scope=0,
-                    files_incomplete=0,
-                    files_approved=0,
-                    files_rejected=0,
-                    files_not_verified=0,
                 )
 
                 session.add(daily)
@@ -342,8 +321,14 @@ class MISUploadService:
 
             daily.files_not_verified = files_not_verified
 
+            daily.files_scanned = files_scanned
+
+            daily.files_in_mis = files_in_mis
+
+        # =====================================================
         # DELIVERY SUMMARY
-        elif record_type == MISRecordType.DELIVERY:
+        # =====================================================
+        else:
             daily = session.exec(
                 select(DailyDelivery).where(
                     DailyDelivery.date == record_date,
@@ -355,15 +340,6 @@ class MISUploadService:
                 daily = DailyDelivery(
                     date=record_date,
                     outlet_id=outlet_id,
-                    number_deliveries=0,
-                    file_received=0,
-                    files_pending=0,
-                    files_verified=0,
-                    files_out_of_scope=0,
-                    files_incomplete=0,
-                    files_approved=0,
-                    files_rejected=0,
-                    rejected_but_delivered=0,
                 )
 
                 session.add(daily)
@@ -386,7 +362,10 @@ class MISUploadService:
 
             daily.rejected_but_delivered = rejected_but_delivered
 
-        # SAVE
+            daily.files_scanned = files_scanned
+
+            daily.files_in_mis = files_in_mis
+
         session.commit()
 
     @staticmethod

@@ -1,4 +1,4 @@
-from sqlmodel import Session, select, or_
+from sqlmodel import Session, select, or_, func
 from datetime import datetime
 from sqlalchemy.orm import joinedload
 from fastapi import HTTPException
@@ -372,16 +372,36 @@ def get_dealership_by_outlet(
     }
 
 
+def normalize_outlet_name(
+    value: str,
+) -> str:
+
+    return str(value).strip().lower().replace("–", "-").replace("—", "-")
+
+
 def get_outlet_id_by_name(
-    session: Session, name: str, dealership_id: int | None = None
+    session: Session,
+    name: str,
+    dealership_id: int | None = None,
 ):
+
     if not name:
         return None
-    query = select(Outlet).where(Outlet.name == name)
-    if dealership_id:
-        query = query.where(Outlet.dealership_id == dealership_id)
-    outlet = session.exec(query).first()
-    return outlet.id if outlet else None
+
+    cleaned = normalize_outlet_name(name)
+
+    outlets = session.exec(select(Outlet)).all()
+
+    for outlet in outlets:
+        db_name = normalize_outlet_name(outlet.name)
+
+        if db_name == cleaned:
+            if dealership_id and outlet.dealership_id != dealership_id:
+                continue
+
+            return outlet.id
+
+    return None
 
 
 def save_complaint(session: Session, data: dict):

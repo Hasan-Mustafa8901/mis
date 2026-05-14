@@ -195,6 +195,61 @@ def get_auth_headers():
     }
 
 
+# async def api_request(
+#     method: str,
+#     path: str,
+#     **kwargs,
+# ):
+
+#     headers = kwargs.pop("headers", {})
+
+#     auth_headers = get_auth_headers()
+
+#     headers.update(auth_headers)
+
+#     try:
+#         async with httpx.AsyncClient() as client:
+#             response = await client.request(
+#                 method=method,
+#                 url=f"{BASE_URL}{path}",
+#                 headers=headers,
+#                 timeout=20,
+#                 **kwargs,
+#             )
+
+#         # TOKEN EXPIRED / INVALID
+#         if response.status_code == 401:
+#             await logout_user()
+
+#             ui.notify(
+#                 "Session expired. Please login again.",
+#                 type="warning",
+#             )
+
+#             ui.navigate.to("/login")
+
+#             return None
+
+#         response.raise_for_status()
+
+#         return response.json()
+
+#     except httpx.HTTPStatusError as exc:
+#         ui.notify(
+#             f"HTTP Error: {exc.response.status_code}",
+#             type="negative",
+#         )
+
+#         raise
+
+#     except httpx.ConnectError:
+#         ui.notify(
+#             "Unable to connect to server",
+#             type="negative",
+#         )
+
+
+#         raise
 async def api_request(
     method: str,
     path: str,
@@ -206,6 +261,10 @@ async def api_request(
     auth_headers = get_auth_headers()
 
     headers.update(auth_headers)
+
+    # REMOVE NONE QUERY PARAMS
+    if "params" in kwargs and kwargs["params"]:
+        kwargs["params"] = {k: v for k, v in kwargs["params"].items() if v is not None}
 
     try:
         async with httpx.AsyncClient() as client:
@@ -267,24 +326,30 @@ async def api_put(path: str, payload: dict):
     return await api_request("PUT", path, json=payload)
 
 
+# DO NOT CHANGE, DO NOT FIX SOMETHING THAT IS NOT BROKEN
+# THE CODE LOOKS UGLY???
+# BUT F*CKING WORKS, F OFF
+# THIS NOT ANY OTHER DEV THIS WARNING IS FOR ME...
 async def api_post_file(path: str, file, data: dict):
+    token = app.storage.user.get("token")
     headers = {}
-    token = get_token()
     if token:
         headers["Authorization"] = f"Bearer {token}"
-
     name = file.file.name
     content = await file.file.read()
 
-    return await api_request(
-        "POST",
-        path,
-        headers=headers,
-        files={
-            "file": (name, content),
-        },
-        data=data,
-    )
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{BASE_URL}{path}",
+            files={
+                "file": (name, content)  # no await
+            },
+            data=data,
+            headers=headers,
+            timeout=20,
+        )
+        r.raise_for_status()
+        return r.json()
 
 
 # ══════════════════════════════════════════════════════════════
@@ -3192,10 +3257,19 @@ async def daily_reporting_page() -> None:
     async def _fetch_and_show_dialog():
         """Populate dialog using already fetched transactions (no API call)."""
         try:
+            dealer_id = (
+                int(rstate.dealer_select.value) if rstate.dealer_select.value else None
+            )
+
+            outlet_id = (
+                int(rstate.outlet_select.value) if rstate.outlet_select.value else None
+            )
             params = {
                 "record_date": _dlg_state["d"],
                 "stage": _dlg_state["tt"],
                 "column": _dlg_state["col"],
+                "outlet_id": outlet_id,
+                "dealership_id": dealer_id,
             }
 
             # DERIVED VERIFIED (DELIVERY ONLY)
@@ -3207,6 +3281,8 @@ async def daily_reporting_page() -> None:
                         "record_date": _dlg_state["d"],
                         "stage": "delivery",
                         "column": "files_to_be_verified",
+                        "outlet_id": outlet_id,
+                        "dealership_id": dealer_id,
                     },
                 )
 
@@ -3216,6 +3292,8 @@ async def daily_reporting_page() -> None:
                         "record_date": _dlg_state["d"],
                         "stage": "delivery",
                         "column": "files_incomplete",
+                        "outlet_id": outlet_id,
+                        "dealership_id": dealer_id,
                     },
                 )
 
@@ -3701,10 +3779,10 @@ async def daily_reporting_page() -> None:
         }
 
         if rstate.selected_outlet:
-            params["outlet_id"] = rstate.selected_outlet
+            params["outlet_id"] = rstate.outlet_select.value
 
         elif rstate.selected_dealer:
-            params["dealership_id"] = rstate.selected_dealer
+            params["dealership_id"] = rstate.dealer_select.value
 
         # FETCH
         data = await api_get(
@@ -3726,6 +3804,8 @@ async def daily_reporting_page() -> None:
             )
 
             booking_rows.append(row)
+
+        print(booking_rows)
 
         # DELIVERIES
 
@@ -4056,18 +4136,13 @@ async def daily_reporting_page() -> None:
 
                 async def handle_mis_upload(e):
                     try:
-                        # user = get_user()
-                        if not rstate.outlet_select.value:
-                            ui.notify(
-                                "Please select a showroom to upload file.",
-                                type="warning",
-                            )
-                            return
+                        print(rstate.outlet_select.value)
                         status_label.text = "Uploading..."
                         status_label.classes("text-blue-500")
                         payload = {
                             "outlet_id": rstate.outlet_select.value,  # temporarily make it 1 change it later
                         }
+                        print(payload)
                         response = await api_post_file(
                             "/mis/upload-ebd",
                             e,
@@ -4082,7 +4157,6 @@ async def daily_reporting_page() -> None:
                         status_label.text = f"✅ Upload successful ({created} records)"
 
                         status_label.classes("text-green-600")
-                        # ui.upload.clear()
 
                     except Exception as ex:
                         status_label.text = f"❌ {str(ex)}"
