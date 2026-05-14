@@ -3887,9 +3887,8 @@ async def daily_reporting_page() -> None:
                         if val
                         else rstate.outlets
                     )
-                    rstate.outlet_select.options = {
-                        o["id"]: o["name"] for o in filtered
-                    }
+                    new_options = {o["id"]: o["name"] for o in filtered}
+                    rstate.outlet_select.set_options(new_options)
                     rstate.outlet_select.set_value(None)
                     rstate.selected_outlet = None
                     await reload_current_range()
