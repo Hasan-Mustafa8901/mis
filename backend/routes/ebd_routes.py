@@ -63,6 +63,7 @@ def toggle_received(
     MISUpdateService.toggle_received(
         session=session,
         mis_record_id=payload["mis_record_id"],
+        receiving_date=payload["receiving_date"],
         value=payload["value"],
     )
 

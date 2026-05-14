@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import and_
 from sqlmodel import Session, select
@@ -110,9 +110,6 @@ def get_mis_data(
     # =====================================================
     rows = session.exec(stmt).all()
 
-    # =====================================================
-    # RESPONSE
-    # =====================================================
     return [
         {
             "id": row.id,
@@ -122,6 +119,9 @@ def get_mis_data(
             "car_model": row.car_model,
             "team_leader": row.team_leader,
             "received": row.received,
+            "receiving_date": (
+                row.receiving_date.date().isoformat() if row.receiving_date else None
+            ),
             "approved": row.approved,
             "rejected": row.rejected,
             "rejection_reason": row.rejection_reason,

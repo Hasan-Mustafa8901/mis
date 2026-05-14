@@ -2924,8 +2924,10 @@ async def daily_reporting_page() -> None:
                                 # =====================================
                                 if dialog_type == "total_count":
                                     with ui.element("td").style(TD):
+                                        print("RECEIVING: ", row.get("receiving_date"))
                                         receiving_date = ui.input(
-                                            placeholder="Receiving Date"
+                                            placeholder="Receiving Date",
+                                            value=row.get("receiving_date"),
                                         ).props(
                                             "dense outlined type='date' mask=##/##/####"
                                         )
@@ -2941,13 +2943,12 @@ async def daily_reporting_page() -> None:
                                                 "/mis/toggle-received",
                                                 {
                                                     "mis_record_id": record_id,
-                                                    "receiving_date": record_date,
+                                                    "receiving_date": record_date.value,
                                                     "value": e.value,
                                                 },
                                             )
 
                                             await _fetch_and_show_dialog()
-
                                             await reload_current_range()
 
                                         ui.checkbox(
@@ -2996,7 +2997,6 @@ async def daily_reporting_page() -> None:
                                             )
 
                                             await _fetch_and_show_dialog()
-
                                             await reload_current_range()
 
                                         ui.checkbox(
