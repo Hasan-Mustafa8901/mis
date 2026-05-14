@@ -2,6 +2,7 @@ from sqlmodel import Session
 from db.models import MISRecord
 from services.ingestion.mis_record import MISUploadService
 from services.utils import get_ist_now
+from datetime import datetime
 
 
 class MISUpdateService:
@@ -9,6 +10,7 @@ class MISUpdateService:
     def toggle_received(
         session: Session,
         mis_record_id: int,
+        receiving_date: datetime,
         value: bool,
     ):
 
@@ -25,8 +27,7 @@ class MISUpdateService:
         # =====================================
         if value:
             record.received = True
-
-            record.receiving_date = get_ist_now()
+            record.receiving_date = receiving_date
 
         # =====================================
         # UNCHECKED

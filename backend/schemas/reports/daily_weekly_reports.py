@@ -10,8 +10,8 @@ class ReconciliationMetrics(BaseModel):
     files_pending: int = 0
     files_incomplete: int = 0
     files_verified: int = 0
-    files_approved: str = "-"
-    files_rejected: str = "-"
+    files_approved: int = 0
+    files_rejected: int = 0
     verification_completion_pct: float = 0.0
 
 

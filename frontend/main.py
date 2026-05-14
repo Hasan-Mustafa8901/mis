@@ -2624,9 +2624,7 @@ class ReportingState:
         self.outlets: dict = {}
 
 
-# ══════════════════════════════════════════════════════════════
-#                   PAGE: DAILY REPORTING
-# ══════════════════════════════════════════════════════════════
+# PAGE: DAILY REPORTING
 @ui.page("/daily-reporting")
 @protected_page
 async def daily_reporting_page() -> None:
@@ -2677,7 +2675,8 @@ async def daily_reporting_page() -> None:
                 ("Mobile", "80px"),
                 ("Car Model", "100px"),
                 ("TL", "120px"),
-                ("Received", "120px"),
+                ("File Receiving Date", "100px"),
+                ("Received", "40px"),
             ]
 
         # =====================================================
@@ -2691,7 +2690,7 @@ async def daily_reporting_page() -> None:
                 ("Mobile", "130px"),
                 ("Car Model", "100px"),
                 ("TL", "120px"),
-                ("Remarks", "220px"),
+                ("Reason for Out of Scope", "220px"),
                 ("Out Of Scope", "140px"),
             ]
         elif dialog_type == "files_out_of_scope":
@@ -2702,7 +2701,7 @@ async def daily_reporting_page() -> None:
                 ("Mobile", "130px"),
                 ("Car Model", "100px"),
                 ("TL", "120px"),
-                ("Reason", "260px"),
+                ("Reason for Out of Scope", "260px"),
             ]
         elif dialog_type == "files_to_be_verified":
             headers = [
@@ -2713,7 +2712,7 @@ async def daily_reporting_page() -> None:
                 ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Approve", "120px"),
-                ("Reason", "220px"),
+                ("Rejection Reason", "220px"),
                 ("Reject", "120px"),
             ]
         elif dialog_type == "files_incomplete":
@@ -2724,7 +2723,7 @@ async def daily_reporting_page() -> None:
                 ("Mobile", "130px"),
                 ("Car Model", "100px"),
                 ("TL", "120px"),
-                ("Reason", "260px"),
+                ("Reason for incomplete", "260px"),
             ]
 
         elif dialog_type == "files_approved":
@@ -2746,7 +2745,7 @@ async def daily_reporting_page() -> None:
                 ("Car Model", "100px"),
                 ("TL", "120px"),
                 ("Rejected", "120px"),
-                ("Reason", "240px"),
+                ("Rejection Reason", "240px"),
             ]
 
         # =====================================================
@@ -2887,16 +2886,24 @@ async def daily_reporting_page() -> None:
                                 # =====================================
                                 if dialog_type == "total_count":
                                     with ui.element("td").style(TD):
+                                        receiving_date = ui.input(
+                                            placeholder="Receiving Date"
+                                        ).props(
+                                            "dense outlined type='date' mask=##/##/####"
+                                        )
+                                    with ui.element("td").style(TD):
 
                                         async def toggle_received(
                                             e,
                                             record_id=row["id"],
+                                            record_date=receiving_date,
                                         ):
 
                                             await api_post(
                                                 "/mis/toggle-received",
                                                 {
                                                     "mis_record_id": record_id,
+                                                    "receiving_date": record_date,
                                                     "value": e.value,
                                                 },
                                             )
@@ -3374,9 +3381,23 @@ async def daily_reporting_page() -> None:
                         with (
                             ui.element("th")
                             .props('rowspan="2"')
+                            .style(TABLE_HEADER_STYLE + ";min-width:80px;")
+                        ):
+                            ui.html("Files<br>Incomplete")
+                        # FILES SCANNED
+                        with (
+                            ui.element("th")
+                            .props("rowspan='2'")
                             .style(TABLE_HEADER_STYLE + ";min-width:100px;")
                         ):
-                            ui.label("Files Incomplete")
+                            ui.html("Files<br>Scanned")
+                        # FILES IN MIS
+                        with (
+                            ui.element("th")
+                            .props("rowspan='2'")
+                            .style(TABLE_HEADER_STYLE + ";min-width:100px;")
+                        ):
+                            ui.html("Files in<br>MIS")
 
                         # FILES VERIFIED GROUP
                         if stage == "booking":
@@ -3393,7 +3414,6 @@ async def daily_reporting_page() -> None:
                                 .style(TABLE_HEADER_STYLE + ";min-width:100px;")
                             ):
                                 ui.label("Files Verified")
-
                         if stage == "booking":
                             # FILES not verified
                             with (
@@ -3517,6 +3537,28 @@ async def daily_reporting_page() -> None:
                                 row=row,
                                 highlight=((row.get("files_incomplete") or 0) > 0),
                             )
+                            # =========================================
+                            # FILES IN MIS CHANGE THIS WITH CORRECT DATA FROM THE BACKEND
+                            # =========================================
+                            render_clickable_cell(
+                                value=None
+                                if is_placeholder
+                                else row["files_incomplete"],
+                                column="files_incomplete",
+                                row=row,
+                                highlight=((row.get("files_incomplete") or 0) > 0),
+                            )
+                            # =========================================
+                            # FILES SCANNED THIS WITH CORRECT DATA FROM THE BACKEND
+                            # =========================================
+                            render_clickable_cell(
+                                value=None
+                                if is_placeholder
+                                else row["files_incomplete"],
+                                column="files_incomplete",
+                                row=row,
+                                highlight=((row.get("files_incomplete") or 0) > 0),
+                            )
 
                             # =========================================
                             # VERIFIED
@@ -3578,6 +3620,8 @@ async def daily_reporting_page() -> None:
                     "files_out_of_scope",
                     "files_to_be_verified",
                     "files_incomplete",
+                    "files_scanned",
+                    "files_in_mis",
                 ]
 
                 if stage == "booking":
@@ -3641,7 +3685,7 @@ async def daily_reporting_page() -> None:
             key=lambda x: x["date"],
         )
 
-    # ── Fetching EBD data counts from the daily tables ──────────────────────────────────────
+    # Fetching EBD data counts from the daily tables
     async def load_daily_report(
         report_from: str,
         report_to: str,
@@ -3657,9 +3701,7 @@ async def daily_reporting_page() -> None:
         elif rstate.selected_dealer:
             params["dealership_id"] = rstate.selected_dealer
 
-        # =====================================
         # FETCH
-        # =====================================
         data = await api_get(
             "/report/",
             params=params,
@@ -3675,16 +3717,7 @@ async def daily_reporting_page() -> None:
             [],
         ):
             row["files_to_be_verified"] = max(
-                (
-                    row.get(
-                        "files_received",
-                        0,
-                    )
-                    - row.get(
-                        "files_out_of_scope",
-                        0,
-                    )
-                ),
+                (row.get("files_received", 0) - row.get("files_out_of_scope", 0)),
                 0,
             )
 
@@ -3717,14 +3750,12 @@ async def daily_reporting_page() -> None:
         # DERIVED VERIFIED COUNTS
         for row in booking_rows:
             row["files_verified"] = max(
-                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)),
-                0,
+                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)), 0
             )
 
         for row in delivery_rows:
             row["files_verified"] = max(
-                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)),
-                0,
+                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)), 0
             )
 
         # =====================================
@@ -4114,7 +4145,7 @@ async def daily_reporting_page() -> None:
 
         else:
             rstate.report_from = from_inp.value or today_str
-            rstate.report_to = to_inp or today_str
+            rstate.report_to = to_inp.value or today_str
             await load_daily_report(rstate.report_from, rstate.report_to)
 
     async def on_from_change(e):

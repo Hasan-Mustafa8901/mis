@@ -390,8 +390,6 @@ class EditRequest(SQLModel, table=True):
 #  COMPLAINT MANAGEMENT
 # =========================
 # Add No of files rejected, accepted, incomplete.
-
-
 class DailyBooking(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint(

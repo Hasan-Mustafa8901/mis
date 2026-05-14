@@ -34,10 +34,12 @@ def get_booking_reconciliation(
 ) -> ReconciliationMetrics:
 
     stmt = select(
-        func.coalesce(func.sum(DailyBooking.number_bookings), 0),
-        func.coalesce(func.sum(DailyBooking.file_received), 0),
-        func.coalesce(func.sum(DailyBooking.files_pending), 0),
-        func.coalesce(func.sum(DailyBooking.files_verified), 0),
+        func.coalesce(func.sum(DailyBooking.number_bookings), 0).label("total_cases"),
+        func.coalesce(func.sum(DailyBooking.file_received), 0).label("files_received"),
+        func.coalesce(func.sum(DailyBooking.files_pending), 0).label("files_pending"),
+        func.coalesce(func.sum(DailyBooking.files_verified), 0).label("files_verified"),
+        func.coalesce(func.sum(DailyBooking.files_approved), 0).label("files_approved"),
+        func.coalesce(func.sum(DailyBooking.files_rejected), 0).label("files_rejected"),
     ).where(
         DailyBooking.date.between(
             start_date,
@@ -57,6 +59,8 @@ def get_booking_reconciliation(
         files_received,
         files_pending,
         files_verified,
+        files_approved,
+        files_rejected,
     ) = session.exec(stmt).one()
 
     incomplete_stmt = select(func.count(Transaction.id)).where(
@@ -82,6 +86,8 @@ def get_booking_reconciliation(
         files_pending=files_pending,
         files_incomplete=files_incomplete,
         files_verified=files_verified,
+        files_approved=files_approved,
+        files_rejected=files_rejected,
         verification_completion_pct=(
             files_verified / total_cases if total_cases else 0
         ),
