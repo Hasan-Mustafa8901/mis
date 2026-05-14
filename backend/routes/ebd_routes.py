@@ -16,7 +16,7 @@ from datetime import date
 from db.session import get_session
 from db.models import MISRecordType
 from schemas.mis import MISRecordActionPayload
-from services.mis_service.mis_data import get_mis_data, get_incomplete_transactions
+from services.mis_service.mis_data import get_ebd_data, get_mis_transactions
 from services.mis_service.mis_update import MISUpdateService
 from services.ingestion.mis_record import MISUploadService
 from services.complaints.query import get_dealership_by_outlet
@@ -35,15 +35,28 @@ def get_mis_details(
     session: Session = Depends(get_session),
 ):
     if column == "files_incomplete":
-        response = get_incomplete_transactions(
+        print("1")
+        response = get_mis_transactions(
             session=session,
             record_date=record_date,
             stage=stage,
             outlet_id=outlet_id,
             dealership_id=dealership_id,
+            incomplete=True,
+        )
+    elif column == "files_in_mis":
+        print("2")
+        response = get_mis_transactions(
+            session=session,
+            record_date=record_date,
+            stage=stage,
+            outlet_id=outlet_id,
+            dealership_id=dealership_id,
+            incomplete=False,
         )
     else:
-        response = get_mis_data(
+        print("3")
+        response = get_ebd_data(
             session,
             record_date,
             stage,

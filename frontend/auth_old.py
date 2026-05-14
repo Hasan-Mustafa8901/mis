@@ -1,5 +1,6 @@
 # frontend/auth.py
 from nicegui import app, ui
+import asyncio
 from functools import wraps
 import jwt
 from datetime import datetime, timezone
@@ -66,7 +67,7 @@ def protected_page(func):
     async def wrapper(*args, **kwargs):
 
         if not token_is_valid():
-            clear_user()
+            await logout_user()
             ui.notify("Session expired. Please login again.")
             ui.navigate.to("/login")
             return
@@ -98,3 +99,34 @@ def get_token():
 
 def clear_user():
     app.storage.user.clear()
+
+
+_logout_lock = asyncio.Lock()
+
+
+async def logout_user():
+
+    if _logout_lock.locked():
+        return
+
+    async with _logout_lock:
+        try:
+            # remove only auth keys
+            for key in [
+                "token",
+                "roles",
+                "id",
+                "name",
+                "allowed_outlet_ids",
+            ]:
+                app.storage.user.pop(key, None)
+
+            ui.notify(
+                "Session expired. Please login again.",
+                type="warning",
+            )
+
+            ui.navigate.to("/login")
+
+        except Exception as e:
+            print("Logout error:", e)

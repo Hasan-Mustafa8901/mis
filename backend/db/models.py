@@ -409,6 +409,8 @@ class DailyBooking(SQLModel, table=True):
     files_incomplete: int = Field(default=0)
     files_approved: int = Field(default=0)
     files_rejected: int = Field(default=0)
+    files_scanned: int = Field(default=0)
+    files_in_mis: int = Field(default=0)
     files_not_verified: int = Field(default=0)
     is_locked: bool = Field(default=False)
 
@@ -437,6 +439,8 @@ class DailyDelivery(SQLModel, table=True):
     files_incomplete: int = Field(default=0)
     files_approved: int = Field(default=0)
     files_rejected: int = Field(default=0)
+    files_scanned: int = Field(default=0)
+    files_in_mis: int = Field(default=0)
     rejected_but_delivered: int = Field(default=0)
     is_locked: bool = Field(default=False)
 
@@ -473,6 +477,9 @@ class MISRecord(SQLModel, table=True):
 
     approved: bool = Field(default=False)
     approved_date: Optional[datetime] = None
+
+    scanned: bool = Field(default=False)
+    scanning_date: Optional[datetime] = None
 
     rejected: bool = Field(default=False)
     rejection_reason: Optional[str] = None

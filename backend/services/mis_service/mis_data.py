@@ -3,10 +3,20 @@ from datetime import date, datetime
 from sqlalchemy import and_
 from sqlmodel import Session, select
 
-from db.models import MISRecord, MISRecordType, Transaction, Customer, Outlet
+from db.models import (
+    MISRecord,
+    MISRecordType,
+    Transaction,
+    Customer,
+    Outlet,
+    Employee,
+    Variant,
+)
+
+from rich import print
 
 
-def get_mis_data(
+def get_ebd_data(
     session: Session,
     record_date: date,
     stage: MISRecordType,
@@ -54,9 +64,9 @@ def get_mis_data(
         # ---------------------------------------------
         "files_out_of_scope": (MISRecord.out_of_scope.is_(True)),
         # ---------------------------------------------
-        # FILES INCOMPLETE
+        # FILES Scanned
         # ---------------------------------------------
-        # "files_incomplete": (Transaction.incomplete.is_(True)),
+        "scanned": (MISRecord.scanned.is_(True)),
         # ---------------------------------------------
         # FILES APPROVED
         # ---------------------------------------------
@@ -124,6 +134,10 @@ def get_mis_data(
             ),
             "approved": row.approved,
             "rejected": row.rejected,
+            "scanned": row.scanned,
+            "scanning_date": (
+                row.scanning_date.date().isoformat() if row.scanning_date else None
+            ),
             "rejection_reason": row.rejection_reason,
             "out_of_scope": row.out_of_scope,
             "out_of_scope_reason": row.out_of_scope_reason,
@@ -137,23 +151,37 @@ def get_mis_data(
     ]
 
 
-def get_incomplete_transactions(
+def get_mis_transactions(
     session: Session,
     record_date: date,
     stage: MISRecordType,
     outlet_id: int | None = None,
     dealership_id: int | None = None,
+    incomplete: bool = False,
 ):
 
     # =====================================================
     # BASE QUERY
     # =====================================================
-    stmt = select(
-        Transaction,
-        Customer,
-    ).join(
-        Customer,
-        Customer.id == Transaction.customer_id,
+    stmt = (
+        select(
+            Transaction,
+            Customer,
+            Employee,
+            Variant,
+        )
+        .join(
+            Customer,
+            Customer.id == Transaction.customer_id,
+        )
+        .join(
+            Employee,
+            Employee.id == Transaction.sales_executive_id,
+        )
+        .join(
+            Variant,
+            Variant.id == Transaction.variant_id,
+        )
     )
 
     # =====================================================
@@ -162,7 +190,7 @@ def get_incomplete_transactions(
     if stage == MISRecordType.BOOKING:
         stmt = stmt.where(
             Transaction.booking_date == record_date,
-            Transaction.booking_file_incomplete.is_(True),
+            Transaction.booking_file_incomplete.is_(incomplete),
         )
 
     # =====================================================
@@ -171,7 +199,7 @@ def get_incomplete_transactions(
     else:
         stmt = stmt.where(
             Transaction.delivery_date == record_date,
-            Transaction.delivery_file_incomplete.is_(True),
+            Transaction.delivery_file_incomplete.is_(incomplete),
         )
 
     # =====================================================
@@ -199,7 +227,7 @@ def get_incomplete_transactions(
     # =====================================================
     response = []
 
-    for txn, customer in rows:
+    for txn, customer, employee, variant in rows:
         remarks = (
             txn.booking_file_incomplete_remarks
             if stage == MISRecordType.BOOKING
@@ -212,9 +240,14 @@ def get_incomplete_transactions(
                 "date": (record_date.isoformat() if record_date else None),
                 "customer_name": customer.name,
                 "customer_mobile": customer.mobile_number,
-                "team_leader": txn.team_leader,
+                "team_leader": employee.name,
+                "car_model": variant.variant_name,
+                "entry_date": txn.created_at.date().isoformat()
+                if txn.created_at
+                else None,
                 "remarks": remarks,
             }
         )
+    print("RESPONSE: ", response)
 
     return response
