@@ -199,41 +199,36 @@ class MISUploadService:
         # COUNTS
         # =====================================================
         total = len(records)
-
         files_received = len([r for r in records if r.received])
-
         files_pending = len([r for r in records if not r.received])
-
         files_out_of_scope = len([r for r in records if r.out_of_scope])
-
         files_approved = len([r for r in records if r.approved])
-
         files_rejected = len([r for r in records if r.rejected])
-
         files_scanned = len([r for r in records if r.scanned])
-
         files_in_mis = len([r for r in records if r.transaction_id])
-
         # =====================================================
         # INCOMPLETE FILES
         # =====================================================
-        if record_type == MISRecordType.BOOKING:
-            files_incomplete = session.exec(
-                select(func.count(Transaction.id)).where(
-                    Transaction.outlet_id == outlet_id,
-                    Transaction.booking_date == record_date,
-                    Transaction.booking_file_incomplete.is_(True),
-                )
-            ).one()
 
-        else:
-            files_incomplete = session.exec(
-                select(func.count(Transaction.id)).where(
-                    Transaction.outlet_id == outlet_id,
-                    Transaction.delivery_date == record_date,
-                    Transaction.delivery_file_incomplete.is_(True),
-                )
-            ).one()
+        files_incomplete = 0
+
+        for r in records:
+            if not r.transaction_id:
+                continue
+
+            txn = session.get(
+                Transaction,
+                r.transaction_id,
+            )
+
+            if not txn:
+                continue
+
+            if record_type == MISRecordType.BOOKING and txn.booking_file_incomplete:
+                files_incomplete += 1
+
+            elif record_type == MISRecordType.DELIVERY and txn.delivery_file_incomplete:
+                files_incomplete += 1
 
         # =====================================================
         # VERIFIED LOGIC

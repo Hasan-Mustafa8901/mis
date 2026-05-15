@@ -191,6 +191,20 @@ def toggle_reject(
     }
 
 
+@router.post("/toggle-scanned")
+async def toggle_scanned(
+    payload: dict,
+    session: Session = Depends(get_session),
+):
+    MISUpdateService.toggle_scanned_file(
+        session=session,
+        mis_record_id=payload["mis_record_id"],
+        value=payload["value"],
+        scanning_date=payload.get("scanning_date", None),
+    )
+    return {"status": "success"}
+
+
 @router.post("/upload-ebd")
 async def upload_ebd_file(
     outlet_id: int = Form(...),

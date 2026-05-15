@@ -19,7 +19,7 @@ class MISMatchingService:
         session: Session,
         transaction: Transaction,
     ):
-
+        print("MATCHING SEIVICE")
         # -----------------------------------
         # CUSTOMER
         # -----------------------------------
@@ -27,14 +27,21 @@ class MISMatchingService:
             Customer,
             transaction.customer_id,
         )
+        print(
+            "MATCHING SERVICE: GOT THE CUSTOMER",
+            (customer.name, customer.mobile_number),
+        )
 
         if not customer:
+            print("MATCHING SERVICE: CUSTOMER NOT FOUND")
             return
 
         if not customer.mobile_number:
+            print("MATCHING SERVICE: CUSTOMER MOBILE NOT FOUND")
             return
 
         mobile = "".join(filter(str.isdigit, customer.mobile_number))[-10:]
+        print("MATCHING SERVICE: MOBILE", mobile)
 
         if not mobile:
             return
@@ -79,7 +86,7 @@ class MISMatchingService:
                 # -------------------------------
                 delta = abs((record.record_date - match_date).days)
 
-                if delta > 7:
+                if delta > 2:
                     continue
 
                 # -------------------------------
@@ -90,6 +97,7 @@ class MISMatchingService:
                 record.matching_status = MISMatchingStatus.MATCHED
 
                 record.matched_automatically = True
+                print("MATCHING SERVICE: MATCHED", record.matched_automatically)
 
                 session.add(record)
 

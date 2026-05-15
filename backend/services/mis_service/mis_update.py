@@ -2,7 +2,7 @@ from sqlmodel import Session
 from db.models import MISRecord
 from services.ingestion.mis_record import MISUploadService
 from services.utils import get_ist_now
-from datetime import datetime
+from datetime import datetime, date
 
 
 class MISUpdateService:
@@ -49,6 +49,37 @@ class MISUpdateService:
 
         session.add(record)
 
+        session.commit()
+
+        MISUploadService.sync_single_daily_summary(
+            session=session,
+            outlet_id=record.outlet_id,
+            record_date=record.record_date,
+            record_type=record.type,
+        )
+
+    @staticmethod
+    def toggle_scanned_file(
+        session: Session, mis_record_id: int, value: bool, scanning_date: datetime
+    ):
+        record = session.get(MISRecord, mis_record_id)
+
+        if not record:
+            raise ValueError("MISRecord not found")
+        if value:
+            record.scanned = True
+            if scanning_date:
+                if isinstance("scanning_date", str):
+                    scanning_date = datetime.strptime(scanning_date, r"%Y-%m-%d")
+
+                record.scanning_date = scanning_date
+            else:
+                record.scanning_date = get_ist_now()
+        else:
+            record.scanned = False
+            record.scanning_date = None
+
+        session.add(record)
         session.commit()
 
         MISUploadService.sync_single_daily_summary(

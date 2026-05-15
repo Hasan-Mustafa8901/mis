@@ -15,6 +15,7 @@ from db.models import (
     User,
 )
 from services.ingestion.mis_record import MISUploadService
+from services.mis_service.matching_service import MISMatchingService
 
 # from services.discount.discount_service import DiscountService
 from datetime import datetime, date
@@ -281,11 +282,13 @@ class TransactionService:
 
         session.add(transaction)
         session.commit()
+        # Match this record with ebd
+        MISMatchingService.match_transaction(session=session, transaction=transaction)
+        session.refresh(transaction)
         # sync the dalily delivery table
         MISUploadService.sync_transaction_daily_summary(
             session=session, transaction=transaction
         )
-        session.refresh(transaction)
 
         return {
             "id": transaction.id,
@@ -341,11 +344,14 @@ class TransactionService:
 
         session.add(transaction)
         session.commit()
+
+        # Match with EBD Data
+        MISMatchingService.match_transaction(session=session, transaction=transaction)
+        session.refresh(transaction)
         # sync with the daily delivery table
         MISUploadService.sync_transaction_daily_summary(
             session=session, transaction=transaction
         )
-        session.refresh(transaction)
 
         return {
             "id": transaction.id,
@@ -391,11 +397,14 @@ class TransactionService:
         session.add(transaction)
         session.commit()
 
+        # Match with ebd record
+        MISMatchingService.match_transaction(session=session, transaction=transaction)
+
+        session.refresh(transaction)
         # sync with the daily booking table
         MISUploadService.sync_transaction_daily_summary(
             session=session, transaction=transaction
         )
-        session.refresh(transaction)
 
         return {
             "id": transaction.id,

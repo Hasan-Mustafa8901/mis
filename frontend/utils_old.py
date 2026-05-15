@@ -34,7 +34,9 @@ def get_ist_today() -> date:
     return get_ist_now().date()
 
 
-def disp_date(_date: date | str, fmt: str = r"%Y-%m-%d") -> str:
+def disp_date(_date: date | str, fmt: str = r"%Y-%m-%d") -> str | None:
+    if not _date:
+        return None
     if not isinstance(_date, date):
         _date = datetime.strptime(_date, fmt)
     return _date.strftime(r"%d/%m/%Y")

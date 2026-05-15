@@ -3253,10 +3253,10 @@ async def daily_reporting_page() -> None:
             ("Mobile", "120px"),
             ("Car Model", "120px"),
             ("TL", "120px"),
-            ("Receiving Date", "130px"),
-            ("OOS Reason", "220px"),
+            ("Receiving<br>Date", "130px"),
+            ("Out of Scope<br>Reason", "220px"),
             ("Approved", "90px"),
-            ("Rejection Reason", "220px"),
+            ("Rejection<br>Reason", "220px"),
             ("Scanned Date", "130px"),
             ("MIS Entry", "130px"),
             ("Incomplete", "100px"),
@@ -3285,7 +3285,7 @@ async def daily_reporting_page() -> None:
                 headers.extend(
                     [
                         ("Approve", "90px"),
-                        ("Reject", "90px"),
+                        ("Reject", "300px"),
                     ]
                 )
 
@@ -3314,7 +3314,7 @@ async def daily_reporting_page() -> None:
                             with ui.element("th").style(
                                 TH + (f";width:{w}" if w else "")
                             ):
-                                ui.label(h)
+                                ui.html(h)
 
                 # =================================================
                 # BODY
@@ -3669,14 +3669,17 @@ async def daily_reporting_page() -> None:
                                             record_id=row["id"],
                                             scan_date=scanning_date,
                                         ):
-
+                                            print(scan_date.value)
+                                            print(type(scan_date.value))
+                                            payload = {
+                                                "mis_record_id": record_id,
+                                                "value": e.value,
+                                                "scanning_date": scan_date.value,
+                                            }
+                                            print(payload)
                                             await api_post(
                                                 "/mis/toggle-scanned",
-                                                {
-                                                    "mis_record_id": record_id,
-                                                    "value": e.value,
-                                                    "scanning_date": scan_date.value,
-                                                },
+                                                payload=payload,
                                             )
 
                                             await _fetch_and_show_dialog()
@@ -4280,9 +4283,6 @@ async def daily_reporting_page() -> None:
             )
 
             booking_rows.append(row)
-
-        print(booking_rows)
-
         # DELIVERIES
 
         delivery_rows = []
