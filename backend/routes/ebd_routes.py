@@ -27,40 +27,49 @@ router = APIRouter(prefix="/mis", tags=["MIS"])
 
 @router.get("/details")
 def get_mis_details(
-    record_date: date,
     stage: MISRecordType,
     column: str,
+    is_footer: bool,
+    start_date: date | None,
+    end_date: date | None,
+    record_date: date | None = None,
     outlet_id: int | None = None,
     dealership_id: int | None = None,
     session: Session = Depends(get_session),
 ):
     if column == "files_incomplete":
-        print("1")
         response = get_mis_transactions(
             session=session,
             record_date=record_date,
             stage=stage,
+            is_footer=is_footer,
+            start_date=start_date,
+            end_date=end_date,
             outlet_id=outlet_id,
             dealership_id=dealership_id,
             incomplete=True,
         )
     elif column == "files_in_mis":
-        print("2")
         response = get_mis_transactions(
             session=session,
             record_date=record_date,
             stage=stage,
+            is_footer=is_footer,
+            start_date=start_date,
+            end_date=end_date,
             outlet_id=outlet_id,
             dealership_id=dealership_id,
             incomplete=False,
         )
     else:
-        print("3")
         response = get_ebd_data(
             session,
             record_date,
             stage,
             column,
+            is_footer,
+            start_date,
+            end_date,
             outlet_id,
             dealership_id,
         )

@@ -1,5 +1,7 @@
 import re
 from datetime import datetime, date, timezone, timedelta
+from datetime import date, datetime
+from typing import Any
 
 
 def build_component_map_from_booking(booking_data: dict) -> dict:
@@ -34,12 +36,78 @@ def get_ist_today() -> date:
     return get_ist_now().date()
 
 
-def disp_date(_date: date | str, fmt: str = r"%Y-%m-%d") -> str | None:
-    if not _date:
+def disp_date(
+    value: Any,
+    output_fmt: str = "%d/%m/%Y",
+) -> str | None:
+    """
+    Convert various date inputs into display format.
+
+    Supports:
+    - date
+    - datetime
+    - ISO strings:
+        2026-05-16
+        2026-05-16T00:00:00
+        2026-05-16 00:00:00
+        2026-05-16T00:00:00.000000
+        2026-05-16T00:00:00Z
+
+    Returns:
+    - formatted date string
+    - None if invalid/empty
+    """
+
+    if value in (None, "", "null"):
         return None
-    if not isinstance(_date, date):
-        _date = datetime.strptime(_date, fmt)
-    return _date.strftime(r"%d/%m/%Y")
+
+    try:
+        # Already datetime
+        if isinstance(value, datetime):
+            dt = value
+
+        # date but not datetime
+        elif isinstance(value, date):
+            dt = datetime.combine(value, datetime.min.time())
+
+        # string handling
+        elif isinstance(value, str):
+            value = value.strip()
+
+            # Handle trailing Z
+            value = value.replace("Z", "+00:00")
+
+            try:
+                # Best universal parser for ISO-like strings
+                dt = datetime.fromisoformat(value)
+            except ValueError:
+                # Fallback formats
+                known_formats = [
+                    "%Y-%m-%d",
+                    "%d/%m/%Y",
+                    "%Y/%m/%d",
+                    "%d-%m-%Y",
+                ]
+
+                dt = None
+
+                for fmt in known_formats:
+                    try:
+                        dt = datetime.strptime(value, fmt)
+                        break
+                    except ValueError:
+                        continue
+
+                if dt is None:
+                    return None
+
+        else:
+            return None
+
+        return dt.strftime(output_fmt)
+
+    except Exception:
+        return None
 
 
 def date_for_input(date_str: str) -> date:
