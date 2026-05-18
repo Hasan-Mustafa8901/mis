@@ -100,17 +100,50 @@ class MISMatchingService:
         # -----------------------------------
         # MATCH EACH STAGE
         # -----------------------------------
+
         for record_type, match_date in stages:
+            print(
+                "MATCHING:",
+                transaction.id,
+                mobile,
+                transaction.outlet_id,
+            )
             records = session.exec(
                 select(MISRecord).where(
                     MISRecord.transaction_id.is_(None),
-                    MISRecord.customer_mobile == mobile,
                     MISRecord.outlet_id == transaction.outlet_id,
                     MISRecord.type == record_type,
                 )
             ).all()
 
+            print(
+                "FOUND RECORDS:",
+                [
+                    (
+                        r.id,
+                        r.customer_mobile,
+                        r.record_date,
+                        r.type,
+                        r.transaction_id,
+                    )
+                    for r in records
+                ],
+            )
+
             for record in records:
+                record_mobile = "".join(
+                    filter(str.isdigit, str(record.customer_mobile or ""))
+                )[-10:]
+
+                print(
+                    "CHECKING MOBILE:",
+                    record.id,
+                    record_mobile,
+                    mobile,
+                )
+
+                if record_mobile != mobile:
+                    continue
                 # -------------------------------
                 # DATE WINDOW CHECK
                 # -------------------------------

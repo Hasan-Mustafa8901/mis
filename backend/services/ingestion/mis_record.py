@@ -38,14 +38,9 @@ class MISUploadService:
         total_created = 0
 
         for sheet_name in excel_file.sheet_names:
-            # -----------------------------------
             # INFER RECORD TYPE
-            # -----------------------------------
             record_type = MISUploadService.infer_record_type(sheet_name)
-
-            # -----------------------------------
             # LOAD SHEET
-            # -----------------------------------
             df = pd.read_excel(
                 file_path,
                 sheet_name=sheet_name,
@@ -58,9 +53,8 @@ class MISUploadService:
             print(f"\nProcessing Sheet: {sheet_name}")
             print("Normalized Columns:", df.columns)
 
-            # -----------------------------------
             # ITERATE ROWS
-            # -----------------------------------
+
             for _, row in df.iterrows():
                 customer_name = MISUploadService.clean_str(row.get("customer_name"))
 
@@ -85,9 +79,9 @@ class MISUploadService:
                 affected_outlets.add(resolved_outlet_id)
 
                 print(outlet_id)
-                # -----------------------------------
+
                 # DUPLICATE CHECK
-                # -----------------------------------
+
                 existing = session.exec(
                     select(MISRecord).where(
                         MISRecord.record_date == record_date,
@@ -108,9 +102,8 @@ class MISUploadService:
                     )
                     continue
 
-                # -----------------------------------
                 # CREATE RECORD
-                # -----------------------------------
+
                 record = MISRecord(
                     record_date=record_date,
                     type=record_type,
@@ -144,9 +137,8 @@ class MISUploadService:
             "records_created": total_created,
         }
 
-    # =====================================================
     # DAILY SUMMARY SYNC
-    # =====================================================
+
     @staticmethod
     def sync_daily_summary(
         session: Session,
@@ -184,9 +176,8 @@ class MISUploadService:
         record_type: MISRecordType,
     ):
 
-        # =====================================================
         # FETCH MIS RECORDS
-        # =====================================================
+
         records = session.exec(
             select(MISRecord).where(
                 MISRecord.outlet_id == outlet_id,
@@ -195,9 +186,8 @@ class MISUploadService:
             )
         ).all()
 
-        # =====================================================
         # COUNTS
-        # =====================================================
+
         total = len(records)
         files_received = len([r for r in records if r.received])
         files_pending = len([r for r in records if not r.received])
@@ -206,9 +196,8 @@ class MISUploadService:
         files_rejected = len([r for r in records if r.rejected])
         files_scanned = len([r for r in records if r.scanned])
         files_in_mis = len([r for r in records if r.transaction_id])
-        # =====================================================
+
         # INCOMPLETE FILES
-        # =====================================================
 
         files_incomplete = 0
 
@@ -230,14 +219,9 @@ class MISUploadService:
             elif record_type == MISRecordType.DELIVERY and txn.delivery_file_incomplete:
                 files_incomplete += 1
 
-        # =====================================================
         # VERIFIED LOGIC
-        # =====================================================
-
-        # ---------------------------------------------
         # BOOKING
         # verified = approved + rejected
-        # ---------------------------------------------
         if record_type == MISRecordType.BOOKING:
             files_verified = files_approved + files_rejected
 
@@ -254,11 +238,9 @@ class MISUploadService:
                 ]
             )
 
-        # ---------------------------------------------
         # DELIVERY
         # verified =
         # received - out_of_scope - incomplete
-        # ---------------------------------------------
         else:
             files_to_be_verified = len(
                 [r for r in records if (r.received and not r.out_of_scope)]
@@ -268,9 +250,8 @@ class MISUploadService:
 
             files_not_verified = 0
 
-        # =====================================================
         # REJECTED BUT DELIVERED
-        # =====================================================
+
         rejected_but_delivered = len(
             [
                 r
@@ -279,9 +260,8 @@ class MISUploadService:
             ]
         )
 
-        # =====================================================
         # BOOKING SUMMARY
-        # =====================================================
+
         if record_type == MISRecordType.BOOKING:
             daily = session.exec(
                 select(DailyBooking).where(
@@ -320,9 +300,8 @@ class MISUploadService:
 
             daily.files_in_mis = files_in_mis
 
-        # =====================================================
         # DELIVERY SUMMARY
-        # =====================================================
+
         else:
             daily = session.exec(
                 select(DailyDelivery).where(
@@ -378,9 +357,8 @@ class MISUploadService:
         - booking updates
         """
 
-        # =====================================
         # BOOKING SYNC
-        # =====================================
+
         if transaction.booking_date:
             MISUploadService.sync_single_daily_summary(
                 session=session,
@@ -389,9 +367,8 @@ class MISUploadService:
                 record_type=MISRecordType.BOOKING,
             )
 
-        # =====================================
         # DELIVERY SYNC
-        # =====================================
+
         if transaction.delivery_date:
             MISUploadService.sync_single_daily_summary(
                 session=session,
@@ -400,9 +377,7 @@ class MISUploadService:
                 record_type=MISRecordType.DELIVERY,
             )
 
-    # =====================================================
     # HELPERS
-    # =====================================================
 
     @staticmethod
     def clean_str(value):
