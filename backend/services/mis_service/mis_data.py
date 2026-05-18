@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy import and_
 from sqlmodel import Session, select
@@ -12,8 +12,6 @@ from db.models import (
     Employee,
     Variant,
 )
-
-from rich import print
 
 
 def get_ebd_data(
@@ -156,7 +154,7 @@ def get_ebd_data(
         }
         for row, transaction_created_at, incomplete in rows
     ]
-    print(data)
+
     return data
 
 
@@ -198,23 +196,20 @@ def get_mis_transactions(
             MISRecord.transaction_id == Transaction.id,
         )
     )
+    # stmt = stmt.where(MISRecord.type == stage)
+
     # for footer row give data for a date range
     if is_footer:
         stmt = stmt.where(MISRecord.record_date.between(start_date, end_date))
     else:
         stmt = stmt.where(MISRecord.record_date == record_date)
 
-    # BOOKING
-    if stage == MISRecordType.BOOKING:
-        stmt = stmt.where(
-            Transaction.booking_file_incomplete.is_(incomplete),
-        )
+    if incomplete:
+        if stage == MISRecordType.BOOKING:
+            stmt = stmt.where(Transaction.booking_file_incomplete.is_(True))
 
-    # DELIVERY
-    else:
-        stmt = stmt.where(
-            Transaction.delivery_file_incomplete.is_(incomplete),
-        )
+        else:
+            stmt = stmt.where(Transaction.delivery_file_incomplete.is_(True))
 
     # OUTLET FILTER
     if outlet_id:
@@ -229,6 +224,7 @@ def get_mis_transactions(
 
     # FETCH
     rows = session.exec(stmt).all()
+
     # RESPONSE
     response = []
 
@@ -263,6 +259,5 @@ def get_mis_transactions(
                 "scanning_date": mis_record.scanning_date,
             }
         )
-    print("RESPONSE: ", response)
 
     return response

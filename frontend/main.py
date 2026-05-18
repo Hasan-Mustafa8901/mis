@@ -2763,7 +2763,7 @@ async def daily_reporting_page() -> None:
 
         headers = [
             ("S.No", "50px"),
-            ("Date", "120px"),
+            (f"{_dlg_state['tt'].title()} Date", "120px"),
             ("Customer Name", "220px"),
             ("Mobile", "120px"),
             ("Car Model", "120px"),
@@ -3413,7 +3413,7 @@ async def daily_reporting_page() -> None:
                             .props('rowspan="2"')
                             .style(TABLE_HEADER_STYLE + ";min-width:100px")
                         ):
-                            ui.label("Date")
+                            ui.label(f"{stage.title()} Date")
 
                         # TOTAL
                         with (
