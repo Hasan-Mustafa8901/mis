@@ -31,36 +31,14 @@ from auth_old import (
 )
 
 
-# ══════════════════════════════════════════════════════════════
 # CONFIG & SHARED CONSTANTS
-# ══════════════════════════════════════════════════════════════
+
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
+# BASE_URL = ************
 
-# CONDITION_KEYS = [
-#     ("self_insurance", "Self Insurance", "price"),
-#     ("acc_kit", "Accessories", "price"),
-#     ("fastag", "FasTag", "price"),
-#     ("amc", "AMC", "price"),
-#     ("ext_warr", "Extended Warranty", "price"),
-#     ("exchange", "Exchange", "discount"),
-#     ("corporate", "Corporate", "discount"),
-#     ("govt_employee", "Govt Employee", "discount"),
-#     ("scrap", "Scrap", "discount"),
-#     # ("upgrade", "Upgrade"),
-#     # ("tr_case", "TR Case"),
-#     # ("tcs", "TCS"),
-#     ("green_bonus", "Green Bonus", "discount"),
-#     ("micro_segment", "Micro Segment (Solar Roof Top)", "discount"),
-#     ("sbi_yono", "SBI Yono", "discount"),
-#     ("power_of_twelve", "Power of 12", "discount"),
-#     ("sss", "Shop Share Smile (SSS)", "discount"),
-#     ("alliance_offer", "Alliance Offer", "discount"),
-#     ("loyalty_ev_ev", "Additional Loyalty (EV TO EV)", "discount"),
-#     ("loyalty_ice_ev", "Additional Loyalty (ICE TO EV)", "discount"),
-# ]
 CONDITION_KEYS = {
     "Price Component": [
         ("self_insurance", "Self Insurance"),
@@ -133,9 +111,7 @@ regn_regex = re.compile(r"^[A-Z]{2}\d{2}[A-Z]{2}\d{4}$")
 bharat_regex = re.compile(r"^\d{2}BH\d{4}[A-Z]{2}$")
 
 
-# ══════════════════════════════════════════════════════════════
 # SHARED CSS  (injected on both pages)
-# ══════════════════════════════════════════════════════════════
 HEAD_HTML = """
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -176,9 +152,7 @@ ui.add_head_html(
 )
 
 
-# ══════════════════════════════════════════════════════════════
 # API HELPERS
-# ══════════════════════════════════════════════════════════════
 def get_auth_headers():
     token = get_token()  # adjust if stored differently
 
@@ -195,61 +169,6 @@ def get_auth_headers():
     }
 
 
-# async def api_request(
-#     method: str,
-#     path: str,
-#     **kwargs,
-# ):
-
-#     headers = kwargs.pop("headers", {})
-
-#     auth_headers = get_auth_headers()
-
-#     headers.update(auth_headers)
-
-#     try:
-#         async with httpx.AsyncClient() as client:
-#             response = await client.request(
-#                 method=method,
-#                 url=f"{BASE_URL}{path}",
-#                 headers=headers,
-#                 timeout=20,
-#                 **kwargs,
-#             )
-
-#         # TOKEN EXPIRED / INVALID
-#         if response.status_code == 401:
-#             await logout_user()
-
-#             ui.notify(
-#                 "Session expired. Please login again.",
-#                 type="warning",
-#             )
-
-#             ui.navigate.to("/login")
-
-#             return None
-
-#         response.raise_for_status()
-
-#         return response.json()
-
-#     except httpx.HTTPStatusError as exc:
-#         ui.notify(
-#             f"HTTP Error: {exc.response.status_code}",
-#             type="negative",
-#         )
-
-#         raise
-
-#     except httpx.ConnectError:
-#         ui.notify(
-#             "Unable to connect to server",
-#             type="negative",
-#         )
-
-
-#         raise
 async def api_request(
     method: str,
     path: str,
@@ -352,9 +271,7 @@ async def api_post_file(path: str, file, data: dict):
         return r.json()
 
 
-# ══════════════════════════════════════════════════════════════
 # SHARED BOOTSTRAP FETCH
-# ══════════════════════════════════════════════════════════════
 async def fetch_reference_data() -> dict:
     """
     Fetch all static reference data needed by the form.
@@ -380,9 +297,7 @@ async def fetch_reference_data() -> dict:
     return final
 
 
-# ══════════════════════════════════════════════════════════════
 # GLOBAL WIDGETS & INP HELPER
-# ══════════════════════════════════════════════════════════════
 def format_num_inr(num_val):
     """Format float into standard accounting formatting, e.g. 1,000.00"""
     return f"{int(num_val):,}"
@@ -490,9 +405,9 @@ def is_valid_date(v: str) -> bool:
         return False
 
 
-# ══════════════════════════════════════════════════════════════
 # TOPBAR  (shared component for both pages)
-# ══════════════════════════════════════════════════════════════
+
+
 def render_topbar(page_label: str) -> None:
     """Injects sticky top header. page_label is shown as breadcrumb."""
     # user = app.storage.user.get("user")
@@ -538,9 +453,9 @@ def render_topbar(page_label: str) -> None:
                 )
 
 
-# ══════════════════════════════════════════════════════════════
 # LOGIN PAGE
-# ══════════════════════════════════════════════════════════════
+
+
 @ui.page("/login")
 def login_page():
     if get_token():
@@ -592,9 +507,9 @@ def login_page():
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
 
-# ══════════════════════════════════════════════════════════════
 # MIS TABLE RENDERING & HELPER METHODS
-# ══════════════════════════════════════════════════════════════
+
+
 def build_ordered_columns(row: dict, stage: str = "combined"):
     """
     Build ordered columns for the MIS table.
@@ -854,12 +769,10 @@ def render_table(transactions, state, stage: str = "booking"):
     grid.on("cellClicked", on_cell_clicked)
 
 
-# ══════════════════════════════════════════════════════════════
 #   CHART HELPERS — ui.echart wrappers
 #   ui.echart() accepts a plain Apache ECharts option dict.
 #   No JS function strings needed — formatters use ECharts
 #   template syntax ('{b}', '{c}', etc.) or plain Python values.
-# ══════════════════════════════════════════════════════════════
 
 
 def render_line_chart(
@@ -1055,9 +968,7 @@ def open_new_entry_dialog():
     dialog.open()
 
 
-# ══════════════════════════════════════════════════════════════
-#                        PAGE 1: DASHBOARD
-# ══════════════════════════════════════════════════════════════
+# PAGE 1: DASHBOARD
 @ui.page("/")
 @protected_page
 async def dashboard_page() -> None:
@@ -1979,9 +1890,9 @@ async def load_master_data(mstate):
     mstate.outlets = await api_get("/outlets")
 
 
-# ══════════════════════════════════════════════════════════════
 #                   PAGE: MIS TABLES (Booking & Delivery)
-# ══════════════════════════════════════════════════════════════
+
+
 async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
     label = "Booking MIS" if stage == "booking" else "Delivery MIS"
@@ -2262,9 +2173,9 @@ async def delivery_mis_page(month: str | None = None) -> None:
     await mis_table_page_base(stage="delivery", month=month)
 
 
-# ══════════════════════════════════════════════════════════════
 #                    COMPLAINTS TABLE RENDERER
-# ══════════════════════════════════════════════════════════════
+
+
 def render_complaints_table(complaints):
     """
     Renders the Complaints table using AG Grid.
@@ -2476,9 +2387,9 @@ def render_complaints_table(complaints):
     return grid
 
 
-# ══════════════════════════════════════════════════════════════
 #                    PAGE: COMPLAINTS TABLE
-# ══════════════════════════════════════════════════════════════
+
+
 @ui.page("/complaints-ctrl")
 @protected_page
 async def complaints_ctrl_page():
@@ -4237,9 +4148,9 @@ async def daily_reporting_page() -> None:
     await load_daily_report(today_str, today_str)
 
 
-# ══════════════════════════════════════════════════════════════
 #                        PAGE: SETTINGS
-# ══════════════════════════════════════════════════════════════
+
+
 @ui.page("/settings")
 @protected_page
 async def settings_page():
@@ -4607,9 +4518,9 @@ async def settings_page():
             )
 
 
-# ══════════════════════════════════════════════════════════════
 #                   PAGE-LOCAL FORM STATE
-# ══════════════════════════════════════════════════════════════
+
+
 class FormController:
     def __init__(self, state):
         self.state = state
@@ -4748,6 +4659,12 @@ class FormState:
 
         self.audit_obs: ui.textarea | None = None
         self.audit_action: ui.textarea | None = None
+
+        # booking/delivery file status complete and incomplete
+        self.booking_file_incomplete: None | ui.checkbox = None
+        self.delivery_file_incomplete: None | ui.checkbox = None
+        self.booking_file_incomplete_remarks: None | ui.textarea = None
+        self.delivery_file_incomplete_remarks: None | ui.textarea = None
 
         # UI element refs — actions
         self.submit_btn: ui.button | None = None
@@ -5395,9 +5312,8 @@ async def hydrate_vehicle_section(
         _fs_revalidate(state)
 
 
-# ══════════════════════════════════════════════════════════════
 # FORM SECTION BUILDERS
-# ══════════════════════════════════════════════════════════════
+
 FORM_COLUMNS = 3
 
 
@@ -5780,9 +5696,8 @@ def build_prices_section(state: FormState) -> None:
                 else:
                     ui.badge("Booking Stage", color="green").props("outline")
 
-            # ══════════════════════════════════════════════════════════════════
             # SECTION 1 — PRICE CHARGED AS PER BOOKS
-            # ══════════════════════════════════════════════════════════════════
+
             ui.label("Price charged as per books of accounts").classes(
                 "text-[14px] font-semibold tracking-[0.9px] uppercase text-black mt-4 mb-1"
             )
@@ -5878,9 +5793,8 @@ def build_prices_section(state: FormState) -> None:
             # doesn't crash if called from old code referencing that attribute.
             state.lbl_total_offered_price = state.lbl_total_charged_price
 
-            # ══════════════════════════════════════════════════════════════════
             # SECTION 2 — DISCOUNTS
-            # ══════════════════════════════════════════════════════════════════
+
             ui.label("Discounts offered as per books of accounts").classes(
                 "text-[14px] font-bold tracking-[0.9px] uppercase text-black mt-6 mb-1"
             )
@@ -6088,9 +6002,8 @@ def build_prices_section(state: FormState) -> None:
 
                 ui.element("div").classes("w-25")
 
-            # ══════════════════════════════════════════════════════════════════
             # SECTION 3 — DISCOUNT SUMMARY BAR
-            # ══════════════════════════════════════════════════════════════════
+
             with ui.row().classes(
                 "w-full items-center gap-4 mt-3 pt-3 border-t-2 border-gray-200"
             ):
@@ -6127,7 +6040,6 @@ def build_prices_section(state: FormState) -> None:
                 )
                 # lbl_excess is the compact version used in the live bar elsewhere
                 state.lbl_excess_lv = state.lbl_excess_discount
-    # _fs_update_live(state)
 
 
 def build_accessories_section(state: FormState) -> None:
@@ -6215,6 +6127,44 @@ def build_audit_section(state: FormState) -> None:
                 .classes("w-full")
                 .props("outlined dense rows=3")
             )
+
+
+def build_file_status_section(state: FormState) -> None:
+    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+        with ui.row().classes(
+            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+        ):
+            ui.label("⏳").classes("text-[20px] select-none")
+            ui.label("File Status").classes("text-[15px] font-bold text-gray-900")
+        with ui.grid(columns=2).classes("w-full gap-2"):
+            if state.stage == "booking":
+                state.booking_file_incomplete = (
+                    ui.checkbox("Booking File Incomplete")
+                    .classes("w-full")
+                    .props("outlined dense")
+                )
+                state.booking_file_incomplete_remarks = (
+                    ui.textarea(
+                        "Reason For Incomplete",
+                        placeholder="Reason for marking incomplete...",
+                    )
+                    .classes("w-full")
+                    .props("outlined dense rows=3")
+                )
+            else:
+                state.delivery_file_incomplete = (
+                    ui.checkbox("Delivery File Incomplete")
+                    .classes("w-full")
+                    .props("outlined dense")
+                )
+                state.delivery_file_incomplete_remarks = (
+                    ui.textarea(
+                        "Reason For Incomplete",
+                        placeholder="Reason for marking incomplete...",
+                    )
+                    .classes("w-full")
+                    .props("outlined dense rows=3")
+                )
 
 
 def build_invoice_section(
@@ -6356,7 +6306,6 @@ def update_discount_visibility(state, conditions: dict) -> None:
         cond_key = _condition_badge(name, conditions)
         if cond_key is not None:
             row.set_visibility(bool(conditions.get(cond_key, False)))
-    # _fs_update_live(state)
 
 
 def build_live_bar(state: FormState) -> None:
@@ -6433,11 +6382,7 @@ def build_action_bar(state: FormState) -> None:
         )
 
 
-# ══════════════════════════════════════════════════════════════
 # FORM EVENT HANDLERS
-# ══════════════════════════════════════════════════════════════
-
-
 def handle_price_toggle(
     state: FormState,
     name: str,
@@ -6831,8 +6776,6 @@ async def _fs_try_price_preload(state: FormState) -> None:
             val = state.listed_prices.get("Ex Showroom Price", 0)
             state.invoice_ex_showroom.set_value(val)
 
-        # _fs_update_live(state)
-
         if filled:
             ui.notify(
                 f"✓ {filled} field{'s' if filled > 1 else ''} synced with listed price.",
@@ -6840,6 +6783,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 position="top-right",
                 timeout=2500,
             )
+        print("LISTED PRICES FROM PREVIEW: ", state.listed_prices)
 
     except Exception as e:
         print("ERROR: in preloading the price list: ", e)
@@ -6925,8 +6869,10 @@ def _fs_update_live(state) -> None:
         )
 
         listed_val = int(state.listed_prices.get(name) or 0)
+        # print("LISTED VALUE: ", listed_val)
 
         charged_val = int(parsed_val(inp))
+        # print("CHARGED VALUE: ", charged_val)
 
         # visible rows participate in totals
         if is_visible:
@@ -7186,40 +7132,6 @@ def _fs_clear_error(state: FormState) -> None:
     if state.error_banner and state.error_msg_label:
         state.error_banner.set_visibility(False)
         state.error_msg_label.set_text("")
-
-
-# ══════════════════════════════════════════════════════════════
-# SUBMIT HANDLER
-# ══════════════════════════════════════════════════════════════
-# async def _fs_handle_submit(state: FormState) -> None:
-#     if not state.error_banner or not state.error_msg_label:
-#         return
-
-#     valid, msg = state.is_valid()
-#     if not valid:
-#         state.error_msg_label.set_text(msg)
-#         state.error_banner.set_visibility(True)
-#         return
-
-#     payload = build_payload(state)
-
-#     try:
-#         if state.stage == "delivery":
-#             if state.txn_id:
-#                 await api_put(f"/transactions/{state.txn_id}", payload)
-#                 ui.notify("Delivery Data saved", color="green", type="positive")
-#             else:
-#                 await api_post("/transactions", payload)
-#                 ui.notify(
-#                     "Delivery Created Successfully", color="green", type="positive"
-#                 )
-#         else:
-#             await api_post("/transactions", payload)
-#             ui.notify("Booking Created Successfully", color="green", type="positive")
-
-#     except Exception as e:
-#         state.error_msg_label.set_text(str(e))
-#         state.error_banner.set_visibility(True)
 
 
 async def _fs_handle_submit(state: FormState) -> None:
@@ -7494,8 +7406,9 @@ def build_payload(state: FormState) -> dict:
     if state.stage == "booking":
         payload["stage"] = "booking"
         payload["booking_checklist"] = booking_checks
-        payload["booking_file_incomplete"] = any(
-            v is not True for v in booking_checks.values()
+        payload["booking_file_incomplete"] = val(state.booking_file_incomplete)
+        payload["booking_file_incomplete_remarks"] = val(
+            state.booking_file_incomplete_remarks
         )
         payload["discount_booking"] = intval(
             state.total_discount_booking
@@ -7514,8 +7427,9 @@ def build_payload(state: FormState) -> dict:
         payload["delivery_date"] = val(state.delivery_date)
         payload["is_direct_delivery"] = state.is_direct_delivery
         payload["overrides"] = state.overrides
-        payload["delivery_file_incomplete"] = any(
-            v is not True for v in delivery_checks.values()
+        payload["delivery_file_incomplete"] = val(state.delivery_file_incomplete)
+        payload["delivery_file_incomplete_remarks"] = val(
+            state.delivery_file_incomplete_remarks
         )
         payload["adjustment_delivery"] = intval(state.adjustment_input)
         payload["other_discount_delivery"] = intval(state.other_discount_delivery)
@@ -7658,6 +7572,7 @@ def build_form(state: FormState):
         build_accessories_section(state)
         build_prices_section(state)
         build_booking_checklist_section(state)
+        build_file_status_section(state)
         build_audit_section(state)
 
     elif state.form_mode == "delivery_direct_create":
@@ -7670,6 +7585,7 @@ def build_form(state: FormState):
         build_accessories_section(state)
         build_prices_section(state)
         build_delivery_checklist_section(state)
+        build_file_status_section(state)
         build_invoice_section(state)
         build_payment_section(state)
         build_audit_section(state)
@@ -7693,6 +7609,7 @@ def build_form(state: FormState):
         build_accessories_section(state)
         build_prices_section(state)
         build_delivery_checklist_section(state)
+        build_file_status_section(state)
         build_invoice_section(state)
         build_payment_section(state)
         build_audit_section(state)
@@ -8070,9 +7987,9 @@ def hydrate_accessories_section(
         state.acc_charged.set_value(charged)
 
 
-# ══════════════════════════════════════════════════════════════
 #   PAGE 2: FORM
-# ══════════════════════════════════════════════════════════════
+
+
 @ui.page("/form")
 @protected_page
 async def form_page(
@@ -8172,9 +8089,7 @@ async def form_page(
     _fs_revalidate(state)
 
 
-# ══════════════════════════════════════════════════════════════
 # RUN
-# ══════════════════════════════════════════════════════════════
 def build_complaint_dealership_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(

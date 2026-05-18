@@ -76,11 +76,11 @@ class PriceListIngestionService:
             else:
                 print("UNMATCHED COLUMN:", col)
 
-        # 🚨 If nothing matched → fail early
+        # If nothing matched → fail early
         if not mapped_cols:
             raise ValueError("No columns matched with DiscountComponent table")
 
-        # 🔹 4. Create ONE price list (no schemes now)
+        # 4. Create ONE price list (no schemes now)
         if not valid_from:
             raise ValueError("valid_from is required")
 
@@ -98,13 +98,13 @@ class PriceListIngestionService:
             session.add(price_list)
             session.flush()
 
-        # 🔹 5. Cache existing items (avoid duplicates)
+        # 5. Cache existing items (avoid duplicates)
         existing_items = {
             (i.price_list_id, i.variant_id, i.component_id): i
             for i in session.exec(select(PriceListItem)).all()
         }
 
-        # 🔹 6. Process rows
+        # 6. Process rows
         for _, row in df.iterrows():
             raw_model = row.iloc[0]
             raw_variant = row.iloc[1]  # Concatenate column
@@ -161,7 +161,7 @@ class PriceListIngestionService:
                         session.add(item)
                         existing_items[key] = item
 
-        # 🔹 7. Commit once
+        # 7. Commit once
         session.commit()
 
         return {

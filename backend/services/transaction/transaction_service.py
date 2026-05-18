@@ -382,6 +382,9 @@ class TransactionService:
         transaction.booking_file_incomplete = payload.get(
             "booking_file_incomplete", False
         )
+        transaction.booking_file_incomplete_remarks = payload.get(
+            "booking_file_incomplete_remarks", ""
+        )
         transaction.discount_booking = payload.get("discount_booking", 0.0)
         transaction.total_discount_booking = payload.get("total_discount_booking", 0.0)
         transaction.price_offered_booking = payload.get("price_offered_booking", 0.0)
@@ -448,6 +451,9 @@ class TransactionService:
             booking_receipt_num=payload.get("booking_receipt_num", None),
             delivery_date=payload.get("delivery_date", None),
             delivery_file_incomplete=payload.get("delivery_file_incomplete"),
+            delivery_file_incomplete_remarks=payload.get(
+                "delivery_file_incomplete_remarks", ""
+            ),
             # VEHICLE
             customer_file_number=payload.get("customer_file_number"),
             vin_number=payload.get("vin_number"),
@@ -571,7 +577,9 @@ class TransactionService:
                 if transaction.delivery_date
                 else None,
                 "booking_file_incomplete": transaction.booking_file_incomplete,
+                "booking_file_incomplete_remarks": transaction.booking_file_incomplete_remarks,
                 "delivery_file_incomplete": transaction.delivery_file_incomplete,
+                "delivery_file_incomplete_remarks": transaction.delivery_file_incomplete_remarks,
                 "invoice_number": transaction.invoice_number,
                 "showroom_id": transaction.outlet_id,
                 "sales_executive_id": transaction.sales_executive_id,
