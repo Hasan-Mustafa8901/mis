@@ -5621,7 +5621,7 @@ def build_customer_section(state: FormState) -> None:
 
             state.cust_aadhar = (
                 ui.input(
-                    label="Aadhar *",
+                    label="Aadhar",
                     placeholder="12 digits",
                     validation={
                         "Must be 12 digits": lambda v: (
