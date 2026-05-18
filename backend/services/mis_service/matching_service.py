@@ -15,6 +15,36 @@ from db.models import (
 
 class MISMatchingService:
     @staticmethod
+    def sync_existing_transactions(
+        session: Session,
+        outlet_id: int | None = None,
+    ):
+
+        stmt = select(Transaction)
+
+        if outlet_id:
+            stmt = stmt.where(Transaction.outlet_id == outlet_id)
+
+        transactions = session.exec(stmt).all()
+
+        print(f"FOUND {len(transactions)} TRANSACTIONS TO MATCH")
+
+        for txn in transactions:
+            try:
+                MISMatchingService.match_transaction(
+                    session=session,
+                    transaction=txn,
+                )
+
+            except Exception as e:
+                print(
+                    f"FAILED MATCHING TRANSACTION {txn.id}",
+                    e,
+                )
+
+        session.commit()
+
+    @staticmethod
     def match_transaction(
         session: Session,
         transaction: Transaction,
@@ -101,4 +131,4 @@ class MISMatchingService:
 
                 session.add(record)
 
-        session.commit()
+        session.flush()
