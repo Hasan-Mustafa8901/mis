@@ -2173,9 +2173,7 @@ async def delivery_mis_page(month: str | None = None) -> None:
     await mis_table_page_base(stage="delivery", month=month)
 
 
-#                    COMPLAINTS TABLE RENDERER
-
-
+# COMPLAINTS TABLE RENDERER
 def render_complaints_table(complaints):
     """
     Renders the Complaints table using AG Grid.
@@ -2387,9 +2385,7 @@ def render_complaints_table(complaints):
     return grid
 
 
-#                    PAGE: COMPLAINTS TABLE
-
-
+# PAGE: COMPLAINTS TABLE
 @ui.page("/complaints-ctrl")
 @protected_page
 async def complaints_ctrl_page():
@@ -2687,6 +2683,7 @@ async def daily_reporting_page() -> None:
             "border:1px solid #E5E7EB;padding:8px 12px;"
             "font-size:13px;vertical-align:middle;text-align:center"
         )
+        INPUT_CELL_STYLE = "w-full item-center no-wrap gap-2"
 
         # =========================================================
         # COMMON HEADERS
@@ -2940,37 +2937,42 @@ async def daily_reporting_page() -> None:
 
                                 if dialog_type == "total_count":
                                     with ui.element("td").style(TD):
-                                        receiving_date = ui.input(
-                                            value=row.get("receiving_date"),
-                                            placeholder="Receiving Date",
-                                        ).props("dense outlined type='date'")
-
-                                        async def toggle_received(
-                                            e,
-                                            record_id=row["id"],
-                                            record_date=receiving_date,
-                                        ):
-
-                                            await api_post(
-                                                "/mis/toggle-received",
-                                                {
-                                                    "mis_record_id": record_id,
-                                                    "receiving_date": record_date.value,
-                                                    "value": e.value,
-                                                },
+                                        with ui.row().classes(INPUT_CELL_STYLE):
+                                            receiving_date = (
+                                                ui.input(
+                                                    value=row.get("receiving_date"),
+                                                    placeholder="Receiving Date",
+                                                )
+                                                .classes("w-36")
+                                                .props("dense outlined type='date'")
                                             )
 
-                                            await _fetch_and_show_dialog()
+                                            async def toggle_received(
+                                                e,
+                                                record_id=row["id"],
+                                                record_date=receiving_date,
+                                            ):
 
-                                            await reload_current_range()
+                                                await api_post(
+                                                    "/mis/toggle-received",
+                                                    {
+                                                        "mis_record_id": record_id,
+                                                        "receiving_date": record_date.value,
+                                                        "value": e.value,
+                                                    },
+                                                )
 
-                                        ui.checkbox(
-                                            value=row.get(
-                                                "received",
-                                                False,
-                                            ),
-                                            on_change=toggle_received,
-                                        )
+                                                await _fetch_and_show_dialog()
+
+                                                await reload_current_range()
+
+                                            ui.checkbox(
+                                                value=row.get(
+                                                    "received",
+                                                    False,
+                                                ),
+                                                on_change=toggle_received,
+                                            )
 
                                 # ---------------------------------------------
                                 # FILES RECEIVED -> OOS
@@ -2978,44 +2980,45 @@ async def daily_reporting_page() -> None:
 
                                 elif dialog_type == "files_received":
                                     with ui.element("td").style(TD):
-                                        remarks_input = (
-                                            ui.input(
+                                        with ui.row().classes(INPUT_CELL_STYLE):
+                                            remarks_input = (
+                                                ui.input(
+                                                    value=row.get(
+                                                        "out_of_scope_reason",
+                                                        "",
+                                                    ),
+                                                    placeholder="Reason",
+                                                )
+                                                .props("dense outlined")
+                                                .classes("w-44")
+                                            )
+
+                                            async def toggle_oos(
+                                                e,
+                                                record_id=row["id"],
+                                                inp=remarks_input,
+                                            ):
+
+                                                await api_post(
+                                                    "/mis/toggle-oos",
+                                                    {
+                                                        "mis_record_id": record_id,
+                                                        "value": e.value,
+                                                        "reason": inp.value or "",
+                                                    },
+                                                )
+
+                                                await _fetch_and_show_dialog()
+
+                                                await reload_current_range()
+
+                                            ui.checkbox(
                                                 value=row.get(
-                                                    "out_of_scope_reason",
-                                                    "",
+                                                    "out_of_scope",
+                                                    False,
                                                 ),
-                                                placeholder="Reason",
+                                                on_change=toggle_oos,
                                             )
-                                            .props("dense outlined")
-                                            .classes("w-44")
-                                        )
-
-                                        async def toggle_oos(
-                                            e,
-                                            record_id=row["id"],
-                                            inp=remarks_input,
-                                        ):
-
-                                            await api_post(
-                                                "/mis/toggle-oos",
-                                                {
-                                                    "mis_record_id": record_id,
-                                                    "value": e.value,
-                                                    "reason": inp.value or "",
-                                                },
-                                            )
-
-                                            await _fetch_and_show_dialog()
-
-                                            await reload_current_range()
-
-                                        ui.checkbox(
-                                            value=row.get(
-                                                "out_of_scope",
-                                                False,
-                                            ),
-                                            on_change=toggle_oos,
-                                        )
 
                                 # ---------------------------------------------
                                 # TO BE VERIFIED
@@ -3057,27 +3060,78 @@ async def daily_reporting_page() -> None:
                                         # REJECT
 
                                         with ui.element("td").style(TD):
-                                            reason_input = ui.input(
-                                                value=row.get(
-                                                    "rejection_reason",
-                                                    "",
-                                                ),
-                                                placeholder="Reason",
-                                            ).props("dense outlined")
+                                            with ui.row().classes(INPUT_CELL_STYLE):
+                                                reason_input = (
+                                                    ui.input(
+                                                        value=row.get(
+                                                            "rejection_reason",
+                                                            "",
+                                                        ),
+                                                        placeholder="Reason",
+                                                    )
+                                                    .classes("w-44")
+                                                    .props("dense outlined")
+                                                )
 
-                                            async def toggle_reject(
+                                                async def toggle_reject(
+                                                    e,
+                                                    record_id=row["id"],
+                                                    inp=reason_input,
+                                                ):
+
+                                                    await api_post(
+                                                        "/mis/toggle-reject",
+                                                        {
+                                                            "mis_record_id": record_id,
+                                                            "value": e.value,
+                                                            "reason": inp.value or "",
+                                                        },
+                                                    )
+
+                                                    await _fetch_and_show_dialog()
+
+                                                    await reload_current_range()
+
+                                                ui.checkbox(
+                                                    value=row.get(
+                                                        "rejected",
+                                                        False,
+                                                    ),
+                                                    on_change=toggle_reject,
+                                                ).props(
+                                                    f"disable={str(row.get('approved', False)).lower()}"
+                                                )
+
+                                # ---------------------------------------------
+                                # FILES SCANNED
+                                # ---------------------------------------------
+
+                                elif dialog_type == "files_scanned":
+                                    with ui.element("td").style(TD):
+                                        with ui.row().classes(INPUT_CELL_STYLE):
+                                            scanning_date = (
+                                                ui.input(
+                                                    value=row.get("scanning_date"),
+                                                    placeholder="Scanning Date",
+                                                )
+                                                .classes("w-36")
+                                                .props("dense outlined type='date'")
+                                            )
+
+                                            async def toggle_scanned(
                                                 e,
                                                 record_id=row["id"],
-                                                inp=reason_input,
+                                                scan_date=scanning_date,
                                             ):
 
+                                                payload = {
+                                                    "mis_record_id": record_id,
+                                                    "value": e.value,
+                                                    "scanning_date": scan_date.value,
+                                                }
                                                 await api_post(
-                                                    "/mis/toggle-reject",
-                                                    {
-                                                        "mis_record_id": record_id,
-                                                        "value": e.value,
-                                                        "reason": inp.value or "",
-                                                    },
+                                                    "/mis/toggle-scanned",
+                                                    payload=payload,
                                                 )
 
                                                 await _fetch_and_show_dialog()
@@ -3086,52 +3140,11 @@ async def daily_reporting_page() -> None:
 
                                             ui.checkbox(
                                                 value=row.get(
-                                                    "rejected",
+                                                    "scanned",
                                                     False,
                                                 ),
-                                                on_change=toggle_reject,
-                                            ).props(
-                                                f"disable={str(row.get('approved', False)).lower()}"
+                                                on_change=toggle_scanned,
                                             )
-
-                                # ---------------------------------------------
-                                # FILES SCANNED
-                                # ---------------------------------------------
-
-                                elif dialog_type == "files_scanned":
-                                    with ui.element("td").style(TD):
-                                        scanning_date = ui.input(
-                                            value=row.get("scanning_date"),
-                                            placeholder="Scanning Date",
-                                        ).props("dense outlined type='date'")
-
-                                        async def toggle_scanned(
-                                            e,
-                                            record_id=row["id"],
-                                            scan_date=scanning_date,
-                                        ):
-
-                                            payload = {
-                                                "mis_record_id": record_id,
-                                                "value": e.value,
-                                                "scanning_date": scan_date.value,
-                                            }
-                                            await api_post(
-                                                "/mis/toggle-scanned",
-                                                payload=payload,
-                                            )
-
-                                            await _fetch_and_show_dialog()
-
-                                            await reload_current_range()
-
-                                        ui.checkbox(
-                                            value=row.get(
-                                                "scanned",
-                                                False,
-                                            ),
-                                            on_change=toggle_scanned,
-                                        )
 
     # Build dialog once
     with (
@@ -8657,6 +8670,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY,
-        reload=True,  # make false at the time of deployement
+        reload=False,  # make false at the time of deployement
         port=3000,
     )
