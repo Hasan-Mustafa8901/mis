@@ -1,7 +1,4 @@
 # backend/services/mis_matching.py
-
-from datetime import timedelta
-
 from sqlmodel import Session, select
 
 from db.models import (
@@ -49,7 +46,7 @@ class MISMatchingService:
         session: Session,
         transaction: Transaction,
     ):
-        print("MATCHING SEIVICE")
+        print("MATCHING SERVICE")
         # -----------------------------------
         # CUSTOMER
         # -----------------------------------
@@ -57,22 +54,14 @@ class MISMatchingService:
             Customer,
             transaction.customer_id,
         )
-        print(
-            "MATCHING SERVICE: GOT THE CUSTOMER",
-            (customer.name, customer.mobile_number),
-        )
 
         if not customer:
-            print("MATCHING SERVICE: CUSTOMER NOT FOUND")
             return
 
         if not customer.mobile_number:
-            print("MATCHING SERVICE: CUSTOMER MOBILE NOT FOUND")
             return
 
         mobile = "".join(filter(str.isdigit, customer.mobile_number))[-10:]
-        print("MATCHING SERVICE: MOBILE", mobile)
-
         if not mobile:
             return
 
@@ -102,12 +91,6 @@ class MISMatchingService:
         # -----------------------------------
 
         for record_type, match_date in stages:
-            print(
-                "MATCHING:",
-                transaction.id,
-                mobile,
-                transaction.outlet_id,
-            )
             records = session.exec(
                 select(MISRecord).where(
                     MISRecord.transaction_id.is_(None),
@@ -116,31 +99,10 @@ class MISMatchingService:
                 )
             ).all()
 
-            print(
-                "FOUND RECORDS:",
-                [
-                    (
-                        r.id,
-                        r.customer_mobile,
-                        r.record_date,
-                        r.type,
-                        r.transaction_id,
-                    )
-                    for r in records
-                ],
-            )
-
             for record in records:
                 record_mobile = "".join(
                     filter(str.isdigit, str(record.customer_mobile or ""))
                 )[-10:]
-
-                print(
-                    "CHECKING MOBILE:",
-                    record.id,
-                    record_mobile,
-                    mobile,
-                )
 
                 if record_mobile != mobile:
                     continue
@@ -160,7 +122,6 @@ class MISMatchingService:
                 record.matching_status = MISMatchingStatus.MATCHED
 
                 record.matched_automatically = True
-                print("MATCHING SERVICE: MATCHED", record.matched_automatically)
 
                 session.add(record)
 
