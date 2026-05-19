@@ -2646,7 +2646,27 @@ async def daily_reporting_page() -> None:
         "is_footer": False,
         "start_date": None,
         "end_date": None,
+        "all_rows": [],
+        "search": "",
     }
+
+    def apply_dialog_filter():
+        rows = _dlg_state.get("all_rows", [])
+        search = (_dlg_state.get("search") or "").strip().lower()
+
+        if not search:
+            refresh_detail_dialog(rows)
+            return
+
+        filtered = []
+
+        for row in rows:
+            searchable = " ".join(str(v or "").lower() for v in row.values())
+
+            if search in searchable:
+                filtered.append(row)
+
+        refresh_detail_dialog(filtered)
 
     def refresh_detail_dialog(rows: list = []) -> None:
 
@@ -3119,10 +3139,19 @@ async def daily_reporting_page() -> None:
         ui.card().classes("w-[1800px] max-w-[98vw] p-6 rounded-xl shadow-2xl"),
     ):
         with ui.row().classes("w-full items-center justify-between mb-4"):
+
+            def on_search(e):
+                _dlg_state["search"] = e.value or ""
+                apply_dialog_filter()
+
             title_el = ui.label("Details").classes(
                 "text-[15px] font-bold text-gray-900"
             )
             _dlg_state["title_el"] = title_el
+            ui.space()
+            ui.input(placeholder="Search...").props("dense outlined clearable").classes(
+                "w-1/2"
+            ).on_value_change(on_search)
             ui.button(icon="close", on_click=detail_dlg.close).props("flat round dense")
 
         body_el = (
@@ -3172,7 +3201,6 @@ async def daily_reporting_page() -> None:
                 "start_date": rstate.report_from,
                 "end_date": rstate.report_to,
             }
-            print("PARAMS: ", params)
 
             # DERIVED VERIFIED (DELIVERY ONLY)
 
@@ -3209,8 +3237,9 @@ async def daily_reporting_page() -> None:
             record = " records" if len(rows) > 1 else " record"
             message = num + record
             count_lbl.set_text(message)
-
-        refresh_detail_dialog(rows)
+        _dlg_state["all_rows"] = rows
+        # refresh_detail_dialog(rows)
+        apply_dialog_filter()
 
     def open_detail_dialog(row, column, is_footer) -> None:
 
@@ -3494,7 +3523,6 @@ async def daily_reporting_page() -> None:
                             )
 
                             # OUT OF SCOPE
-
                             render_clickable_cell(
                                 value=None
                                 if is_placeholder
@@ -3504,7 +3532,6 @@ async def daily_reporting_page() -> None:
                             )
 
                             # TO BE VERIFIED
-
                             render_clickable_cell(
                                 value=None
                                 if is_placeholder
@@ -3514,7 +3541,6 @@ async def daily_reporting_page() -> None:
                             )
 
                             # INCOMPLETE
-
                             render_clickable_cell(
                                 value=None
                                 if is_placeholder
@@ -3525,7 +3551,6 @@ async def daily_reporting_page() -> None:
                             )
 
                             # FILES SCANNED THIS WITH CORRECT DATA FROM THE BACKEND
-
                             render_clickable_cell(
                                 value=None if is_placeholder else row["files_scanned"],
                                 column="files_scanned",
@@ -3534,7 +3559,6 @@ async def daily_reporting_page() -> None:
                             )
 
                             # FILES IN MIS CHANGE THIS WITH CORRECT DATA FROM THE BACKEND
-
                             render_clickable_cell(
                                 value=None if is_placeholder else row["files_in_mis"],
                                 column="files_in_mis",
@@ -3543,7 +3567,6 @@ async def daily_reporting_page() -> None:
                             )
 
                             # VERIFIED
-
                             if stage == "booking":
                                 # APPROVED
                                 render_clickable_cell(
@@ -3573,7 +3596,6 @@ async def daily_reporting_page() -> None:
                                 )
 
                             # LAST COLUMN
-
                             if stage == "booking":
                                 render_clickable_cell(
                                     value=None
