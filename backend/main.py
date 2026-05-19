@@ -324,21 +324,6 @@ def api_recalculate_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# @app.get("/transactions")
-# def get_all_transactions(
-#     showroom_id: int | None,
-#     dealership_id: int | None,
-#     session: Session = Depends(get_session),
-# ):
-#     txs = session.exec(select(Transaction)).all()
-
-#     return [
-#         TransactionService.get_transaction_reconstruction(session, tx.id)
-#         for tx in txs
-#         if tx.id
-#     ]
-
-
 @app.get("/transactions")
 def get_all_transactions(
     showroom_id: int | None = None,
@@ -385,4 +370,4 @@ def api_get_transaction(transaction_id: int, session: Session = Depends(get_sess
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

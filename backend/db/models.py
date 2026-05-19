@@ -77,7 +77,7 @@ class Outlet(SQLModel, table=True):
     last_serial_no: int = Field(default=0)
     last_serial_month: int = Field(default=0)
 
-    # ✅ CORRECT RELATIONSHIPS
+    # CORRECT RELATIONSHIPS
     dealership: Optional["Dealership"] = Relationship(back_populates="outlets")
     employees: List["Employee"] = Relationship(back_populates="outlet")
     users: List["User"] = Relationship(back_populates="outlet")
@@ -113,9 +113,7 @@ class User(SQLModel, table=True):
     created_at: datetime = Field(default_factory=get_ist_now)
 
 
-# =========================
 #  CORE MASTERS
-# =========================
 class Customer(SQLModel, table=True):
     # TODO: Make aaadhar_number and pan_number unique in the DB to prevent duplicates. Handle gracefully in API.
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -162,11 +160,7 @@ class Bank(SQLModel, table=True):
     is_active: bool = True
 
 
-# =========================
 #  PRICE LIST & COMPONENTS
-# =========================
-
-
 class DiscountComponent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)  # Exact MIS column name
@@ -207,9 +201,7 @@ class PriceListItem(SQLModel, table=True):
     )
 
 
-# =========================
 #  Accessory Master
-# =========================
 class Accessory(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True, unique=True)
@@ -230,11 +222,7 @@ class TransactionAccessoryLink(SQLModel, table=True):
     accessory: Optional["Accessory"] = Relationship(back_populates="transactions")
 
 
-# =========================
 #  TRANSACTIONS (MIS CORE)
-# =========================
-
-
 class Transaction(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     customer_id: int = Field(foreign_key="customer.id")
@@ -348,9 +336,7 @@ class TransactionItem(SQLModel, table=True):
 class EditRequest(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
-    # ─────────────────────────────
     # RELATIONS
-    # ─────────────────────────────
     transaction_id: int = Field(foreign_key="transaction.id", index=True)
 
     requested_by: Optional[int] = Field(
@@ -358,37 +344,25 @@ class EditRequest(SQLModel, table=True):
     )  # TODO: Remove this make it mandatory.
     reviewed_by: Optional[int] = Field(default=None, foreign_key="user.id")
 
-    # ─────────────────────────────
     # TIMESTAMPS
-    # ─────────────────────────────
     requested_at: datetime = Field(default_factory=get_ist_now)
     reviewed_at: Optional[datetime] = None
 
-    # ─────────────────────────────
     # CHANGE DETAILS
-    # ─────────────────────────────
     field: str = Field(index=True)  # e.g. "insurance", "registration", "cash_discount"
-
     old_value: Optional[str] = None
     new_value: Optional[str] = None
 
-    # ─────────────────────────────
     # REVIEW / WORKFLOW
-    # ─────────────────────────────
     status: str = Field(default="pending", description="pending | approved | rejected")
-
     remarks: Optional[str] = None
     rejection_reason: Optional[str] = None
 
-    # ─────────────────────────────
     # RELATIONSHIPS (optional but useful)
-    # ─────────────────────────────
     transaction: Optional["Transaction"] = Relationship()
 
 
-# =========================
 #  COMPLAINT MANAGEMENT
-# =========================
 # Add No of files rejected, accepted, incomplete.
 class DailyBooking(SQLModel, table=True):
     __table_args__ = (
