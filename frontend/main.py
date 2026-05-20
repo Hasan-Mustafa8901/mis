@@ -158,6 +158,24 @@ ui.add_head_html(
     shared=True,
 )
 
+ui.add_head_html(
+    """
+<style>
+
+.ag-header-cell-label {
+    justify-content: center !important;
+}
+
+.ag-header-cell-text {
+    text-align: center !important;
+    width: 100%;
+}
+
+</style>
+""",
+    shared=True,
+)
+
 
 # API HELPERS
 def get_auth_headers():
@@ -540,13 +558,14 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "customer_name",
         "mobile_number",
         "variant_name",
+        "status",
     ]
     if stage == "delivery":
         ordered.insert(2, "delivery_date")
 
     # 2. Price components
     ordered += (
-        pick("Ex ")
+        pick("Ex")
         + pick("Insurance")
         + pick("Registration")
         + pick("AMC")
@@ -569,9 +588,6 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
     )
 
     # 4. Allowed + diff (keep near actual)
-
-    # # 5. Conditions
-    # ordered += pick("cond_")
 
     # 6. Accessories / finance / exchange
     ordered += pick("accessories_")
@@ -596,7 +612,6 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "total_actual_discount",
         "total_allowed_discount",
         "total_excess_discount",
-        "status",
     ]
 
     # remove duplicates + preserve order
@@ -617,6 +632,35 @@ def clear_label(column_name: str):
         .replace("diff", "(Diff)")
         .title()
     )
+
+
+def should_center_column(
+    key: str,
+) -> bool:
+
+    key = key.lower()
+
+    # Do not center numeric/currency columns
+    if any(
+        pattern in key
+        for pattern in (
+            "amount",
+            "price",
+            "discount",
+            "received",
+            "balance",
+            "excess",
+            "payment",
+            "invoice",
+            "receivable",
+            "allowed",
+            "actual",
+            "diff",
+        )
+    ):
+        return False
+
+    return True
 
 
 def render_table(transactions, state, stage: str = "booking"):
@@ -642,6 +686,7 @@ def render_table(transactions, state, stage: str = "booking"):
                 t[key] = disp_date(t.get(key))
 
     ordered_keys = build_ordered_columns(transactions[0], stage=stage)
+
     if "id" in ordered_keys:
         ordered_keys.remove("id")
 
@@ -661,6 +706,7 @@ def render_table(transactions, state, stage: str = "booking"):
             tok in k
             for tok in (
                 "_actual",
+                "_allowed",
                 "total_",
                 "price",
                 "amount",
@@ -675,24 +721,24 @@ def render_table(transactions, state, stage: str = "booking"):
     pin_cols = {
         "serial_no",
         "booking_date",
-        "audit_observations",
+        # "audit_observations",
         "Delivered",
-        "sales_executive_name",
+        # "sales_executive_name",
         "customer_name",
-        "mobile_number",
-        "variant_name",
+        # "mobile_number",
+        # "variant_name",
         "delivery_date",
     }
 
     # Define custom widths for specific columns (optional)
     CUSTOM_WIDTHS = {
-        "serial_no": 10,
-        "customer_name": 100,
-        "mobile_number": 100,
-        "variant_name": 100,
-        "booking_date": 100,
-        "delivery_date": 100,
-        "Delivered": 90,
+        "serial_no": 80,
+        "customer_name": 150,
+        "mobile_number": 150,
+        "variant_name": 200,
+        "booking_date": 115,
+        "delivery_date": 110,
+        "Delivered": 100,
     }
 
     col_defs = []
@@ -701,7 +747,7 @@ def render_table(transactions, state, stage: str = "booking"):
         {
             "headerCheckboxSelection": True,
             "checkboxSelection": True,
-            "width": 10,
+            "width": 20,
             "pinned": "left",
             "filter": False,
         },
@@ -715,28 +761,81 @@ def render_table(transactions, state, stage: str = "booking"):
             "headerName": clear_label(key),
             "filter": "agNumberColumnFilter" if is_num else "agTextColumnFilter",
         }
+
         if key == "serial_no":
             col["headerName"] = "S.No."
+
+        if key in pin_cols:
+            col["pinned"] = "left"
+
         if key in CUSTOM_WIDTHS:
             col["width"] = CUSTOM_WIDTHS[key]
 
         if is_num:
-            col[":valueFormatter"] = (
-                "params.value != null"
-                " ? '₹' + Number(params.value).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})"
-                " : '—'"
-            )
+            col[":valueFormatter"] = """
+            (params) => {
+                if (
+                    params.value === null ||
+                    params.value === undefined ||
+                    params.value === ''
+                ) {
+                    return '—';
+                }
+
+                return '₹' + Number(params.value)
+                    .toLocaleString('en-IN');
+            }
+            """
+
             col["type"] = "numericColumn"
 
         if is_status:
-            col[":cellStyle"] = (
-                "params.value === 'Excess'"
-                " ? {background:'#FEE2E2', color:'#991B1B', fontWeight:'600', borderRadius:'4px'}"
-                " : {background:'#D1FAE5', color:'#065F46', fontWeight:'600', borderRadius:'4px'}"
+            col[":cellStyle"] = """
+            (params) => {
+
+                if (params.value === 'Excess Discount') {
+
+                    return {
+                        background: '#FEE2E2',
+                        color: '#991B1B',
+                        fontWeight: '600',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                    };
+                }
+
+                return {
+                    background: '#D1FAE5',
+                    color: '#065F46',
+                    fontWeight: '600',
+                    borderRadius: '4px',
+                    textAlign: 'center',
+                };
+            }
+            """
+        if is_num:
+            existing_style = col.get(
+                "cellStyle",
+                {},
             )
 
-        # if key in pin_cols:
-        #     col["pinned"] = "left"
+            col["cellStyle"] = {
+                **existing_style,
+                "justifyContent": "flex-end",
+                "textAlign": "right",
+            }
+
+        elif should_center_column(key):
+            existing_style = col.get(
+                "cellStyle",
+                {},
+            )
+
+            col["cellStyle"] = {
+                **existing_style,
+                "justifyContent": "center",
+                "textAlign": "center",
+            }
 
         col_defs.append(col)
 
@@ -747,11 +846,20 @@ def render_table(transactions, state, stage: str = "booking"):
                 "rowData": transactions,
                 "defaultColDef": {
                     "flex": 0,
-                    "minWidth": 70,
                     "sortable": True,
                     "filter": True,
                     "floatingFilter": True,
                     "resizable": True,
+                    "wrapHeaderText": True,
+                    "autoHeaderHeight": True,
+                    "wrapText": True,
+                    "autoHeight": True,
+                    "headerClass": "ag-center-header",
+                    "cellStyle": {
+                        "display": "flex",
+                        "alignItems": "center",
+                        "lineHeight": "18px",
+                    },
                 },
                 "domLayout": "normal",
                 "suppressColumnVirtualization": False,
@@ -760,13 +868,13 @@ def render_table(transactions, state, stage: str = "booking"):
                 "paginationPageSize": 25,
                 "rowSelection": "multiple",
                 "suppressRowClickSelection": True,
-                "rowHeight": 30,
+                "rowHeight": 38,
                 "suppressCellFocus": True,
             },
-            theme="balham",
+            theme="alpine",
             auto_size_columns=False,
         )
-        .classes("w-full h-100")
+        .classes("w-full h-130")
         .style("font-family:Inter,sans-serif;font-size:13px;")
     )
     state.grid = grid
