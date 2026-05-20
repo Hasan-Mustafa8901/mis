@@ -510,6 +510,13 @@ def login_page():
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
 
+DATE_COLUMNS = {
+    "booking_date",
+    "delivery_date",
+    "created_at",
+}
+
+
 # MIS TABLE RENDERING & HELPER METHODS
 def build_ordered_columns(row: dict, stage: str = "combined"):
     """
@@ -535,18 +542,36 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "variant_name",
     ]
     if stage == "delivery":
-        ordered.append("delivery_date")
+        ordered.insert(2, "delivery_date")
 
     # 2. Price components
-    ordered += pick("Ex ") + pick("Insurance") + pick("Registration")
+    ordered += (
+        pick("Ex ")
+        + pick("Insurance")
+        + pick("Registration")
+        + pick("AMC")
+        + pick("Extended")
+        + pick("FasTag")
+        + pick("TCS")
+    )
 
     # 3. Discount components
     ordered += [k for k in keys if "_actual" in k and "Discount" in k]
+    ordered += (
+        pick("Additional for")
+        + pick("Additional Loyalty")
+        + pick("Micro")
+        + pick("SBI")
+        + pick("Power")
+        + pick("Shop")
+        + pick("Alliance")
+        + pick("Green")
+    )
 
     # 4. Allowed + diff (keep near actual)
 
-    # 5. Conditions
-    ordered += pick("cond_")
+    # # 5. Conditions
+    # ordered += pick("cond_")
 
     # 6. Accessories / finance / exchange
     ordered += pick("accessories_")
@@ -612,6 +637,9 @@ def render_table(transactions, state, stage: str = "booking"):
 
     for t in transactions:
         t["Delivered"] = "Yes" if t.get("stage") == "delivery" else "No"
+        for key in DATE_COLUMNS:
+            if key in t:
+                t[key] = disp_date(t.get(key))
 
     ordered_keys = build_ordered_columns(transactions[0], stage=stage)
     if "id" in ordered_keys:
@@ -707,8 +735,8 @@ def render_table(transactions, state, stage: str = "booking"):
                 " : {background:'#D1FAE5', color:'#065F46', fontWeight:'600', borderRadius:'4px'}"
             )
 
-        if key in pin_cols:
-            col["pinned"] = "left"
+        # if key in pin_cols:
+        #     col["pinned"] = "left"
 
         col_defs.append(col)
 
