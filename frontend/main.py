@@ -526,10 +526,13 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
     # 1. Core info
     ordered += [
         "id",
+        "booking_date",
+        # add booking status
+        "audit_observations",
+        "sales_executive_name",
         "customer_name",
         "mobile_number",
         "variant_name",
-        "booking_date",
     ]
     if stage == "delivery":
         ordered.append("delivery_date")
@@ -585,7 +588,7 @@ def clear_label(column_name: str):
     return (
         column_name.replace("_", " ")
         .replace("actual", "(Actual)")
-        .replace("allowed", "(Allowed)")
+        .replace("allowed", "(Listed)")
         .replace("diff", "(Diff)")
         .title()
     )
@@ -611,9 +614,17 @@ def render_table(transactions, state, stage: str = "booking"):
         t["Delivered"] = "Yes" if t.get("stage") == "delivery" else "No"
 
     ordered_keys = build_ordered_columns(transactions[0], stage=stage)
+    if "id" in ordered_keys:
+        ordered_keys.remove("id")
+
+    for idx, t in enumerate(transactions, start=1):
+        t["serial_no"] = idx
+
+    if "serial_no" not in ordered_keys:
+        ordered_keys.insert(0, "serial_no")
 
     if "Delivered" not in ordered_keys:
-        ordered_keys.insert(6, "Delivered")
+        ordered_keys.insert(3, "Delivered")
 
     NUMERIC_KEYS = {
         k
@@ -634,18 +645,20 @@ def render_table(transactions, state, stage: str = "booking"):
         )
     }
     pin_cols = {
-        "id",
+        "serial_no",
+        "booking_date",
+        "audit_observations",
+        "Delivered",
+        "sales_executive_name",
         "customer_name",
         "mobile_number",
         "variant_name",
-        "booking_date",
         "delivery_date",
-        "Delivered",
     }
 
     # Define custom widths for specific columns (optional)
     CUSTOM_WIDTHS = {
-        "id": 10,
+        "serial_no": 10,
         "customer_name": 100,
         "mobile_number": 100,
         "variant_name": 100,
@@ -674,7 +687,8 @@ def render_table(transactions, state, stage: str = "booking"):
             "headerName": clear_label(key),
             "filter": "agNumberColumnFilter" if is_num else "agTextColumnFilter",
         }
-
+        if key == "serial_no":
+            col["headerName"] = "S.No."
         if key in CUSTOM_WIDTHS:
             col["width"] = CUSTOM_WIDTHS[key]
 
@@ -1884,9 +1898,7 @@ async def load_master_data(mstate):
     mstate.outlets = await api_get("/outlets")
 
 
-#                   PAGE: MIS TABLES (Booking & Delivery)
-
-
+# PAGE: MIS TABLES (Booking & Delivery)
 async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
     label = "Booking MIS" if stage == "booking" else "Delivery MIS"
@@ -1940,6 +1952,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     # Split logic
     if stage == "booking":
         transactions = all_transactions
+        print(f"MIS Data: {json.dumps(transactions[0], indent=2)}")
     else:
         transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
         print(f"No of Delivery in MIS: {len(transactions)}")
@@ -4164,13 +4177,11 @@ async def daily_reporting_page() -> None:
 
                 async def handle_mis_upload(e):
                     try:
-                        print(rstate.outlet_select.value)
                         status_label.text = "Uploading..."
                         status_label.classes("text-blue-500")
                         payload = {
                             "outlet_id": rstate.outlet_select.value,  # temporarily make it 1 change it later
                         }
-                        print(payload)
                         response = await api_post_file(
                             "/mis/upload-ebd",
                             e,
@@ -6843,8 +6854,6 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 position="top-right",
                 timeout=2500,
             )
-        print("LISTED PRICES FROM PREVIEW: ", state.listed_prices)
-
     except Exception as e:
         print("ERROR: in preloading the price list: ", e)
         pass  # best-effort; silently skip if endpoint missing
@@ -8617,6 +8626,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY,
-        reload=False,  # make false at the time of deployement
+        reload=True,  # make false at the time of deployement
         port=3000,
+        reconnect_timeout=60,
     )
