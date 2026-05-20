@@ -764,6 +764,8 @@ def render_table(transactions, state, stage: str = "booking"):
 
         if key == "serial_no":
             col["headerName"] = "S.No."
+        elif key == "discount_booking":
+            col["headerName"] = "Other Discount at booking"
 
         if key in pin_cols:
             col["pinned"] = "left"
