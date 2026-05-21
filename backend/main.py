@@ -1,3 +1,4 @@
+# Review This
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from sqlmodel import Session, SQLModel, select
 from typing import List, Dict, Any
@@ -15,13 +16,20 @@ from db.models import (
     DiscountComponent,
     Accessory,
     Dealership,
+    User,
+    UserRole,
 )
 from services.ingestion.price_seed_service import PriceListIngestionService
 from services.discount.discount_service import DiscountService
 from services.transaction.transaction_service import TransactionService
 from services.price_list.price_list_service import PriceListService
 from services.auth.dependencies import get_current_user
+from services.auth.scope import (
+    apply_outlet_scope,
+    validate_outlet_access,
+)
 
+from services.auth.rbac import require_roles
 from schemas.mis import DealershipCreate, EmployeeCreate, OutletCreate
 
 from routes.edit_routes import router as edit_requests_router
@@ -67,28 +75,43 @@ def read_root():
 
 
 @app.get("/cars", response_model=List[Car])
-def api_list_cars(session: Session = Depends(get_session)):
+def api_list_cars(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     return session.exec(select(Car)).all()
 
 
 @app.get("/variants", response_model=List[Variant])
-def api_list_all_variants(session: Session = Depends(get_session)):
+def api_list_all_variants(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     return session.exec(select(Variant)).all()
 
 
 @app.get("/cars/{car_id}/variants", response_model=List[Variant])
-def api_list_variants(car_id: int, session: Session = Depends(get_session)):
+def api_list_variants(
+    car_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     return session.exec(select(Variant).where(Variant.car_id == car_id)).all()
 
 
 @app.get("/components")
-def get_components(session: Session = Depends(get_session)):
+def get_components(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     return PriceListService.get_all_components(session)
 
 
 @app.post("/dealership")
 def create_dealership(
-    payload: DealershipCreate, session: Session = Depends(get_session)
+    payload: DealershipCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
 ):
     obj = Dealership(**payload.dict())
 
@@ -103,13 +126,28 @@ def create_dealership(
 
 
 @app.get("/dealerships")
-def api_list_dealerships(session: Session = Depends(get_session)):
+def api_list_dealerships(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     dealerships = session.exec(select(Dealership)).all()
     return [{"id": d.id, "name": d.name} for d in dealerships]
 
 
+@app.get("/accessories")
+def get_accessories(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    accs = session.exec(select(Accessory)).all()
+    return accs
+
+
 @app.get("/outlets")
-def api_list_outlets(session: Session = Depends(get_session)):
+def api_list_outlets(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     outlets = session.exec(select(Outlet)).all()
     return [
         {"id": o.id, "name": o.name, "dealership_id": o.dealership_id} for o in outlets
@@ -117,7 +155,11 @@ def api_list_outlets(session: Session = Depends(get_session)):
 
 
 @app.post("/outlets")
-def create_outlet(payload: OutletCreate, session: Session = Depends(get_session)):
+def create_outlet(
+    payload: OutletCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
+):
 
     # Validate dealership exists
     if not session.get(Dealership, payload.dealership_id):
@@ -136,13 +178,20 @@ def create_outlet(payload: OutletCreate, session: Session = Depends(get_session)
 
 
 @app.get("/sales-executives")
-def api_list_sales_executives(session: Session = Depends(get_session)):
+def api_list_sales_executives(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     executives = session.exec(select(Employee)).all()
     return [{"id": e.id, "name": e.name} for e in executives]
 
 
 @app.post("/sales-executive")
-def create_employee(payload: EmployeeCreate, session: Session = Depends(get_session)):
+def create_employee(
+    payload: EmployeeCreate,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
+):
 
     # Validate outlet exists
     if not session.get(Outlet, payload.outlet_id):
@@ -163,6 +212,7 @@ def api_price_list_preview(
     booking_date: date,
     model_year: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     active_price_list = PriceListService.get_active_price_list(
         session, booking_date, model_year
@@ -198,6 +248,7 @@ async def upload_price_list(
     valid_from: date = Form(...),
     valid_to: date = Form(None),
     session: Session = Depends(get_session),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
 ):
     # Save file temporarily
     file_path = f"tmp_{file.filename}"
@@ -227,8 +278,11 @@ async def upload_price_list(
 @app.delete("/transactions/{transaction_id}")
 def delete_transaction_api(
     transaction_id: int,
+    outlet_id: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+    validate_outlet_access(current_user, outlet_id)
     return TransactionService.delete_transaction(session, transaction_id)
 
 
@@ -238,7 +292,9 @@ def api_calculate_audit(
     actual_amounts: Dict[str, float],
     conditions: Dict[str, bool],
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+    validate_outlet_access(current_user, transaction.outlet_id)
     try:
         result = DiscountService.calculate_discount(
             session, transaction, actual_amounts, conditions
@@ -253,8 +309,12 @@ def api_calculate_audit(
 def api_create_transaction(
     payload: dict[str, Any],
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-
+    validate_outlet_access(
+        current_user,
+        payload["outlet_id"],
+    )
     stage = payload.get("stage", "booking")
 
     if stage == "booking":
@@ -272,18 +332,26 @@ def api_update_transaction(
     transaction_id: int,
     payload: dict[str, Any],
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+    validate_outlet_access(
+        current_user,
+        payload["outlet_id"],
+    )
     return TransactionService.update_transaction(session, transaction_id, payload)
 
 
 @app.post("/transactions/{transaction_id}/calculate")
 def api_recalculate_transaction(
     transaction_id: int,
+    outlet_id: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Re-calculates the audit for an existing transaction.
     """
+    validate_outlet_access(current_user, outlet_id)
     try:
         # 1. Fetch Transaction
         tx = session.get(Transaction, transaction_id)
@@ -326,17 +394,32 @@ def api_recalculate_transaction(
 
 @app.get("/transactions-pages")
 def get_all_transactions_pages(
-    showroom_id: int | None = None,
+    outlet_id: int | None = None,
     dealership_id: int | None = None,
     stage: str | None = None,
     limit: int = 25,
     offset: int = 0,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+
     stmt = select(Transaction)
 
-    if showroom_id:
-        stmt = stmt.where(Transaction.outlet_id == showroom_id)
+    # APPLY SECURITY SCOPE
+    stmt = apply_outlet_scope(
+        stmt,
+        Transaction,
+        current_user,
+    )
+
+    # OPTIONAL FRONTEND FILTERS
+    if outlet_id:
+        validate_outlet_access(
+            current_user,
+            outlet_id,
+        )
+
+        stmt = stmt.where(Transaction.outlet_id == outlet_id)
 
     elif dealership_id:
         stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
@@ -344,12 +427,15 @@ def get_all_transactions_pages(
     if stage:
         stmt = stmt.where(Transaction.stage == stage)
 
-    stmt = stmt.order_by(Transaction.id.desc()).offset(offset).limit(limit)
+    stmt = stmt.order_by(Transaction.id.asc()).offset(offset).limit(limit)
 
     txs = session.exec(stmt).all()
 
     return [
-        TransactionService.get_transaction_reconstruction(session, tx.id)
+        TransactionService.get_transaction_reconstruction(
+            session,
+            tx.id,
+        )
         for tx in txs
         if tx.id
     ]
@@ -357,15 +443,30 @@ def get_all_transactions_pages(
 
 @app.get("/transactions")
 def get_all_transactions(
-    showroom_id: int | None = None,
+    outlet_id: int | None = None,
     dealership_id: int | None = None,
     stage: str | None = None,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+
     stmt = select(Transaction)
 
-    if showroom_id:
-        stmt = stmt.where(Transaction.outlet_id == showroom_id)
+    # APPLY SECURITY SCOPE
+    stmt = apply_outlet_scope(
+        stmt,
+        Transaction,
+        current_user,
+    )
+
+    # OPTIONAL UI FILTERS
+    if outlet_id:
+        validate_outlet_access(
+            current_user,
+            outlet_id,
+        )
+
+        stmt = stmt.where(Transaction.outlet_id == outlet_id)
 
     elif dealership_id:
         stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
@@ -376,29 +477,43 @@ def get_all_transactions(
     txs = session.exec(stmt).all()
 
     return [
-        TransactionService.get_transaction_reconstruction(session, tx.id)
+        TransactionService.get_transaction_reconstruction(
+            session,
+            tx.id,
+        )
         for tx in txs
         if tx.id
     ]
 
 
-@app.get("/accessories")
-def get_accessories(session: Session = Depends(get_session)):
-    accs = session.exec(select(Accessory)).all()
-    return accs
-
-
 @app.get("/transactions/{transaction_id}")
-def api_get_transaction(transaction_id: int, session: Session = Depends(get_session)):
-    reconstruction = TransactionService.get_transaction_reconstruction(
-        session, transaction_id
+def api_get_transaction(
+    transaction_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    transaction = session.get(
+        Transaction,
+        transaction_id,
     )
-    if not reconstruction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not transaction:
+        raise HTTPException(
+            status_code=404,
+            detail="Transaction not found",
+        )
+    # SECURITY CHECK
+    validate_outlet_access(
+        current_user,
+        transaction.outlet_id,
+    )
+    reconstruction = TransactionService.get_transaction_reconstruction(
+        session,
+        transaction_id,
+    )
     return reconstruction
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

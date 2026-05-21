@@ -8,7 +8,7 @@ from db.session import get_session
 from db.models import User
 from services.auth.config import SECRET_KEY, ALGORITHM
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=True)
 
 
 def get_current_user(
@@ -17,11 +17,10 @@ def get_current_user(
 ) -> User:
 
     token = credentials.credentials
-
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
 
-        # 👇 IMPORTANT: your token uses "sub"
+        # IMPORTANT: your token uses "sub"
         user_id = payload.get("sub")
 
         if not user_id:

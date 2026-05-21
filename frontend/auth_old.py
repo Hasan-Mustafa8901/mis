@@ -40,22 +40,18 @@ def get_roles() -> list[str]:
     return app.storage.user.get("roles", [])
 
 
-def require_roles(*allowed_roles: str):
-    def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            user_roles = set(app.storage.user.get("roles", []))
-
-            if not user_roles.intersection(allowed_roles):
-                ui.notify("Access Denied", type="negative")
-                ui.navigate.to("/")  # fallback page
-                return
-
-            return await func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
+# def require_roles(*allowed_roles: str):
+#     def decorator(func):
+#         @wraps(func)
+#         async def wrapper(*args, **kwargs):
+#             user_roles = set(app.storage.user.get("roles", []))
+#             if not user_roles.intersection(allowed_roles):
+#                 ui.notify("Access Denied", type="negative")
+#                 ui.navigate.to("/")  # fallback page
+#                 return
+#             return await func(*args, **kwargs)
+#         return wrapper
+#     return decorator
 
 
 def is_authenticated():
@@ -130,3 +126,37 @@ async def logout_user():
 
         except Exception as e:
             print("Logout error:", e)
+
+
+# NEW Version might use this
+def require_roles(*allowed_roles: str):
+    def decorator(func):
+
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+
+            # AUTH CHECK
+            if not is_authenticated():
+                print("AUTH: ", is_authenticated())
+                await logout_user()
+
+                return
+
+            user_roles = set(app.storage.user.get("role", []))
+
+            # ROLE CHECK
+            if not user_roles.intersection(allowed_roles):
+                ui.notify(
+                    "Access Denied",
+                    type="negative",
+                )
+
+                ui.navigate.to("/")
+
+                return
+
+            return await func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

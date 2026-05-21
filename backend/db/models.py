@@ -102,8 +102,15 @@ class User(SQLModel, table=True):
     name: str = Field(index=True)
     username: str = Field(unique=True)
     password_hash: str
+    # Old Field for transition
     outlet_id: Optional[int] = Field(foreign_key="outlet.id")
     role: UserRole = Field(default=UserRole.AUDIT_ASST, index=True)
+
+    # NEW FIELD
+    allowed_outlet_ids: list[int] = Field(
+        default_factory=list,
+        sa_column=Column(JSON),
+    )
 
     transactions: list["Transaction"] = Relationship(back_populates="user")
     outlet: Optional["Outlet"] = Relationship(back_populates="users")

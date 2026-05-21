@@ -1,15 +1,16 @@
-from db.models import DailyBooking, DailyDelivery, Transaction, Outlet, Dealership
-from sqlmodel import Session, select
 from datetime import date, datetime
 from typing import List
+from sqlmodel import Session, select
+from db.models import DailyBooking, DailyDelivery, Outlet, Transaction
 
 
 def display_daily_report(
     session: Session,
     report_from: date,
     report_to: date,
-    outlet_id: int | None,
-    dealership_id: int | None,
+    outlet_id: int | None = None,
+    outlet_ids: list[int] | None = None,
+    dealership_id: int | None = None,
 ):
 
     booking_stmt = select(DailyBooking).where(
@@ -22,35 +23,37 @@ def display_daily_report(
         DailyDelivery.date <= report_to,
     )
 
-    # =========================================
     # FILTERING
-    # =========================================
+    # DEALERSHIP FILTER
     if dealership_id:
         outlets = session.exec(
             select(Outlet).where(Outlet.dealership_id == dealership_id)
         ).all()
 
-        outlet_ids = [o.id for o in outlets]
+        dealership_outlet_ids = [o.id for o in outlets]
 
+        booking_stmt = booking_stmt.where(
+            DailyBooking.outlet_id.in_(dealership_outlet_ids)
+        )
+
+        delivery_stmt = delivery_stmt.where(
+            DailyDelivery.outlet_id.in_(dealership_outlet_ids)
+        )
+
+    # MULTI OUTLET FILTER
+    elif outlet_ids:
         booking_stmt = booking_stmt.where(DailyBooking.outlet_id.in_(outlet_ids))
-
         delivery_stmt = delivery_stmt.where(DailyDelivery.outlet_id.in_(outlet_ids))
 
+    # SINGLE OUTLET FILTER
     elif outlet_id:
         booking_stmt = booking_stmt.where(DailyBooking.outlet_id == outlet_id)
-
         delivery_stmt = delivery_stmt.where(DailyDelivery.outlet_id == outlet_id)
 
-    # =======
     # FETCH
-    # =======
     bookings = session.exec(booking_stmt).all()
-
     deliveries = session.exec(delivery_stmt).all()
-
-    # =========
     # RESPONSE
-    # =========
     return {
         "bookings": [
             {

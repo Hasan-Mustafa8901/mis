@@ -25,6 +25,7 @@ from auth_old import (
     get_token,
     logout_user,
     protected_page,
+    require_roles,
     set_user,
     token_is_valid,
     clear_user,
@@ -969,7 +970,7 @@ def open_new_entry_dialog():
 
 # PAGE 1: DASHBOARD
 @ui.page("/")
-@protected_page
+@require_roles("admin", "client", "audit_assistant")
 async def dashboard_page() -> None:
     render_topbar("Dashboard")
 
@@ -2181,13 +2182,13 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
 
 @ui.page("/booking-mis")
-@protected_page
+@require_roles("admin", "audit_assistant")
 async def booking_mis_page(month: str | None = None) -> None:
     await mis_table_page_base(stage="booking", month=month)
 
 
 @ui.page("/delivery-mis")
-@protected_page
+@require_roles("admin", "audit_assistant")
 async def delivery_mis_page(month: str | None = None) -> None:
     await mis_table_page_base(stage="delivery", month=month)
 
@@ -2390,7 +2391,7 @@ def render_complaints_table(complaints):
 
 # PAGE: COMPLAINTS TABLE
 @ui.page("/complaints-ctrl")
-@protected_page
+@require_roles("admin")
 async def complaints_ctrl_page():
 
     render_topbar("Complaints Control Panel")
@@ -2622,6 +2623,7 @@ class ReportingState:
 
 # PAGE: DAILY REPORTING
 @ui.page("/daily-reporting")
+@require_roles("admin", "client", "audit_assistant")
 @protected_page
 async def daily_reporting_page() -> None:
 
@@ -4310,7 +4312,7 @@ async def daily_reporting_page() -> None:
 
 # PAGE: SETTINGS
 @ui.page("/settings")
-@protected_page
+@require_roles("admin")
 async def settings_page():
 
     def get_id_by_name(iter: list[dict], name: str) -> int | None:
@@ -8072,7 +8074,7 @@ def hydrate_accessories_section(
 
 #   PAGE 2: FORM
 @ui.page("/form")
-@protected_page
+@require_roles("admin", "audit_assistant")
 async def form_page(
     stage: str = "booking", mode: str = "booking", transaction_id: int | None = None
 ) -> None:
@@ -8643,7 +8645,7 @@ def build_complaint_payload(state: FormState) -> dict:
     }
 
 
-@protected_page
+@require_roles("admin", "audit_assistant")
 @ui.page("/complaint-form")
 async def complaint_form_page(
     transaction_id: int | None = None, complaint_code: str | None = None
