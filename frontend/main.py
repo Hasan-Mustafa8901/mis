@@ -714,8 +714,8 @@ def render_table(transactions, state, stage: str = "booking"):
                 "domLayout": "normal",
                 "suppressColumnVirtualization": False,
                 "animateRows": True,
-                "pagination": True,
-                "paginationPageSize": 25,
+                # "pagination": True,
+                # "paginationPageSize": 25,
                 "rowSelection": "multiple",
                 "suppressRowClickSelection": True,
                 "rowHeight": 30,
@@ -1877,6 +1877,8 @@ class MISState:
         self.month: str | None = None
         self.grid = None
         self.selected_ids: list[int] = []
+        self.limit: int = 0
+        self.offset: int = 0
 
 
 async def load_master_data(mstate):
@@ -1897,6 +1899,8 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     mstate.selected_outlet = None
     mstate.stage = stage
     mstate.month = month
+    mstate.limit = 25
+    mstate.offset = 0
 
     async def get_selected_ids():
         if not mstate.grid:
@@ -2025,13 +2029,15 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
             async def _run():
                 params = {}
+                params["limit"] = mstate.limit
+                params["offset"] = mstate.offset
 
                 if mstate.selected_outlet:
                     params["showroom_id"] = mstate.selected_outlet
                 elif mstate.selected_dealer:
                     params["dealership_id"] = mstate.selected_dealer
 
-                data = await api_get("/transactions", params=params)
+                data = await api_get("/transactions-pages", params=params)
 
                 # existing logic
                 if mstate.stage == "delivery":
@@ -2153,6 +2159,25 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ) as table_container:
                 mstate.table_container = table_container
                 await load_data()
+            with ui.row().classes("w-full justify-end gap-2 mt-4"):
+
+                async def next_page():
+                    mstate.offset += mstate.limit
+                    await load_data()
+
+                async def prev_page():
+                    mstate.offset = max(0, mstate.offset - mstate.limit)
+                    await load_data()
+
+                ui.button(
+                    "Previous",
+                    on_click=lambda: prev_page(),
+                )
+
+                ui.button(
+                    "Next",
+                    on_click=lambda: next_page(),
+                )
 
 
 @ui.page("/booking-mis")
@@ -4436,6 +4461,63 @@ async def settings_page():
                     ui.label("Admin → Full access")
                     ui.label("Audit Assistant → For Audit Assistant")
                     ui.label("Client → For Dealership Owners")
+
+        # =========================
+        # USERS TABLE
+        # =========================
+
+        try:
+            users = await api_get("/auth/users")
+            print("USERS:", users)
+
+        except Exception as e:
+            print("ERROR FETCHING USERS:", e)
+            ui.notify(str(e), type="negative")
+            users = []
+
+        row_data = []
+
+        for user in users:
+            row = {
+                "name": user["name"],
+                "username": user["username"],
+                "outlet_name": (
+                    user["outlet"]["name"] if user.get("outlet") else "All Outlets"
+                ),
+                "role": str(user["role"]).replace("_", " ").title(),
+            }
+
+            row_data.append(row)
+
+        with ui.column().classes("w-full items-center mt-8"):
+            with ui.card().classes(
+                "max-w-[1100px] w-full p-6 rounded-2xl shadow border"
+            ):
+                ui.label("Users").classes("text-xl font-semibold text-gray-800 mb-4")
+
+                ui.aggrid(
+                    {
+                        "columnDefs": [
+                            {
+                                "headerName": "Name",
+                                "field": "name",
+                            },
+                            {
+                                "headerName": "Username",
+                                "field": "username",
+                            },
+                            {
+                                "headerName": "Can View",
+                                "field": "outlet_name",
+                            },
+                            {
+                                "headerName": "Role",
+                                "field": "role",
+                            },
+                        ],
+                        "rowData": row_data,
+                    }
+                ).classes("w-full h-[500px] ag-theme-alpine")
 
     with ui.column().classes("w-full items-center"):
         with ui.card().classes(

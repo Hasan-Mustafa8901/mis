@@ -89,6 +89,7 @@ class MISUploadService:
                         MISRecord.outlet_id == resolved_outlet_id,
                         MISRecord.customer_name == customer_name,
                         MISRecord.car_model == car_model,
+                        MISRecord.customer_mobile == customer_mobile,
                     )
                 ).first()
 
@@ -279,25 +280,15 @@ class MISUploadService:
                 session.add(daily)
 
             daily.number_bookings = total
-
             daily.file_received = files_received
-
             daily.files_pending = files_pending
-
             daily.files_verified = files_verified
-
             daily.files_out_of_scope = files_out_of_scope
-
             daily.files_incomplete = files_incomplete
-
             daily.files_approved = files_approved
-
             daily.files_rejected = files_rejected
-
             daily.files_not_verified = files_not_verified
-
             daily.files_scanned = files_scanned
-
             daily.files_in_mis = files_in_mis
 
         # DELIVERY SUMMARY
@@ -319,25 +310,15 @@ class MISUploadService:
                 session.add(daily)
 
             daily.number_deliveries = total
-
             daily.file_received = files_received
-
             daily.files_pending = files_pending
-
             daily.files_verified = files_verified
-
             daily.files_out_of_scope = files_out_of_scope
-
             daily.files_incomplete = files_incomplete
-
             daily.files_approved = files_approved
-
             daily.files_rejected = files_rejected
-
             daily.rejected_but_delivered = rejected_but_delivered
-
             daily.files_scanned = files_scanned
-
             daily.files_in_mis = files_in_mis
 
         session.commit()

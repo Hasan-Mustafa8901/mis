@@ -324,6 +324,37 @@ def api_recalculate_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/transactions-pages")
+def get_all_transactions_pages(
+    showroom_id: int | None = None,
+    dealership_id: int | None = None,
+    stage: str | None = None,
+    limit: int = 25,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+):
+    stmt = select(Transaction)
+
+    if showroom_id:
+        stmt = stmt.where(Transaction.outlet_id == showroom_id)
+
+    elif dealership_id:
+        stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
+
+    if stage:
+        stmt = stmt.where(Transaction.stage == stage)
+
+    stmt = stmt.order_by(Transaction.id.desc()).offset(offset).limit(limit)
+
+    txs = session.exec(stmt).all()
+
+    return [
+        TransactionService.get_transaction_reconstruction(session, tx.id)
+        for tx in txs
+        if tx.id
+    ]
+
+
 @app.get("/transactions")
 def get_all_transactions(
     showroom_id: int | None = None,
