@@ -762,9 +762,7 @@ class TransactionService:
             ],
         )
 
-        # ─────────────────────────────
         # CUSTOMER
-        # ─────────────────────────────
         if payload.get("customer"):
             customer = TransactionService.create_or_update_customer(
                 session,
@@ -773,9 +771,7 @@ class TransactionService:
 
             transaction.customer_id = customer.id
 
-        # ─────────────────────────────
         # CORE FIELDS
-        # ─────────────────────────────
         CORE_FIELDS = [
             "variant_id",
             "outlet_id",
