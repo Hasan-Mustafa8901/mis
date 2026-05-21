@@ -2679,6 +2679,7 @@ async def daily_reporting_page() -> None:
             ("Scanned Date", "130px"),
             ("MIS Entry", "130px"),
             ("Incomplete", "100px"),
+            ("Incomplete Remarks", "100px"),
         ]
 
         # =========================================================
@@ -2847,6 +2848,11 @@ async def daily_reporting_page() -> None:
                                     ui.label(disp_date(row.get("entry_date")) or "—")
 
                                 # INCOMPLETE
+                                print(
+                                    "INCOMLETE :",
+                                    row.get("incomplete"),
+                                    row.get("incomplete_remarks"),
+                                )
                                 with ui.element("td").style(TD):
                                     ui.checkbox(
                                         value=row.get(
@@ -2854,6 +2860,10 @@ async def daily_reporting_page() -> None:
                                             False,
                                         )
                                     ).props("disable")
+
+                                # INCOMPLETE REMARKS
+                                with ui.element("td").style(TD + ";text-align:left"):
+                                    ui.label(row.get("incomplete_remarks") or "—")
 
                                 # DYNAMIC ACTION CELLS
                                 # TOTAL COUNT -> RECEIVED

@@ -436,16 +436,42 @@ class MISUploadService:
     @staticmethod
     def make_json_safe(data):
 
-        cleaned = {}
+        if isinstance(data, dict):
+            return {str(k): MISUploadService.make_json_safe(v) for k, v in data.items()}
 
-        for key, value in data.items():
-            if pd.isna(value):
-                cleaned[key] = None
+        elif isinstance(data, list):
+            return [MISUploadService.make_json_safe(v) for v in data]
 
-            elif isinstance(value, pd.Timestamp):
-                cleaned[key] = value.isoformat()
+        elif isinstance(data, tuple):
+            return tuple(MISUploadService.make_json_safe(v) for v in data)
 
-            else:
-                cleaned[key] = value
+        # PANDAS TIMESTAMP / DATETIME
+        elif isinstance(
+            data,
+            (
+                datetime,
+                pd.Timestamp,
+            ),
+        ):
+            return data.isoformat()
 
-        return cleaned
+        # DATE
+        elif isinstance(data, date):
+            return data.isoformat()
+        # NUMPY TYPES
+        # elif isinstance(data, np.integer):
+
+        #     return int(data)
+
+        # elif isinstance(data, np.floating):
+
+        #     return float(data)
+
+        # elif isinstance(data, np.bool_):
+
+        #     return bool(data)
+        # NaN
+        elif pd.isna(data):
+            return None
+
+        return data

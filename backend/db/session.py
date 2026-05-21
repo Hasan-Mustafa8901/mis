@@ -8,9 +8,9 @@ load_dotenv()
 # Use DATABASE_URL if set (for Postgres), else fallback to SQLite for development
 database_url = os.getenv("DATABASE_URL")
 if database_url:
-    engine = create_engine(database_url, echo=False)
+    engine = create_engine(database_url, echo="debug")
 else:
-    engine = create_engine("sqlite:///mis_db.db", echo=False)
+    engine = create_engine("sqlite:///mis_db.db", echo="debug")
 
 
 def get_session():

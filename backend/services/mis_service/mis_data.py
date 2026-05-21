@@ -2,6 +2,7 @@ from datetime import date
 
 from sqlalchemy import and_
 from sqlmodel import Session, select
+from rich import print
 
 from db.models import (
     MISRecord,
@@ -37,9 +38,19 @@ def get_ebd_data(
             .where(Transaction.id == MISRecord.transaction_id)
             .scalar_subquery()
         )
+        transaction_incomplete_remarks = (
+            select(Transaction.booking_file_incomplete_remarks)
+            .where(Transaction.id == MISRecord.transaction_id)
+            .scalar_subquery()
+        )
     else:
         transaction_incomplete = (
             select(Transaction.delivery_file_incomplete)
+            .where(Transaction.id == MISRecord.transaction_id)
+            .scalar_subquery()
+        )
+        transaction_incomplete_remarks = (
+            select(Transaction.delivery_file_incomplete_remarks)
             .where(Transaction.id == MISRecord.transaction_id)
             .scalar_subquery()
         )
@@ -49,6 +60,7 @@ def get_ebd_data(
         MISRecord,
         transaction_created_at_sq.label("transaction_created_at"),
         transaction_incomplete.label("incomplete"),
+        transaction_incomplete_remarks.label("incomplete_remarks"),
     ).where(
         MISRecord.type == stage,
     )
@@ -151,10 +163,10 @@ def get_ebd_data(
                 transaction_created_at.isoformat() if transaction_created_at else None
             ),
             "incomplete": incomplete,
+            "incomplete_remarks": incomplete_remarks,
         }
-        for row, transaction_created_at, incomplete in rows
+        for row, transaction_created_at, incomplete, incomplete_remarks in rows
     ]
-
     return data
 
 
