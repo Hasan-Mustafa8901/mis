@@ -627,6 +627,7 @@ class TransactionService:
             {f"bk_checks_{k}": v for k, v in transaction.booking_checklist.items()}
         )
         data.update({f"audit_{k}": v for k, v in transaction.audit_info.items()})
+        data.update({f"payment_{k}": v for k, v in transaction.payment_details.items()})
         # 7.5 Accessories (NEW)
         links = session.exec(
             select(TransactionAccessoryLink).where(
@@ -761,9 +762,7 @@ class TransactionService:
             ],
         )
 
-        # ─────────────────────────────
         # CUSTOMER
-        # ─────────────────────────────
         if payload.get("customer"):
             customer = TransactionService.create_or_update_customer(
                 session,
@@ -772,9 +771,7 @@ class TransactionService:
 
             transaction.customer_id = customer.id
 
-        # ─────────────────────────────
         # CORE FIELDS
-        # ─────────────────────────────
         CORE_FIELDS = [
             "variant_id",
             "outlet_id",
