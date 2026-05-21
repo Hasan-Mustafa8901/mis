@@ -5516,14 +5516,12 @@ async def hydrate_vehicle_section(
 
     try:
         car_id = txn.get("car_id")
-
         variant_id = txn.get("variant_id")
-
         outlet_id = txn.get("outlet_id")
-
         exec_id = txn.get("sales_executive_id")
-
         delivery_date = txn.get("delivery_date")
+        registration_date = txn.get("registration_date")
+        registration_number = txn.get("registration_number")
 
         # CAR
         if car_id:
@@ -5553,6 +5551,10 @@ async def hydrate_vehicle_section(
         # Delivery Date
         if delivery_date:
             state.delivery_date.set_value(delivery_date)
+        if registration_date:
+            state.regn_date.set_value(registration_date)
+        if registration_number:
+            state.vehicle_regn_no.set_value(registration_number)
 
     finally:
         state.is_hydrating = False
@@ -5564,7 +5566,7 @@ FORM_COLUMNS = 3
 
 
 def build_vehicle_section(state: FormState) -> None:
-
+    print("CALLED build_vehicle_section")
     car_opts = {
         car["id"]: car["name"]
         for car in sorted(state.cars, key=lambda x: x["name"].lower())
@@ -6441,8 +6443,13 @@ def build_invoice_section(
                 label_text=("Ex-Showroom Price (From Price List)")
             )
             state.invoice_ex_showroom.props("readonly")
-            state.invoice_discount = accounting_input(label_text="Discount")
-            state.invoice_taxable_value = accounting_input(label_text="Taxable Value")
+            state.invoice_discount = accounting_input(
+                label_text="Discount", placeholder="Enter Discount or Concession"
+            )
+            state.invoice_taxable_value = accounting_input(
+                label_text="Taxable Value",
+                placeholder="Enter taxable value or cost of vehicle",
+            )
             state.invoice_cgst = accounting_input(label_text="CGST")
             state.invoice_sgst = accounting_input(label_text="SGST")
             state.igst_toggle = ui.switch("Apply IGST").props("dense")
@@ -6833,14 +6840,14 @@ def attach_form_handlers(state):
 def attach_invoice_handlers(
     state: FormState,
 ):
-    taxable = getattr(state, "invoice_taxable_value", None)
+    # taxable = getattr(state, "invoice_taxable_value", None)
     invoice_igst = getattr(state, "invoice_igst", None)
     invoice_cess = getattr(state, "invoice_cess", None)
     igst_toggle = getattr(state, "igst_toggle", None)
     cess_toggle = getattr(state, "cess_toggle", None)
-
-    if taxable:
-        taxable.on_value_change(lambda e: calculate_invoice_taxes(state))
+    # Not Live calculating taxes, might do in future
+    # if taxable:
+    #     taxable.on_value_change(lambda e: calculate_invoice_taxes(state))
 
     if invoice_igst:
         invoice_igst.on_value_change(lambda e: calculate_invoice_total(state))
@@ -6994,6 +7001,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
             )
     except Exception as e:
         print("ERROR: in preloading the price list: ", e)
+        ui.notify("Price List not fetched", type="negative")
         pass  # best-effort; silently skip if endpoint missing
 
 
@@ -7018,25 +7026,19 @@ def calculate_invoice_total(
 ):
 
     taxable = parsed_val(state.invoice_taxable_value)
-
     cgst = parsed_val(state.invoice_cgst)
-
     sgst = parsed_val(state.invoice_sgst)
-
     igst = (
         parsed_val(state.invoice_igst)
         if state.igst_toggle and state.igst_toggle.value
         else 0
     )
-
     cess = (
         parsed_val(state.invoice_cess)
         if state.cess_toggle and state.cess_toggle.value
         else 0
     )
-
     total = taxable + cgst + sgst + igst + cess
-
     if state.invoice_total:
         state.invoice_total.set_value(format_num_inr(total))
 
@@ -7044,7 +7046,7 @@ def calculate_invoice_total(
 def calculate_invoice_taxes(
     state: FormState,
 ):
-
+    # Currently, this method is not used, DO NOT DELETE IT, we might need it in future
     taxable = parsed_val(state.invoice_taxable_value)
 
     cgst = taxable * 0.09
@@ -7716,7 +7718,7 @@ async def load_transaction(state: FormState):
         print("ERROR: in loading the transaction: ", str(e))
 
         ui.notify(
-            "Failed to load transaction",
+            "Failed to load entry",
             type="negative",
         )
 
@@ -7794,6 +7796,7 @@ async def hydrate_form(
     state.is_hydrating = True
 
     try:
+        print("CALLED hydrate_form")
         # VEHICLE / CORE SELECTS
         outlet_id = txn.get("outlet_id")
 
@@ -7966,6 +7969,10 @@ async def hydrate_form(
                     0,
                 )
             )
+        await hydrate_vehicle_section(
+            state,
+            txn,
+        )
         hydrate_invoice_section(
             state,
             txn,
@@ -7982,6 +7989,11 @@ async def hydrate_form(
         )
 
         hydrate_accessories_section(
+            state,
+            txn,
+        )
+
+        hydrate_file_status_section(
             state,
             txn,
         )
@@ -8030,21 +8042,45 @@ def hydrate_invoice_section(
         widget.set_value(value)
 
 
+def hydrate_file_status_section(
+    state: FormState,
+    txn: dict,
+):
+    try:
+        if state.stage == "booking":
+            if state.booking_file_incomplete:
+                state.booking_file_incomplete.set_value(
+                    txn.get("booking_file_incomplete", False)
+                )
+            if state.booking_file_incomplete_remarks:
+                state.booking_file_incomplete_remarks.set_value(
+                    txn.get("booking_file_incomplete_remarks", "")
+                )
+        else:
+            if state.delivery_file_incomplete:
+                state.delivery_file_incomplete.set_value(
+                    txn.get("delivery_file_incomplete", False)
+                )
+            if state.delivery_file_incomplete_remarks:
+                state.delivery_file_incomplete_remarks.set_value(
+                    txn.get("delivery_file_incomplete_remarks", "")
+                )
+    except Exception as e:
+        print("ERROR: WHILE FILE HYDRATE", e)
+
+
 def hydrate_payment_section(
     state: FormState,
     txn: dict,
 ):
 
-    payment = txn.get(
-        "payment_details",
-        {},
-    )
+    payment = {k: v for k, v in txn.items() if k.startswith("payment_")}
 
     mapping = {
-        "cash": state.payment_cash,
-        "bank": state.payment_bank,
-        "finance": state.payment_finance,
-        "exchange": state.payment_exchange,
+        "payment_cash": state.payment_cash,
+        "payment_bank": state.payment_bank,
+        "payment_finance": state.payment_finance,
+        "payment_exchange": state.payment_exchange,
     }
 
     for key, widget in mapping.items():

@@ -412,7 +412,8 @@ class MISUploadService:
 
         try:
             return pd.to_datetime(value).date()
-        except Exception:
+        except Exception as e:
+            print("ERROR: While parsing date: ", e)
             return None
 
     @staticmethod
