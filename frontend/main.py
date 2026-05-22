@@ -1271,9 +1271,7 @@ async def dashboard_page() -> None:
                 delivery_content_area.clear()
 
                 with booking_content_area:
-                    # ════════════════════════════════════════
                     # ROW 1 — KPI CARDS  (pure CSS grid)
-                    # ════════════════════════════════════════
                     excess_color = (
                         "#EF4444"
                         if booking_analytics["total_excess"] > 0
@@ -1374,9 +1372,7 @@ async def dashboard_page() -> None:
                             ).classes("text-[14px] text-gray-600")
 
                 with delivery_content_area:
-                    # ════════════════════════════════════════
                     # ROW 1 — KPI CARDS  (pure CSS grid)
-                    # ════════════════════════════════════════
                     excess_color = (
                         "#EF4444"
                         if delivery_analytics["total_excess"] > 0
@@ -1880,6 +1876,10 @@ class MISState:
         self.selected_ids: list[int] = []
         self.limit: int = 0
         self.offset: int = 0
+        self.total_entries = 0
+        self.total_excess = 0
+        self.sorted_months = {}
+        self.month_map = {}
 
 
 async def load_master_data(mstate):
@@ -1887,9 +1887,7 @@ async def load_master_data(mstate):
     mstate.outlets = await api_get("/outlets")
 
 
-#                   PAGE: MIS TABLES (Booking & Delivery)
-
-
+# PAGE: MIS TABLES (Booking & Delivery)
 async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
     label = "Booking MIS" if stage == "booking" else "Delivery MIS"
@@ -1910,6 +1908,13 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
         ids = [r["id"] for r in rows if r.get("id")]
         mstate.selected_ids = ids
         return ids
+
+    def month_label_local(ym: str) -> str:
+        try:
+            y, m = ym.split("-")
+            return f"{calendar.month_abbr[int(m)]} '{y[2:]}"
+        except Exception:
+            return ym
 
     async def delete_entry() -> None:
         txn_ids = await get_selected_ids()
@@ -1936,44 +1941,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
         mstate.outlet_select.set_value(None)
 
         schedule_load()
-
-    try:
-        all_transactions: list = await api_get("/transactions")
-    except Exception:
-        all_transactions = []
-
-    # Split logic
-    if stage == "booking":
-        transactions = all_transactions
-    else:
-        transactions = [t for t in all_transactions if t.get("stage") == "delivery"]
-        print(f"No of Delivery in MIS: {len(transactions)}")
-
-    # Get months for sidebar grouping (from the filtered set)
-    month_map = defaultdict(list)
-    for t in transactions:
-        bd = t.get("booking_date", "")
-        if bd and len(bd) >= 7:
-            month_map[bd[:7]].append(t)
-    sorted_months = sorted(month_map.keys(), reverse=True)
-
-    def month_label_local(ym: str) -> str:
-        try:
-            y, m = ym.split("-")
-            return f"{calendar.month_abbr[int(m)]} '{y[2:]}"
-        except Exception:
-            return ym
-
-    # Filter by specific month if passed in URL
-    if month:
-        transactions = [
-            t
-            for t in transactions
-            if (t.get("booking_date", "") or "").startswith(month)
-        ]
-
-    total_entries = len(transactions)
-    total_excess = sum(t.get("total_excess_discount", 0) or 0 for t in transactions)
 
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
         #  SIDEBAR
@@ -2014,29 +1981,49 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.link("All Months", route_path).classes(
                 f"flex px-4 py-1.5 text-[12.5px] font-medium {'text-[#E8402A]' if not month else 'text-gray-600'} hover:bg-gray-50 no-underline"
             )
-            for ym in sorted_months:
+            for ym in mstate.sorted_months:
                 is_curr = month == ym
                 with ui.link(target=f"{route_path}?month={ym}").classes(
                     f"flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium {'text-[#E8402A] bg-[#FEF2F0]' if is_curr else 'text-gray-600'} hover:bg-gray-50 no-underline w-full"
                 ):
-                    ui.label(month_label_local(ym))
-                    ui.label(str(len(month_map[ym]))).classes(
+                    ui.label(mstate.month_label_local(ym))
+                    ui.label(str(mstate.month_map[ym])).classes(
                         "text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
                     )
+
+        async def load_meta():
+            params = {"stage": mstate.stage}
+            if mstate.selected_outlet:
+                params["outlet_id"] = mstate.selected_outlet
+            elif mstate.selected_dealer:
+                params["dealership_id"] = mstate.selected_dealer
+
+            meta = await api_get("/transactions/meta", params=params)
+
+            mstate.total_entries = meta.get("total_entries", 0)
+            mstate.total_excess = meta.get("total_excess", 0)
+            mstate.month_map = meta.get("months", {})
+            mstate.sorted_months = sorted(
+                mstate.month_map.keys(),
+                reverse=True,
+            )
+            render_header_meta.refresh()
 
         async def load_data():
             if mstate._load_tasks and not mstate._load_tasks.done():
                 mstate._load_tasks.cancel()
 
             async def _run():
+                await load_meta()
                 params = {}
                 params["limit"] = mstate.limit
                 params["offset"] = mstate.offset
 
                 if mstate.selected_outlet:
-                    params["showroom_id"] = mstate.selected_outlet
+                    params["outlet_id"] = mstate.selected_outlet
                 elif mstate.selected_dealer:
                     params["dealership_id"] = mstate.selected_dealer
+                print("PARAMS: ", params)
 
                 data = await api_get("/transactions-pages", params=params)
 
@@ -2072,18 +2059,29 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 once=True,
             )
 
+        @ui.refreshable
+        def render_header_meta():
+            with ui.column().classes("gap-1"):
+                title = (
+                    f"{label}"
+                    f"{' — ' + month_label_local(month) if month else ' — All Months'}"
+                )
+                ui.label(title).classes(
+                    "text-[18px] font-bold text-gray-900 leading-none"
+                )
+                exc_txt = (
+                    f" · ₹{mstate.total_excess:,} excess"
+                    if mstate.total_excess > 0
+                    else ""
+                )
+                ui.label(f"{mstate.total_entries} records{exc_txt}").classes(
+                    "text-[12px] text-gray-400"
+                )
+
         #  MAIN CONTENT
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
             with ui.row().classes("w-full items-center justify-between mb-5"):
-                with ui.column().classes("gap-1"):
-                    title = f"{label}{' — ' + month_label_local(month) if month else ' — All Months'}"
-                    ui.label(title).classes(
-                        "text-[18px] font-bold text-gray-900 leading-none"
-                    )
-                    exc_txt = f" · ₹{total_excess:,} excess" if total_excess > 0 else ""
-                    ui.label(f"{total_entries} records{exc_txt}").classes(
-                        "text-[12px] text-gray-400"
-                    )
+                render_header_meta()
 
                 await load_master_data(mstate)
                 dealer_opts = {d["id"]: d["name"] for d in mstate.dealerships}
@@ -4598,10 +4596,14 @@ async def settings_page():
                                 "field": "role",
                             },
                         ],
+                        "defaultColDefs": {
+                            "wraptext": True,
+                            "flex": 1,
+                            "autoHeight": True,
+                        },
                         "rowData": row_data,
-                        "wrapText": True,
                     }
-                ).classes("w-full h-[500px] ag-theme-alpine")
+                ).classes("w-full h-[500px] ag-theme-balham")
 
     with ui.column().classes("w-full items-center"):
         with ui.card().classes(

@@ -4,6 +4,7 @@ from sqlmodel import Session, SQLModel, select
 from typing import List, Dict, Any
 from datetime import date
 from contextlib import asynccontextmanager
+from collections import defaultdict
 
 from fastapi.middleware.cors import CORSMiddleware
 from db.session import engine, get_session
@@ -278,11 +279,12 @@ async def upload_price_list(
 @app.delete("/transactions/{transaction_id}")
 def delete_transaction_api(
     transaction_id: int,
-    outlet_id: int,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    validate_outlet_access(current_user, outlet_id)
+    transaction = session.get(Transaction, transaction_id)
+
+    validate_outlet_access(current_user, transaction.outlet_id)
     return TransactionService.delete_transaction(session, transaction_id)
 
 
@@ -484,6 +486,49 @@ def get_all_transactions(
         for tx in txs
         if tx.id
     ]
+
+
+@app.get("/transactions/meta")
+def get_transactions_meta(
+    outlet_id: int | None = None,
+    dealership_id: int | None = None,
+    stage: str | None = None,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    stmt = select(Transaction)
+
+    stmt = apply_outlet_scope(stmt, Transaction, current_user)
+
+    if outlet_id:
+        validate_outlet_access(current_user, outlet_id)
+        stmt = stmt.where(Transaction.outlet_id == outlet_id)
+
+    elif dealership_id:
+        stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
+
+    if stage:
+        stmt = stmt.where(Transaction.stage == stage)
+
+    txs = session.exec(stmt).all()
+
+    month_map = defaultdict(int)
+    total_excess = 0
+
+    for tx in txs:
+        if tx.booking_date:
+            ym = tx.booking_date.strftime("%Y-%m")
+            month_map[ym] += 1
+        if stage == "booking":
+            total_excess += tx.excess_booking or 0
+        else:
+            total_excess += tx.total_excess_discount or 0
+
+    return {
+        "total_entries": len(txs),
+        "total_excess": total_excess,
+        "months": dict(month_map),
+    }
 
 
 @app.get("/transactions/{transaction_id}")
