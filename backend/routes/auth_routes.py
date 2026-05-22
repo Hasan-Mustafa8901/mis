@@ -4,17 +4,30 @@ from db.session import get_session
 from schemas.auth import UserCreate, UserLogin, TokenResponse
 from services.auth.auth_service import AuthService
 from sqlmodel import Session, select
-from sqlalchemy.orm import selectinload
-from db.models import User
+from db.models import User, Outlet
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 @router.get("/users")
-def get_users(session: Session = Depends(get_session)):
+def get_users(
+    session: Session = Depends(get_session),
+):
 
-    users = session.exec(select(User).options(selectinload(User.outlet))).all()
+    users = session.exec(select(User)).all()
 
+    # FETCH ALL OUTLETS
+    all_outlets = session.exec(select(Outlet)).all()
+
+    outlet_map = {
+        outlet.id: {
+            "id": outlet.id,
+            "name": outlet.name,
+        }
+        for outlet in all_outlets
+    }
+
+    # RESPONSE
     return [
         {
             "id": user.id,
@@ -23,14 +36,12 @@ def get_users(session: Session = Depends(get_session)):
             "role": (
                 user.role.value if hasattr(user.role, "value") else str(user.role)
             ),
-            "outlet": (
-                {
-                    "id": user.outlet.id,
-                    "name": user.outlet.name,
-                }
-                if user.outlet
-                else None
-            ),
+            "allowed_outlet_ids": (user.allowed_outlet_ids or []),
+            "allowed_outlets": [
+                outlet_map[outlet_id]
+                for outlet_id in (user.allowed_outlet_ids or [])
+                if outlet_id in outlet_map
+            ],
             "is_active": user.is_active,
             "is_logged_in": user.is_logged_in,
             "created_at": user.created_at,

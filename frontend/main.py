@@ -4530,21 +4530,43 @@ async def settings_page():
         # USERS TABLE
         try:
             users = await api_get("/auth/users")
+
         except Exception as e:
-            print("ERROR FETCHING USERS:", e)
-            ui.notify(str(e), type="negative")
+            print(
+                "ERROR FETCHING USERS:",
+                e,
+            )
+
+            ui.notify(
+                str(e),
+                type="negative",
+            )
+
             users = []
 
         row_data = []
 
         for user in users:
+            allowed_outlets = (
+                user.get(
+                    "allowed_outlets",
+                    [],
+                )
+                or []
+            )
+
+            # ADMIN
+            if not allowed_outlets:
+                outlet_display = "All Outlets"
+
+            else:
+                outlet_display = ", ".join(outlet["name"] for outlet in allowed_outlets)
+
             row = {
                 "name": user["name"],
                 "username": user["username"],
-                "outlet_name": (
-                    user["outlet"]["name"] if user.get("outlet") else "All Outlets"
-                ),
-                "role": str(user["role"]).replace("_", " ").title(),
+                "outlet_name": outlet_display,
+                "role": (str(user["role"]).replace("_", " ").title()),
             }
 
             row_data.append(row)
@@ -4569,6 +4591,7 @@ async def settings_page():
                             {
                                 "headerName": "Can View",
                                 "field": "outlet_name",
+                                "wrapText": True,
                             },
                             {
                                 "headerName": "Role",
@@ -4576,6 +4599,7 @@ async def settings_page():
                             },
                         ],
                         "rowData": row_data,
+                        "wrapText": True,
                     }
                 ).classes("w-full h-[500px] ag-theme-alpine")
 
