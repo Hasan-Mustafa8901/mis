@@ -283,9 +283,10 @@
 # REVIEW THIS
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from pydantic import BaseModel
 from datetime import date
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlmodel import Session
+from sqlmodel import Session, select
 from db.session import get_session
 from db.models import MISRecordType, User, UserRole, MISRecord
 from schemas.mis import MISRecordActionPayload
@@ -637,9 +638,13 @@ async def toggle_scanned(
     }
 
 
+class BulkDeletePayload(BaseModel):
+    ids: list[int]
+
+
 @router.delete("/bulk-delete")
 def bulk_delete_mis_records(
-    payload: dict,
+    payload: BulkDeletePayload,
     session: Session = Depends(get_session),
     current_user: User = Depends(
         require_roles(
@@ -649,7 +654,7 @@ def bulk_delete_mis_records(
     ),
 ):
 
-    record_ids = payload.get("record_ids", [])
+    record_ids = payload.ids
 
     if not record_ids:
         raise HTTPException(

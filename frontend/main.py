@@ -281,8 +281,8 @@ async def api_post(path: str, payload: dict):
     return await api_request("POST", path, json=payload)
 
 
-async def api_delete(path: str):
-    return await api_request("DELETE", path)
+async def api_delete(path: str, payload=None):
+    return await api_request("DELETE", path, json=payload)
 
 
 async def api_put(path: str, payload: dict):
@@ -2805,6 +2805,7 @@ async def daily_reporting_page() -> None:
 
     #  Generic detail dialog (Pending & Incomplete)
     _dlg_state: dict = {
+        "selected_ids": None,
         "tt": None,
         "d": None,
         "col": None,
@@ -2839,9 +2840,7 @@ async def daily_reporting_page() -> None:
     def refresh_detail_dialog(rows: list = []) -> None:
 
         _dlg_state["body_el"].clear()
-
         dialog_type = _dlg_state["col"]
-
         stage = _dlg_state["tt"]
 
         TH = (
@@ -2862,6 +2861,7 @@ async def daily_reporting_page() -> None:
         # =========================================================
 
         headers = [
+            ("Select", "30px"),
             ("S.No", "50px"),
             (f"{_dlg_state['tt'].title()} Date", "120px"),
             ("Customer Name", "220px"),
@@ -2959,8 +2959,22 @@ async def daily_reporting_page() -> None:
                     else:
                         for i, row in enumerate(rows):
                             row_bg = "#FFFFFF" if i % 2 == 0 else "#F9FAFB"
-
                             with ui.element("tr").style(f"background:{row_bg}"):
+                                with ui.element("td").style(TD):
+
+                                    async def toggle_selected(
+                                        e,
+                                        rid=row["id"],
+                                    ):
+                                        if e.value:
+                                            _dlg_state["selected_ids"].add(rid)
+                                        else:
+                                            _dlg_state["selected_ids"].discard(rid)
+
+                                    ui.checkbox(
+                                        value=row["id"] in _dlg_state["selected_ids"],
+                                        on_change=toggle_selected,
+                                    )
                                 # S.NO
                                 with ui.element("td").style(
                                     TD + ";font-family:monospace;"
@@ -3044,11 +3058,6 @@ async def daily_reporting_page() -> None:
                                     ui.label(disp_date(row.get("entry_date")) or "—")
 
                                 # INCOMPLETE
-                                print(
-                                    "INCOMLETE :",
-                                    row.get("incomplete"),
-                                    row.get("incomplete_remarks"),
-                                )
                                 with ui.element("td").style(TD):
                                     ui.checkbox(
                                         value=row.get(
@@ -3301,6 +3310,30 @@ async def daily_reporting_page() -> None:
             _dlg_state["count_label"] = dlg_count_label
 
             with ui.row().classes("gap-2"):
+
+                async def bulk_delete_selected():
+
+                    ids = list(_dlg_state["selected_ids"])
+
+                    if not ids:
+                        ui.notify("No records selected", type="warning")
+                        return
+
+                    await api_delete(
+                        "/mis/bulk-delete",
+                        {
+                            "ids": ids,
+                        },
+                    )
+                    ui.notify(f"{len(ids)} records deleted", type="positive")
+                    _dlg_state["selected_ids"].clear()
+                    await _fetch_and_show_dialog()
+                    await reload_current_range()
+
+                ui.button(
+                    "Delete Selected",
+                    on_click=bulk_delete_selected,
+                ).props("color=negative")
 
                 async def export_dialog_excel():
                     title = (
@@ -3558,22 +3591,19 @@ async def daily_reporting_page() -> None:
         apply_dialog_filter()
 
     def open_detail_dialog(row, column, is_footer) -> None:
-
         # STAGE
         stage = "booking" if "files_not_verified" in row else "delivery"
-
         _dlg_state["tt"] = stage
 
         # DATE / COLUMN
         _dlg_state["d"] = row.get("date")
-
         _dlg_state["col"] = column
 
         # Footer Row
         _dlg_state["is_footer"] = is_footer
-
         _dlg_state["start_date"] = rstate.report_from
         _dlg_state["end_date"] = rstate.report_to
+        _dlg_state["selected_ids"] = set()
 
         # TITLE MAP
         title_map = {

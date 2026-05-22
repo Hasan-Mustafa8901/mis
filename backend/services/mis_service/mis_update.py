@@ -295,6 +295,12 @@ class MISUpdateService:
 
         for record in records:
             session.delete(record)
+            MISUploadService.sync_single_daily_summary(
+                session=session,
+                outlet_id=record.outlet_id,
+                record_date=record.record_date,
+                record_type=record.type,
+            )
 
         session.commit()
 
