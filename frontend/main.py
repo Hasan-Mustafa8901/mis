@@ -107,7 +107,7 @@ BOOKING_CHECK_KEYS = [
 ]
 
 # date_regex = re.compile(r"^(0[1-9]|[12][0-9]|3[01])\-(0[1-9]|1[0-2])\-\d{4}$")
-vin_regex = re.compile(r"^[A-HJ-NPR-Z0-9]{13}[0-9]{4}$")  # for TATA OEM
+vin_regex = re.compile(r"^[a-zA-Z]{3}\d{6}[a-zA-Z]{3}\d{5}$")  # for TATA OEM
 regn_regex = re.compile(r"^[A-Z]{2}\d{2}[A-Z]{2}\d{4}$")
 bharat_regex = re.compile(r"^\d{2}BH\d{4}[A-Z]{2}$")
 
@@ -7002,6 +7002,9 @@ def attach_form_handlers(state):
     if getattr(state, "total_discount_booking", None):
         state.total_discount_booking.on_value_change(live_update)
 
+    if getattr(state, "other_discount_delivery", None):
+        state.other_discount_delivery.on_value_change(live_update)
+
     if getattr(state, "adjustment_input", None):
         state.adjustment_input.on_value_change(live_update)
 
@@ -7414,7 +7417,8 @@ def _fs_update_live(state) -> None:
             )
         )
     )
-
+    print("OTHER DISCOUNT DELIVERY:", parsed_val(state.other_discount_delivery))
+    print("OTHER DISCOUNT Booking:", parsed_val(state.total_discount_booking))
     total_discount_given = int(
         total_diff
         + acc_diff
@@ -7427,16 +7431,16 @@ def _fs_update_live(state) -> None:
                 )
             )
         )
-        + total_given_discount
         + int(
             parsed_val(
                 getattr(
                     state,
-                    "total_discount_delivery",
+                    "other_discount_delivery",
                     None,
                 )
             )
         )
+        + total_given_discount
         - adjustment
     )
 

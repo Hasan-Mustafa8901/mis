@@ -1,8 +1,9 @@
-from sqlmodel import Session
+from sqlmodel import Session, select
+from fastapi import HTTPException
 from db.models import MISRecord
 from services.ingestion.mis_record import MISUploadService
 from services.utils import get_ist_now
-from datetime import datetime, date
+from datetime import datetime
 
 
 class MISUpdateService:
@@ -22,7 +23,7 @@ class MISUpdateService:
         if not record:
             raise ValueError("MISRecord not found")
         if receiving_date:
-            if isinstance("receiving_date", str):
+            if isinstance(receiving_date, str):
                 receiving_date = datetime.strptime(receiving_date, r"%Y-%m-%d")
         else:
             receiving_date = get_ist_now()
@@ -267,3 +268,37 @@ class MISUpdateService:
             record_date=record.record_date,
             record_type=record.type,
         )
+
+    @staticmethod
+    def delete_records(
+        session: Session,
+        record_ids: list[int],
+    ):
+
+        if not record_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="No record ids provided",
+            )
+
+        records = session.exec(
+            select(MISRecord).where(MISRecord.id.in_(record_ids))
+        ).all()
+
+        if not records:
+            raise HTTPException(
+                status_code=404,
+                detail="No records found",
+            )
+
+        deleted_count = len(records)
+
+        for record in records:
+            session.delete(record)
+
+        session.commit()
+
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+        }
