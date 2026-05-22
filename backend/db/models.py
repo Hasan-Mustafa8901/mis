@@ -103,7 +103,7 @@ class User(SQLModel, table=True):
     username: str = Field(unique=True)
     password_hash: str
     # Old Field for transition
-    outlet_id: Optional[int] = Field(foreign_key="outlet.id")
+    outlet_id: Optional[int] = Field(default=None, foreign_key="outlet.id")
     role: UserRole = Field(default=UserRole.AUDIT_ASST, index=True)
 
     # NEW FIELD

@@ -84,7 +84,7 @@ def set_user(data: dict):
             "id": data["id"],
             "name": data["name"],
             "role": [data["role"]],
-            "outlet_id": data["outlet_id"],
+            "allowed_outlet_ids": data["allowed_outlet_ids"],
         }
     )
 

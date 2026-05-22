@@ -4224,9 +4224,13 @@ async def daily_reporting_page() -> None:
                         status_label.classes("text-green-600")
 
                     except Exception as ex:
-                        status_label.text = f"❌ {str(ex)}"
+                        print("Error While EBD UPLOADING: ", str(ex))
+                        if "500" in str(ex).strip():
+                            status_label.text = "❌ Server Side Error Contact Admin"
+                        elif "422" in str(ex).strip():
+                            status_label.text = "❌ Have Selected a Showroom? If not, please select and try again."
 
-                        status_label.classes("text-red-500")
+                        status_label.classes("text-red-500 text-lg fold-bold")
 
                 ui.upload(
                     label="Upload EBD Data",
@@ -4369,118 +4373,98 @@ async def settings_page():
                     )
 
                     # MULTI OUTLET SELECT
-                    selected_outlet_ids: set[int] = set()
-                    outlet_checkboxes = []
                     ui.label("Allowed Showrooms").classes(
-                        "text-sm font-medium text-gray-700"
+                        "text-sm font-medium text-gray-700 mt-2"
                     )
+
+                    outlet_checkboxes = []
+
                     with ui.card().classes(
-                        "w-[500px] max-h-[250px] overflow-auto border rounded-lg p-3"
+                        "w-[500px] max-h-[260px] overflow-auto border rounded-lg p-3"
                     ):
-                        for outlet in outlets:
-                            outlet_id = outlet["id"]
+                        print(outlets)
+                        for outlet_data in outlets:
+                            checkbox = ui.checkbox(outlet_data["name"])
 
-                            outlet_name = outlet["name"]
-
-                            checkbox = ui.checkbox(outlet_name)
-
-                            outlet_checkboxes.append(checkbox)
-
-                            def on_change(
-                                e,
-                                oid=outlet_id,
-                            ):
-
-                                if e.value:
-                                    selected_outlet_ids.add(oid)
-
-                                else:
-                                    selected_outlet_ids.discard(oid)
-
-                            checkbox.on_value_change(on_change)
+                            outlet_checkboxes.append(
+                                {
+                                    "id": outlet_data["id"],
+                                    "checkbox": checkbox,
+                                }
+                            )
 
                     # ROLE CHANGE
                     def on_role_change(e):
-
-                        # ADMIN
                         if e.value == "Admin":
-                            allowed_outlets.value = []
+                            for item in outlet_checkboxes:
+                                item["checkbox"].value = False
+                                item["checkbox"].disable()
 
-                            allowed_outlets.disable()
-
-                        # OTHER ROLES
                         else:
-                            allowed_outlets.enable()
-
-                    role.on_value_change(on_role_change)
+                            for item in outlet_checkboxes:
+                                item["checkbox"].enable()
 
                     # ACTIONS
                     with ui.row().classes("gap-3 mt-4"):
 
                         async def handle_register():
+                            selected_outlet_ids = [
+                                item["id"]
+                                for item in outlet_checkboxes
+                                if item["checkbox"].value
+                            ]
                             # VALIDATION
                             if not name.value or not password.value:
-                                ui.notify(
-                                    "Name and Password required",
-                                    type="negative",
-                                )
-
+                                ui.notify("Name and Password required", type="negative")
                                 return
+                            if not username.value:
+                                ui.notify("Username required", type="negative")
+                                return
+
                             if not role.value:
+                                ui.notify("Role is required", type="negative")
+                                return
+
+                            if role.value != "Admin" and not selected_outlet_ids:
                                 ui.notify(
-                                    "Role is required",
-                                    type="negative",
+                                    "At least one showroom is required", type="negative"
                                 )
 
                                 return
-
-                            if role.value != "Admin" and not allowed_outlets.value:
-                                ui.notify(
-                                    "At least one showroom is required",
-                                    type="negative",
-                                )
-
-                                return
-
-                            # BUILD OUTLET IDS
-                            selected_outlet_ids = []
-
-                            if role.value != "Admin":
-                                selected_outlet_ids = [
-                                    get_id_by_name(
-                                        outlets,
-                                        outlet_name,
-                                    )
-                                    for outlet_name in (allowed_outlets.value or [])
-                                ]
-
-                                # remove invalid
-                                selected_outlet_ids = [
-                                    oid
-                                    for oid in selected_outlet_ids
-                                    if oid is not None
-                                ]
 
                             # PAYLOAD
                             payload = {
-                                "name": (name.value.strip()),
-                                "username": (username.value),
-                                "password": (password.value),
+                                "name": name.value.strip(),
+                                "username": username.value.strip(),
+                                "password": password.value,
                                 "role": (role.value.replace(" ", "_").lower()),
                                 "allowed_outlet_ids": (
                                     [] if role.value == "Admin" else selected_outlet_ids
                                 ),
                             }
 
+                            print(payload)
+
                             try:
-                                await api_post("/auth/register", payload)
-                                ui.notify("User created successfully", type="positive")
+                                await api_post(
+                                    "/auth/register",
+                                    payload,
+                                )
+
+                                ui.notify(
+                                    "User created successfully",
+                                    type="positive",
+                                )
+
                                 # RESET FORM
                                 name.value = ""
                                 username.value = ""
                                 password.value = ""
                                 role.value = None
-                                allowed_outlets.value = []
+
+                                for item in outlet_checkboxes:
+                                    item["checkbox"].value = False
+                                    item["checkbox"].enable()
 
                             except httpx.HTTPStatusError as e:
                                 try:
@@ -4489,13 +4473,22 @@ async def settings_page():
                                 except Exception:
                                     error_detail = e.response.text
 
-                                ui.notify(f"Error: {error_detail}", type="negative")
+                                ui.notify(
+                                    f"Error: {error_detail}",
+                                    type="negative",
+                                )
 
                             except httpx.ConnectError:
-                                ui.notify("Server unreachable", type="negative")
+                                ui.notify(
+                                    "Server unreachable",
+                                    type="negative",
+                                )
 
                             except Exception as e:
-                                ui.notify(str(e), type="negative")
+                                ui.notify(
+                                    str(e),
+                                    type="negative",
+                                )
 
                         ui.button("Create User", on_click=handle_register).classes(
                             "bg-[#E8402A] text-white px-4 py-2 rounded-md"
@@ -4508,7 +4501,14 @@ async def settings_page():
                                 setattr(username, "value", ""),
                                 setattr(password, "value", ""),
                                 setattr(role, "value", None),
-                                setattr(allowed_outlets, "value", []),
+                                [
+                                    setattr(
+                                        item["checkbox"],
+                                        "value",
+                                        False,
+                                    )
+                                    for item in outlet_checkboxes
+                                ],
                             ],
                         ).props("outline")
 
@@ -4530,8 +4530,6 @@ async def settings_page():
         # USERS TABLE
         try:
             users = await api_get("/auth/users")
-            print("USERS:", users)
-
         except Exception as e:
             print("ERROR FETCHING USERS:", e)
             ui.notify(str(e), type="negative")
@@ -6997,7 +6995,6 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 position="top-right",
                 timeout=2500,
             )
-        print("LISTED PRICES FROM PREVIEW: ", state.listed_prices)
 
     except Exception as e:
         print("ERROR: in preloading the price list: ", e)

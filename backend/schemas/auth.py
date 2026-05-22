@@ -7,8 +7,8 @@ class UserCreate(BaseModel):
     name: str
     username: str
     password: str
-    outlet_id: int | None = None
-    role: str = "auditor"
+    allowed_outlet_ids: list[int] = []
+    role: str = "audit_assistant"
 
 
 class UserLogin(BaseModel):
@@ -22,4 +22,4 @@ class TokenResponse(BaseModel):
     id: int
     name: str
     role: str | UserRole
-    outlet_id: int | None
+    allowed_outlet_ids: list[int]

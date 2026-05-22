@@ -40,21 +40,26 @@ def get_users(session: Session = Depends(get_session)):
 
 
 @router.post("/register")
-def register(payload: UserCreate, session: Session = Depends(get_session)):
+def register(
+    payload: UserCreate,
+    session: Session = Depends(get_session),
+):
+    print("\n\n\nREGISTER PAYLOAD: ", payload, "\n\n\n")
     user = AuthService.register(
-        session,
-        payload.name,
-        payload.username,
-        payload.password,
-        payload.role,
-        payload.outlet_id,
+        session=session,
+        name=payload.name,
+        username=payload.username,
+        password=payload.password,
+        role=payload.role,
+        allowed_outlet_ids=payload.allowed_outlet_ids,
     )
+
     return {
         "id": user.id,
         "name": user.name,
         "username": user.username,
         "role": user.role,
-        "outlet_id": user.outlet_id,
+        "allowed_outlet_ids": (user.allowed_outlet_ids),
     }
 
 

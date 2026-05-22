@@ -28,23 +28,31 @@ class AuthService:
         username: str,
         password: str,
         role: str,
-        outlet_id: int | None = None,
+        allowed_outlet_ids: list[int] | None = None,
     ):
-        existing = session.exec(select(User).where(User.name == name)).first()
+
+        existing = session.exec(select(User).where(User.username == username)).first()
+
         if existing:
-            raise HTTPException(status_code=400, detail="User already exists")
-
+            raise HTTPException(
+                status_code=400,
+                detail="User already exists",
+            )
         hashed = AuthService.hash_password(password)
-
         user_role = UserRole(role)
+
+        # ADMIN SHOULD NEVER HAVE OUTLET RESTRICTIONS
+        if user_role == UserRole.ADMIN:
+            allowed_outlet_ids = []
 
         user = User(
             name=name,
             username=username,
             password_hash=hashed,
             role=user_role,
-            outlet_id=outlet_id,
+            allowed_outlet_ids=(allowed_outlet_ids or []),
         )
+
         session.add(user)
         session.commit()
         session.refresh(user)
@@ -64,7 +72,7 @@ class AuthService:
             "access_token": token,
             "id": user.id,
             "name": user.name,
-            "outlet_id": user.outlet_id,
+            "allowed_outlet_ids": user.allowed_outlet_ids,
             "role": UserRole(user.role),
         }
 
