@@ -2856,10 +2856,7 @@ async def daily_reporting_page() -> None:
         )
         INPUT_CELL_STYLE = "w-full item-center no-wrap gap-2"
 
-        # =========================================================
         # COMMON HEADERS
-        # =========================================================
-
         headers = [
             ("Select", "30px"),
             ("S.No", "50px"),
@@ -2912,10 +2909,7 @@ async def daily_reporting_page() -> None:
                 ]
             )
 
-        # =========================================================
         # TABLE
-        # =========================================================
-
         with _dlg_state["body_el"]:
             with (
                 ui.element("table")
