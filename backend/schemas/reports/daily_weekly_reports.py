@@ -1,6 +1,5 @@
 # services/reports/daily/schemas.py
 
-from datetime import date
 from pydantic import BaseModel, Field
 
 
@@ -70,9 +69,7 @@ class PendingDocRow(BaseModel):
     name: str
     mobile: str | None = None
     tl: str | None = None
-    # =====================================
     # COMMON DOC STATUS FIELDS
-    # =====================================
     kyc: str | None = None
     vehicle: str | None = None
     quotation: str | None = None

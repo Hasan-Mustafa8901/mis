@@ -4315,31 +4315,37 @@ async def daily_reporting_page() -> None:
 @require_roles("admin")
 async def settings_page():
 
-    def get_id_by_name(iter: list[dict], name: str) -> int | None:
-        for o in iter:
-            if o["name"] == name:
-                return o["id"]
+    def get_id_by_name(items: list[dict], name: str) -> int | None:
+        for item in items:
+            if item["name"] == name:
+                return item["id"]
+
         return None
 
+    # FETCH MASTER DATA
     dealers = await api_get("/complaints/dealerships")
     outlets = await api_get("/outlets")
     outlet_names = [o["name"] for o in outlets]
     dealer_names = [d["name"] for d in dealers]
 
+    # PAGE
     render_topbar("Settings")
+
     with ui.column().classes("w-full"):
         with ui.card().classes(
             "max-w-[1100px] mx-auto p-8 w-full shadow-sm rounded-xl mt-6"
         ):
             ui.label("Register New Users").classes("text-xl font-bold mb-4")
+
             with ui.row().classes("w-full gap-6"):
-                # LEFT: FORM
-                with ui.column().classes("flex-1 gap-4 "):
+                # LEFT FORM
+                with ui.column().classes("flex-1 gap-4"):
                     name = (
                         ui.input("Full Name")
                         .props("outlined dense")
                         .classes("w-[500px]")
                     )
+
                     username = (
                         ui.input("User Name")
                         .props("outlined dense")
@@ -4347,80 +4353,139 @@ async def settings_page():
                     )
 
                     password = (
-                        ui.input("Password", password=True, password_toggle_button=True)
+                        ui.input(
+                            "Password",
+                            password=True,
+                            password_toggle_button=True,
+                        )
                         .props("outlined dense")
                         .classes("w-[500px]")
                     )
-
-                    def on_role_change(e):
-                        if e.value == "Admin":
-                            outlet.value = None
-                            outlet.disable()
-                        else:
-                            outlet.enable()
 
                     role = (
-                        ui.select(
-                            ["Admin", "Client", "Audit Assistant"],
-                            label="Role",
-                        )
+                        ui.select(["Admin", "Client", "Audit Assistant"], label="Role")
                         .props("outlined dense")
                         .classes("w-[500px]")
                     )
+
+                    # MULTI OUTLET SELECT
+                    selected_outlet_ids: set[int] = set()
+                    outlet_checkboxes = []
+                    ui.label("Allowed Showrooms").classes(
+                        "text-sm font-medium text-gray-700"
+                    )
+                    with ui.card().classes(
+                        "w-[500px] max-h-[250px] overflow-auto border rounded-lg p-3"
+                    ):
+                        for outlet in outlets:
+                            outlet_id = outlet["id"]
+
+                            outlet_name = outlet["name"]
+
+                            checkbox = ui.checkbox(outlet_name)
+
+                            outlet_checkboxes.append(checkbox)
+
+                            def on_change(
+                                e,
+                                oid=outlet_id,
+                            ):
+
+                                if e.value:
+                                    selected_outlet_ids.add(oid)
+
+                                else:
+                                    selected_outlet_ids.discard(oid)
+
+                            checkbox.on_value_change(on_change)
+
+                    # ROLE CHANGE
+                    def on_role_change(e):
+
+                        # ADMIN
+                        if e.value == "Admin":
+                            allowed_outlets.value = []
+
+                            allowed_outlets.disable()
+
+                        # OTHER ROLES
+                        else:
+                            allowed_outlets.enable()
+
                     role.on_value_change(on_role_change)
 
-                    outlet = (
-                        (
-                            ui.select(
-                                options=outlet_names,
-                                label="Showroom",
-                                value=None,
-                            )
-                        )
-                        .props("outlined dense")
-                        .classes("w-[500px]")
-                    )
                     # ACTIONS
                     with ui.row().classes("gap-3 mt-4"):
 
                         async def handle_register():
+                            # VALIDATION
                             if not name.value or not password.value:
-                                ui.notify("Name and Password required", type="negative")
-                                return
+                                ui.notify(
+                                    "Name and Password required",
+                                    type="negative",
+                                )
 
+                                return
                             if not role.value:
-                                ui.notify("Role is required", type="negative")
-                                return
-                            if role.value != "Admin" and not outlet.value:
-                                ui.notify("Showroom is required.", type="negative")
+                                ui.notify(
+                                    "Role is required",
+                                    type="negative",
+                                )
+
                                 return
 
+                            if role.value != "Admin" and not allowed_outlets.value:
+                                ui.notify(
+                                    "At least one showroom is required",
+                                    type="negative",
+                                )
+
+                                return
+
+                            # BUILD OUTLET IDS
+                            selected_outlet_ids = []
+
+                            if role.value != "Admin":
+                                selected_outlet_ids = [
+                                    get_id_by_name(
+                                        outlets,
+                                        outlet_name,
+                                    )
+                                    for outlet_name in (allowed_outlets.value or [])
+                                ]
+
+                                # remove invalid
+                                selected_outlet_ids = [
+                                    oid
+                                    for oid in selected_outlet_ids
+                                    if oid is not None
+                                ]
+
+                            # PAYLOAD
                             payload = {
-                                "name": name.value.strip(),
-                                "username": username.value,
-                                "password": password.value,
-                                "role": role.value.replace(" ", "_").lower(),
-                                "outlet_id": None
-                                if role.value == "Admin"
-                                else get_id_by_name(outlets, outlet.value),
+                                "name": (name.value.strip()),
+                                "username": (username.value),
+                                "password": (password.value),
+                                "role": (role.value.replace(" ", "_").lower()),
+                                "allowed_outlet_ids": (
+                                    [] if role.value == "Admin" else selected_outlet_ids
+                                ),
                             }
 
                             try:
                                 await api_post("/auth/register", payload)
-
                                 ui.notify("User created successfully", type="positive")
-
-                                # Reset form
+                                # RESET FORM
                                 name.value = ""
                                 username.value = ""
                                 password.value = ""
                                 role.value = None
-                                outlet.value = None
+                                allowed_outlets.value = []
 
                             except httpx.HTTPStatusError as e:
-                                # Backend validation / known errors
                                 try:
                                     error_detail = e.response.json()
+
                                 except Exception:
                                     error_detail = e.response.text
 
@@ -4440,34 +4505,29 @@ async def settings_page():
                             "Reset",
                             on_click=lambda: [
                                 setattr(name, "value", ""),
+                                setattr(username, "value", ""),
                                 setattr(password, "value", ""),
                                 setattr(role, "value", None),
-                                setattr(outlet, "value", None),
+                                setattr(allowed_outlets, "value", []),
                             ],
                         ).props("outline")
 
-                # RIGHT: INFO PANEL (professional touch)
+                # RIGHT PANEL
                 with ui.column().classes(
                     "w-[280px] bg-gray-50 rounded-lg p-4 border text-sm text-gray-600"
                 ):
                     ui.label("Guidelines").classes("font-semibold text-gray-800 mb-2")
-
                     ui.label("• Use a unique username")
                     ui.label("• Assign correct role carefully")
-                    ui.label("• Outlet determines data visibility")
+                    ui.label("• Showroom assignment controls visibility")
+                    ui.label("• Multiple showrooms supported")
                     ui.label("• Password should be secure")
-
                     ui.separator()
-
                     ui.label("Roles").classes("font-semibold mt-2 text-gray-800")
                     ui.label("Admin → Full access")
-                    ui.label("Audit Assistant → For Audit Assistant")
-                    ui.label("Client → For Dealership Owners")
-
-        # =========================
+                    ui.label("Client → Dealership access")
+                    ui.label("Audit Assistant → Assigned showroom access")
         # USERS TABLE
-        # =========================
-
         try:
             users = await api_get("/auth/users")
             print("USERS:", users)
@@ -8711,6 +8771,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY,
-        reload=False,  # make false at the time of deployement
+        reload=True,  # make false at the time of deployement
         port=3000,
     )
