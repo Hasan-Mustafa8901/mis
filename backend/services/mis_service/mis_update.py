@@ -21,8 +21,12 @@ class MISUpdateService:
 
         if not record:
             raise ValueError("MISRecord not found")
-        if isinstance(receiving_date, str):
-            receiving_date = datetime.strptime(receiving_date, r"%Y-%m-%d")
+        if receiving_date:
+            if isinstance("receiving_date", str):
+                receiving_date = datetime.strptime(receiving_date, r"%Y-%m-%d")
+        else:
+            receiving_date = get_ist_now()
+
         # CHECKED
         if value:
             record.received = True

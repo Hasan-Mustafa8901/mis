@@ -159,6 +159,42 @@ ui.add_head_html(
     shared=True,
 )
 
+ui.add_head_html(
+    """
+<style>
+
+.ag-header-cell-label {
+    justify-content: center !important;
+}
+
+.ag-header-cell-text {
+    text-align: center !important;
+    width: 100%;
+}
+
+</style>
+""",
+    shared=True,
+)
+
+ui.add_head_html(
+    """
+<style>
+
+.ag-header-cell-label {
+    justify-content: center !important;
+}
+
+.ag-header-cell-text {
+    text-align: center !important;
+    width: 100%;
+}
+
+</style>
+""",
+    shared=True,
+)
+
 
 # API HELPERS
 def get_auth_headers():
@@ -511,6 +547,13 @@ def login_page():
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
 
+DATE_COLUMNS = {
+    "booking_date",
+    "delivery_date",
+    "created_at",
+}
+
+
 # MIS TABLE RENDERING & HELPER METHODS
 def build_ordered_columns(row: dict, stage: str = "combined"):
     """
@@ -527,24 +570,43 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
     # 1. Core info
     ordered += [
         "id",
+        "booking_date",
+        # add booking status
+        "audit_observations",
+        "sales_executive_name",
         "customer_name",
         "mobile_number",
         "variant_name",
-        "booking_date",
+        "status",
     ]
     if stage == "delivery":
-        ordered.append("delivery_date")
+        ordered.insert(2, "delivery_date")
 
     # 2. Price components
-    ordered += pick("Ex ") + pick("Insurance") + pick("Registration")
+    ordered += (
+        pick("Ex")
+        + pick("Insurance")
+        + pick("Registration")
+        + pick("AMC")
+        + pick("Extended")
+        + pick("FasTag")
+        + pick("TCS")
+    )
 
     # 3. Discount components
     ordered += [k for k in keys if "_actual" in k and "Discount" in k]
+    ordered += (
+        pick("Additional for")
+        + pick("Additional Loyalty")
+        + pick("Micro")
+        + pick("SBI")
+        + pick("Power")
+        + pick("Shop")
+        + pick("Alliance")
+        + pick("Green")
+    )
 
     # 4. Allowed + diff (keep near actual)
-
-    # 5. Conditions
-    ordered += pick("cond_")
 
     # 6. Accessories / finance / exchange
     ordered += pick("accessories_")
@@ -569,7 +631,6 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "total_actual_discount",
         "total_allowed_discount",
         "total_excess_discount",
-        "status",
     ]
 
     # remove duplicates + preserve order
@@ -586,10 +647,39 @@ def clear_label(column_name: str):
     return (
         column_name.replace("_", " ")
         .replace("actual", "(Actual)")
-        .replace("allowed", "(Allowed)")
+        .replace("allowed", "(Listed)")
         .replace("diff", "(Diff)")
         .title()
     )
+
+
+def should_center_column(
+    key: str,
+) -> bool:
+
+    key = key.lower()
+
+    # Do not center numeric/currency columns
+    if any(
+        pattern in key
+        for pattern in (
+            "amount",
+            "price",
+            "discount",
+            "received",
+            "balance",
+            "excess",
+            "payment",
+            "invoice",
+            "receivable",
+            "allowed",
+            "actual",
+            "diff",
+        )
+    ):
+        return False
+
+    return True
 
 
 def render_table(transactions, state, stage: str = "booking"):
@@ -610,11 +700,23 @@ def render_table(transactions, state, stage: str = "booking"):
 
     for t in transactions:
         t["Delivered"] = "Yes" if t.get("stage") == "delivery" else "No"
+        for key in DATE_COLUMNS:
+            if key in t:
+                t[key] = disp_date(t.get(key))
 
     ordered_keys = build_ordered_columns(transactions[0], stage=stage)
 
+    if "id" in ordered_keys:
+        ordered_keys.remove("id")
+
+    for idx, t in enumerate(transactions, start=1):
+        t["serial_no"] = idx
+
+    if "serial_no" not in ordered_keys:
+        ordered_keys.insert(0, "serial_no")
+
     if "Delivered" not in ordered_keys:
-        ordered_keys.insert(6, "Delivered")
+        ordered_keys.insert(3, "Delivered")
 
     NUMERIC_KEYS = {
         k
@@ -623,6 +725,7 @@ def render_table(transactions, state, stage: str = "booking"):
             tok in k
             for tok in (
                 "_actual",
+                "_allowed",
                 "total_",
                 "price",
                 "amount",
@@ -635,24 +738,26 @@ def render_table(transactions, state, stage: str = "booking"):
         )
     }
     pin_cols = {
-        "id",
-        "customer_name",
-        "mobile_number",
-        "variant_name",
+        "serial_no",
         "booking_date",
-        "delivery_date",
+        # "audit_observations",
         "Delivered",
+        # "sales_executive_name",
+        "customer_name",
+        # "mobile_number",
+        # "variant_name",
+        "delivery_date",
     }
 
     # Define custom widths for specific columns (optional)
     CUSTOM_WIDTHS = {
-        "id": 10,
-        "customer_name": 100,
-        "mobile_number": 100,
-        "variant_name": 100,
-        "booking_date": 100,
-        "delivery_date": 100,
-        "Delivered": 90,
+        "serial_no": 80,
+        "customer_name": 150,
+        "mobile_number": 150,
+        "variant_name": 200,
+        "booking_date": 115,
+        "delivery_date": 110,
+        "Delivered": 100,
     }
 
     col_defs = []
@@ -661,7 +766,7 @@ def render_table(transactions, state, stage: str = "booking"):
         {
             "headerCheckboxSelection": True,
             "checkboxSelection": True,
-            "width": 10,
+            "width": 20,
             "pinned": "left",
             "filter": False,
         },
@@ -676,26 +781,82 @@ def render_table(transactions, state, stage: str = "booking"):
             "filter": "agNumberColumnFilter" if is_num else "agTextColumnFilter",
         }
 
+        if key == "serial_no":
+            col["headerName"] = "S.No."
+        elif key == "discount_booking":
+            col["headerName"] = "Other Discount at booking"
+
+        if key in pin_cols:
+            col["pinned"] = "left"
+
         if key in CUSTOM_WIDTHS:
             col["width"] = CUSTOM_WIDTHS[key]
 
         if is_num:
-            col[":valueFormatter"] = (
-                "params.value != null"
-                " ? '₹' + Number(params.value).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})"
-                " : '—'"
-            )
+            col[":valueFormatter"] = """
+            (params) => {
+                if (
+                    params.value === null ||
+                    params.value === undefined ||
+                    params.value === ''
+                ) {
+                    return '—';
+                }
+
+                return '₹' + Number(params.value)
+                    .toLocaleString('en-IN');
+            }
+            """
+
             col["type"] = "numericColumn"
 
         if is_status:
-            col[":cellStyle"] = (
-                "params.value === 'Excess'"
-                " ? {background:'#FEE2E2', color:'#991B1B', fontWeight:'600', borderRadius:'4px'}"
-                " : {background:'#D1FAE5', color:'#065F46', fontWeight:'600', borderRadius:'4px'}"
+            col[":cellStyle"] = """
+            (params) => {
+
+                if (params.value === 'Excess Discount') {
+
+                    return {
+                        background: '#FEE2E2',
+                        color: '#991B1B',
+                        fontWeight: '600',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                    };
+                }
+
+                return {
+                    background: '#D1FAE5',
+                    color: '#065F46',
+                    fontWeight: '600',
+                    borderRadius: '4px',
+                    textAlign: 'center',
+                };
+            }
+            """
+        if is_num:
+            existing_style = col.get(
+                "cellStyle",
+                {},
             )
 
-        if key in pin_cols:
-            col["pinned"] = "left"
+            col["cellStyle"] = {
+                **existing_style,
+                "justifyContent": "flex-end",
+                "textAlign": "right",
+            }
+
+        elif should_center_column(key):
+            existing_style = col.get(
+                "cellStyle",
+                {},
+            )
+
+            col["cellStyle"] = {
+                **existing_style,
+                "justifyContent": "center",
+                "textAlign": "center",
+            }
 
         col_defs.append(col)
 
@@ -706,11 +867,20 @@ def render_table(transactions, state, stage: str = "booking"):
                 "rowData": transactions,
                 "defaultColDef": {
                     "flex": 0,
-                    "minWidth": 70,
                     "sortable": True,
                     "filter": True,
                     "floatingFilter": True,
                     "resizable": True,
+                    "wrapHeaderText": True,
+                    "autoHeaderHeight": True,
+                    "wrapText": True,
+                    "autoHeight": True,
+                    "headerClass": "ag-center-header",
+                    "cellStyle": {
+                        "display": "flex",
+                        "alignItems": "center",
+                        "lineHeight": "18px",
+                    },
                 },
                 "domLayout": "normal",
                 "suppressColumnVirtualization": False,
@@ -719,13 +889,13 @@ def render_table(transactions, state, stage: str = "booking"):
                 # "paginationPageSize": 25,
                 "rowSelection": "multiple",
                 "suppressRowClickSelection": True,
-                "rowHeight": 30,
+                "rowHeight": 38,
                 "suppressCellFocus": True,
             },
-            theme="balham",
+            theme="alpine",
             auto_size_columns=False,
         )
-        .classes("w-full h-100")
+        .classes("w-full h-130")
         .style("font-family:Inter,sans-serif;font-size:13px;")
     )
     state.grid = grid
@@ -1887,6 +2057,7 @@ async def load_master_data(mstate):
     mstate.outlets = await api_get("/outlets")
 
 
+# PAGE: MIS TABLES (Booking & Delivery)
 # PAGE: MIS TABLES (Booking & Delivery)
 async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
@@ -4199,13 +4370,11 @@ async def daily_reporting_page() -> None:
 
                 async def handle_mis_upload(e):
                     try:
-                        print(rstate.outlet_select.value)
                         status_label.text = "Uploading..."
                         status_label.classes("text-blue-500")
                         payload = {
                             "outlet_id": rstate.outlet_select.value,  # temporarily make it 1 change it later
                         }
-                        print(payload)
                         response = await api_post_file(
                             "/mis/upload-ebd",
                             e,
@@ -5545,14 +5714,12 @@ async def hydrate_vehicle_section(
 
     try:
         car_id = txn.get("car_id")
-
         variant_id = txn.get("variant_id")
-
         outlet_id = txn.get("outlet_id")
-
         exec_id = txn.get("sales_executive_id")
-
         delivery_date = txn.get("delivery_date")
+        registration_date = txn.get("registration_date")
+        registration_number = txn.get("registration_number")
 
         # CAR
         if car_id:
@@ -5582,6 +5749,10 @@ async def hydrate_vehicle_section(
         # Delivery Date
         if delivery_date:
             state.delivery_date.set_value(delivery_date)
+        if registration_date:
+            state.regn_date.set_value(registration_date)
+        if registration_number:
+            state.vehicle_regn_no.set_value(registration_number)
 
     finally:
         state.is_hydrating = False
@@ -5593,7 +5764,7 @@ FORM_COLUMNS = 3
 
 
 def build_vehicle_section(state: FormState) -> None:
-
+    print("CALLED build_vehicle_section")
     car_opts = {
         car["id"]: car["name"]
         for car in sorted(state.cars, key=lambda x: x["name"].lower())
@@ -6470,8 +6641,13 @@ def build_invoice_section(
                 label_text=("Ex-Showroom Price (From Price List)")
             )
             state.invoice_ex_showroom.props("readonly")
-            state.invoice_discount = accounting_input(label_text="Discount")
-            state.invoice_taxable_value = accounting_input(label_text="Taxable Value")
+            state.invoice_discount = accounting_input(
+                label_text="Discount", placeholder="Enter Discount or Concession"
+            )
+            state.invoice_taxable_value = accounting_input(
+                label_text="Taxable Value",
+                placeholder="Enter taxable value or cost of vehicle",
+            )
             state.invoice_cgst = accounting_input(label_text="CGST")
             state.invoice_sgst = accounting_input(label_text="SGST")
             state.igst_toggle = ui.switch("Apply IGST").props("dense")
@@ -6862,14 +7038,14 @@ def attach_form_handlers(state):
 def attach_invoice_handlers(
     state: FormState,
 ):
-    taxable = getattr(state, "invoice_taxable_value", None)
+    # taxable = getattr(state, "invoice_taxable_value", None)
     invoice_igst = getattr(state, "invoice_igst", None)
     invoice_cess = getattr(state, "invoice_cess", None)
     igst_toggle = getattr(state, "igst_toggle", None)
     cess_toggle = getattr(state, "cess_toggle", None)
-
-    if taxable:
-        taxable.on_value_change(lambda e: calculate_invoice_taxes(state))
+    # Not Live calculating taxes, might do in future
+    # if taxable:
+    #     taxable.on_value_change(lambda e: calculate_invoice_taxes(state))
 
     if invoice_igst:
         invoice_igst.on_value_change(lambda e: calculate_invoice_total(state))
@@ -7021,9 +7197,9 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 position="top-right",
                 timeout=2500,
             )
-
     except Exception as e:
         print("ERROR: in preloading the price list: ", e)
+        ui.notify("Price List not fetched", type="negative")
         pass  # best-effort; silently skip if endpoint missing
 
 
@@ -7048,25 +7224,19 @@ def calculate_invoice_total(
 ):
 
     taxable = parsed_val(state.invoice_taxable_value)
-
     cgst = parsed_val(state.invoice_cgst)
-
     sgst = parsed_val(state.invoice_sgst)
-
     igst = (
         parsed_val(state.invoice_igst)
         if state.igst_toggle and state.igst_toggle.value
         else 0
     )
-
     cess = (
         parsed_val(state.invoice_cess)
         if state.cess_toggle and state.cess_toggle.value
         else 0
     )
-
     total = taxable + cgst + sgst + igst + cess
-
     if state.invoice_total:
         state.invoice_total.set_value(format_num_inr(total))
 
@@ -7074,7 +7244,7 @@ def calculate_invoice_total(
 def calculate_invoice_taxes(
     state: FormState,
 ):
-
+    # Currently, this method is not used, DO NOT DELETE IT, we might need it in future
     taxable = parsed_val(state.invoice_taxable_value)
 
     cgst = taxable * 0.09
@@ -7746,7 +7916,7 @@ async def load_transaction(state: FormState):
         print("ERROR: in loading the transaction: ", str(e))
 
         ui.notify(
-            "Failed to load transaction",
+            "Failed to load entry",
             type="negative",
         )
 
@@ -7824,6 +7994,7 @@ async def hydrate_form(
     state.is_hydrating = True
 
     try:
+        print("CALLED hydrate_form")
         # VEHICLE / CORE SELECTS
         outlet_id = txn.get("outlet_id")
 
@@ -7996,6 +8167,10 @@ async def hydrate_form(
                     0,
                 )
             )
+        await hydrate_vehicle_section(
+            state,
+            txn,
+        )
         hydrate_invoice_section(
             state,
             txn,
@@ -8012,6 +8187,11 @@ async def hydrate_form(
         )
 
         hydrate_accessories_section(
+            state,
+            txn,
+        )
+
+        hydrate_file_status_section(
             state,
             txn,
         )
@@ -8060,21 +8240,45 @@ def hydrate_invoice_section(
         widget.set_value(value)
 
 
+def hydrate_file_status_section(
+    state: FormState,
+    txn: dict,
+):
+    try:
+        if state.stage == "booking":
+            if state.booking_file_incomplete:
+                state.booking_file_incomplete.set_value(
+                    txn.get("booking_file_incomplete", False)
+                )
+            if state.booking_file_incomplete_remarks:
+                state.booking_file_incomplete_remarks.set_value(
+                    txn.get("booking_file_incomplete_remarks", "")
+                )
+        else:
+            if state.delivery_file_incomplete:
+                state.delivery_file_incomplete.set_value(
+                    txn.get("delivery_file_incomplete", False)
+                )
+            if state.delivery_file_incomplete_remarks:
+                state.delivery_file_incomplete_remarks.set_value(
+                    txn.get("delivery_file_incomplete_remarks", "")
+                )
+    except Exception as e:
+        print("ERROR: WHILE FILE HYDRATE", e)
+
+
 def hydrate_payment_section(
     state: FormState,
     txn: dict,
 ):
 
-    payment = txn.get(
-        "payment_details",
-        {},
-    )
+    payment = {k: v for k, v in txn.items() if k.startswith("payment_")}
 
     mapping = {
-        "cash": state.payment_cash,
-        "bank": state.payment_bank,
-        "finance": state.payment_finance,
-        "exchange": state.payment_exchange,
+        "payment_cash": state.payment_cash,
+        "payment_bank": state.payment_bank,
+        "payment_finance": state.payment_finance,
+        "payment_exchange": state.payment_exchange,
     }
 
     for key, widget in mapping.items():
@@ -8796,4 +9000,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         storage_secret=SECRET_KEY,
         reload=True,  # make false at the time of deployement
         port=3000,
+        reconnect_timeout=60,
     )
