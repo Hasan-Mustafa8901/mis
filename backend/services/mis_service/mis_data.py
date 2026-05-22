@@ -24,37 +24,49 @@ def get_ebd_data(
     start_date: date | None,
     end_date: date | None,
     outlet_id: int | None = None,
+    outlet_ids: list[int] | None = None,
     dealership_id: int | None = None,
 ):
-    # SUB QUERY
+
+    # =====================================================
+    # SUB QUERIES
+    # =====================================================
+
     transaction_created_at_sq = (
         select(Transaction.created_at)
         .where(Transaction.id == MISRecord.transaction_id)
         .scalar_subquery()
     )
+
     if stage == MISRecordType.BOOKING:
         transaction_incomplete = (
             select(Transaction.booking_file_incomplete)
             .where(Transaction.id == MISRecord.transaction_id)
             .scalar_subquery()
         )
+
         transaction_incomplete_remarks = (
             select(Transaction.booking_file_incomplete_remarks)
             .where(Transaction.id == MISRecord.transaction_id)
             .scalar_subquery()
         )
+
     else:
         transaction_incomplete = (
             select(Transaction.delivery_file_incomplete)
             .where(Transaction.id == MISRecord.transaction_id)
             .scalar_subquery()
         )
+
         transaction_incomplete_remarks = (
             select(Transaction.delivery_file_incomplete_remarks)
             .where(Transaction.id == MISRecord.transaction_id)
             .scalar_subquery()
         )
+
+    # =====================================================
     # BASE QUERY
+    # =====================================================
 
     stmt = select(
         MISRecord,
@@ -64,20 +76,38 @@ def get_ebd_data(
     ).where(
         MISRecord.type == stage,
     )
+
+    # =====================================================
+    # DATE FILTERING
+    # =====================================================
+
     if is_footer:
-        stmt = stmt.where(MISRecord.record_date.between(start_date, end_date))
+        stmt = stmt.where(
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            )
+        )
+
     else:
         stmt = stmt.where(MISRecord.record_date == record_date)
 
-    # OPTIONAL FILTERS
-
-    if outlet_id:
-        stmt = stmt.where(MISRecord.outlet_id == outlet_id)
+    # =====================================================
+    # OUTLET / DEALERSHIP FILTERING
+    # =====================================================
 
     if dealership_id:
         stmt = stmt.where(MISRecord.dealership_id == dealership_id)
 
+    elif outlet_ids:
+        stmt = stmt.where(MISRecord.outlet_id.in_(outlet_ids))
+
+    elif outlet_id:
+        stmt = stmt.where(MISRecord.outlet_id == outlet_id)
+
+    # =====================================================
     # COLUMN FILTER MAPPING
+    # =====================================================
 
     column_filters = {
         # FILES RECEIVED
@@ -91,8 +121,8 @@ def get_ebd_data(
         ),
         # FILES OUT OF SCOPE
         "files_out_of_scope": (MISRecord.out_of_scope.is_(True)),
-        # FILES Scanned
-        "files_scanned": MISRecord.received.is_(True),
+        # FILES SCANNED
+        "files_scanned": (MISRecord.received.is_(True)),
         # FILES APPROVED
         "files_approved": (MISRecord.approved.is_(True)),
         # FILES REJECTED
@@ -118,29 +148,40 @@ def get_ebd_data(
         ),
     }
 
+    # =====================================================
     # APPLY COLUMN FILTER
+    # =====================================================
 
     condition = column_filters.get(column)
 
     if condition is not None:
         stmt = stmt.where(condition)
 
+    # =====================================================
     # ORDERING
+    # =====================================================
 
-    stmt = stmt.order_by(MISRecord.record_date.asc(), MISRecord.customer_name.asc())
+    stmt = stmt.order_by(
+        MISRecord.record_date.asc(),
+        MISRecord.customer_name.asc(),
+    )
 
+    # =====================================================
     # FETCH
+    # =====================================================
 
     rows = session.exec(stmt).all()
+
+    # RESPONSE
 
     data = [
         {
             "id": row.id,
             "date": (row.record_date.isoformat() if row.record_date else None),
-            "customer_name": row.customer_name,
-            "customer_mobile": row.customer_mobile,
+            "customer_name": (row.customer_name),
+            "customer_mobile": (row.customer_mobile),
             "car_model": row.car_model,
-            "team_leader": row.team_leader,
+            "team_leader": (row.team_leader),
             "received": row.received,
             "receiving_date": (
                 row.receiving_date.date().isoformat() if row.receiving_date else None
@@ -151,22 +192,28 @@ def get_ebd_data(
             "scanning_date": (
                 row.scanning_date.date().isoformat() if row.scanning_date else None
             ),
-            "rejection_reason": row.rejection_reason,
-            "out_of_scope": row.out_of_scope,
-            "out_of_scope_reason": row.out_of_scope_reason,
+            "rejection_reason": (row.rejection_reason),
+            "out_of_scope": (row.out_of_scope),
+            "out_of_scope_reason": (row.out_of_scope_reason),
             "matching_status": (
                 row.matching_status.value if row.matching_status else None
             ),
-            "transaction_id": row.transaction_id,
-            "remarks": row.out_of_scope_reason,
+            "transaction_id": (row.transaction_id),
+            "remarks": (row.out_of_scope_reason),
             "entry_date": (
                 transaction_created_at.isoformat() if transaction_created_at else None
             ),
             "incomplete": incomplete,
-            "incomplete_remarks": incomplete_remarks,
+            "incomplete_remarks": (incomplete_remarks),
         }
-        for row, transaction_created_at, incomplete, incomplete_remarks in rows
+        for (
+            row,
+            transaction_created_at,
+            incomplete,
+            incomplete_remarks,
+        ) in rows
     ]
+
     return data
 
 
@@ -178,11 +225,15 @@ def get_mis_transactions(
     start_date: date | None,
     end_date: date | None,
     outlet_id: int | None = None,
+    outlet_ids: list[int] | None = None,
     dealership_id: int | None = None,
     incomplete: bool = False,
 ):
 
+    # =====================================================
     # BASE QUERY
+    # =====================================================
+
     stmt = (
         select(
             Transaction,
@@ -208,13 +259,25 @@ def get_mis_transactions(
             MISRecord.transaction_id == Transaction.id,
         )
     )
-    # stmt = stmt.where(MISRecord.type == stage)
 
-    # for footer row give data for a date range
+    # =====================================================
+    # DATE FILTERING
+    # =====================================================
+
     if is_footer:
-        stmt = stmt.where(MISRecord.record_date.between(start_date, end_date))
+        stmt = stmt.where(
+            MISRecord.record_date.between(
+                start_date,
+                end_date,
+            )
+        )
+
     else:
         stmt = stmt.where(MISRecord.record_date == record_date)
+
+    # =====================================================
+    # INCOMPLETE FILTERING
+    # =====================================================
 
     if incomplete:
         if stage == MISRecordType.BOOKING:
@@ -223,24 +286,44 @@ def get_mis_transactions(
         else:
             stmt = stmt.where(Transaction.delivery_file_incomplete.is_(True))
 
-    # OUTLET FILTER
-    if outlet_id:
-        stmt = stmt.where(Transaction.outlet_id == outlet_id)
+    # =====================================================
+    # OUTLET / DEALERSHIP FILTERING
+    # =====================================================
 
-    # DEALERSHIP FILTER
-    elif dealership_id:
+    # DEALERSHIP
+    if dealership_id:
         stmt = stmt.join(
             Outlet,
             Outlet.id == Transaction.outlet_id,
         ).where(Outlet.dealership_id == dealership_id)
 
+    # MULTI OUTLET
+    elif outlet_ids:
+        stmt = stmt.where(Transaction.outlet_id.in_(outlet_ids))
+
+    # SINGLE OUTLET
+    elif outlet_id:
+        stmt = stmt.where(Transaction.outlet_id == outlet_id)
+
+    # =====================================================
     # FETCH
+    # =====================================================
+
     rows = session.exec(stmt).all()
 
+    # =====================================================
     # RESPONSE
+    # =====================================================
+
     response = []
 
-    for txn, customer, employee, variant, mis_record in rows:
+    for (
+        txn,
+        customer,
+        employee,
+        variant,
+        mis_record,
+    ) in rows:
         remarks = (
             txn.booking_file_incomplete_remarks
             if stage == MISRecordType.BOOKING
@@ -255,20 +338,20 @@ def get_mis_transactions(
                     if mis_record.record_date
                     else None
                 ),
-                "customer_name": customer.name,
-                "customer_mobile": customer.mobile_number,
-                "team_leader": employee.name,
-                "car_model": variant.variant_name,
-                "entry_date": txn.created_at.date().isoformat()
-                if txn.created_at
-                else None,
+                "customer_name": (customer.name),
+                "customer_mobile": (customer.mobile_number),
+                "team_leader": (employee.name),
+                "car_model": (variant.variant_name),
+                "entry_date": (
+                    txn.created_at.date().isoformat() if txn.created_at else None
+                ),
                 "remarks": remarks,
-                "received": mis_record.received,
-                "receiving_date": mis_record.receiving_date,
-                "out_of_scope_reason": mis_record.out_of_scope_reason,
-                "approved": mis_record.approved,
-                "rejection_reason": mis_record.rejection_reason,
-                "scanning_date": mis_record.scanning_date,
+                "received": (mis_record.received),
+                "receiving_date": (mis_record.receiving_date),
+                "out_of_scope_reason": (mis_record.out_of_scope_reason),
+                "approved": (mis_record.approved),
+                "rejection_reason": (mis_record.rejection_reason),
+                "scanning_date": (mis_record.scanning_date),
             }
         )
 
