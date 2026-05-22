@@ -637,6 +637,51 @@ async def toggle_scanned(
     }
 
 
+@router.delete("/bulk-delete")
+def bulk_delete_mis_records(
+    payload: dict,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(
+        require_roles(
+            UserRole.ADMIN,
+            UserRole.AUDIT_ASST,
+        )
+    ),
+):
+
+    record_ids = payload.get("record_ids", [])
+
+    if not record_ids:
+        raise HTTPException(
+            status_code=400,
+            detail="No record ids provided",
+        )
+
+    # FETCH RECORDS
+    records = session.exec(select(MISRecord).where(MISRecord.id.in_(record_ids))).all()
+
+    if not records:
+        raise HTTPException(
+            status_code=404,
+            detail="No records found",
+        )
+
+    # SECURITY VALIDATION
+    for record in records:
+        validate_outlet_access(
+            current_user,
+            record.outlet_id,
+        )
+
+    # DELETE
+    result = MISUpdateService.delete_records(
+        session=session,
+        record_ids=record_ids,
+    )
+
+    return result
+
+
 # UPLOAD EBD
 @router.post("/upload-ebd")
 async def upload_ebd_file(
