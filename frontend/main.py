@@ -30,15 +30,22 @@ from auth_old import (
     token_is_valid,
     clear_user,
 )
+from api_old import (
+    api_get,
+    APIError,
+    UnauthorizedError,
+    ForbiddenError,
+    ConnectionFailedError,
+    ServerError,
+)
 
 
 # CONFIG & SHARED CONSTANTS
-
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
-# BASE_URL = ************
+
 
 CONDITION_KEYS = {
     "Price Component": [
@@ -273,8 +280,8 @@ async def api_request(
         raise
 
 
-async def api_get(path: str, params=None):
-    return await api_request("GET", path, params=params)
+# async def api_get(path: str, params=None):
+#     return await api_request("GET", path, params=params)
 
 
 async def api_post(path: str, payload: dict):
@@ -515,32 +522,44 @@ def login_page():
             async def handle_login():
 
                 try:
-                    async with httpx.AsyncClient() as client:
-                        r = await client.post(
-                            f"{BASE_URL}/auth/login",
-                            json={
-                                "name": username.value,
-                                "password": password.value,
-                            },
-                            timeout=10,
-                        )
-                        r.raise_for_status()
-                        data = r.json()
+                    data = await api_post(
+                        "/auth/login",
+                        payload={
+                            "name": username.value,
+                            "password": password.value,
+                        },
+                    )
+
+                    if not data:
+                        ui.notify("Login failed", type="negative")
+                        return
 
                     set_user(data)
+
                     ui.notify("Login successful", type="positive")
+
                     ui.navigate.to("/")
 
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code == 401:
-                        ui.notify("Invalid Credentials", type="negative")
-                    elif exc.response.status_code == 404:
-                        ui.notify("Not Found", type="negative")
+                except UnauthorizedError:
+                    ui.notify("Invalid credentials", type="negative")
 
-                except httpx.ConnectError as exc:
-                    # log this exc error
+                except ForbiddenError:
+                    ui.notify("Access denied", type="negative")
+
+                except ConnectionFailedError as e:
                     ui.notify(
-                        str(exc),
+                        str(e),
+                        type="negative",
+                    )
+
+                except APIError as e:
+                    ui.notify(str(e), type="negative")
+
+                except Exception as e:
+                    print("LOGIN ERROR:", e)
+
+                    ui.notify(
+                        "Something went wrong",
                         type="negative",
                     )
 
@@ -5689,9 +5708,7 @@ async def resolve_form_mode(
         if mode == "direct":
             if transaction_id:
                 state.form_mode = "delivery_edit"
-
                 txn_data = await api_get(f"/transactions/{transaction_id}")
-
                 state.edit_mode = True
 
             else:
