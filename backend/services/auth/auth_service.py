@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from services.utils import get_ist_now
 
 from db.models import User, UserRole
-from services.auth.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE
+from services.auth.config import SECRET_KEY_TOKEN, ALGORITHM, ACCESS_TOKEN_EXPIRE
 
 from passlib.context import CryptContext
 from jose import jwt
@@ -81,4 +81,4 @@ class AuthService:
         to_encode = data.copy()
         expire = get_ist_now() + ACCESS_TOKEN_EXPIRE
         to_encode.update({"exp": expire})
-        return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        return jwt.encode(to_encode, SECRET_KEY_TOKEN, algorithm=ALGORITHM)

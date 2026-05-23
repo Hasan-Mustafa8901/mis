@@ -36,7 +36,7 @@ from auth_old import (
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY_FRONTEND = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 # BASE_URL = ************
 
@@ -1144,11 +1144,57 @@ def open_new_entry_dialog():
 async def dashboard_page() -> None:
     render_topbar("Dashboard")
 
-    #  Fetch all transactions
+    user_data = app.storage.user
+    allowed_outlet_ids = user_data.get("allowed_outlet_ids", []) or []
+    user_role = user_data.get("role", [""])[0]
+
     try:
-        all_transactions: list = await api_get("/transactions")
-    except Exception:
-        all_transactions = []
+        dealerships = await api_get("/complaints/dealerships")
+    except Exception as e:
+        ui.notify("ERROR Occured", type="negative")
+        print("ERROR While loading dealerships on Dashboard: ", str(e))
+
+    try:
+        outlets = await api_get("/outlets")
+    except Exception as e:
+        ui.notify("ERROR Occured", type="negative")
+        print("ERROR While loading outlets on Dashboard: ", str(e))
+
+    # ADMIN => unrestricted
+    if user_role != "admin":
+        outlets = [o for o in outlets if o["id"] in allowed_outlet_ids]
+
+    async def load_dashboard_data():
+
+        params = {}
+
+        if dealership_select.value:
+            params["dealership_id"] = int(dealership_select.value)
+
+        if outlet_select.value:
+            params["showroom_id"] = int(outlet_select.value)
+
+        txns = await api_get(
+            "/transactions",
+            params=params,
+        )
+
+        selected_month = month_select.value or ""
+
+        if selected_month:
+            txns = [
+                t
+                for t in txns
+                if (
+                    t.get(
+                        "booking_date",
+                        "",
+                    )
+                    or ""
+                ).startswith(selected_month)
+            ]
+
+        render_dashboard(txns)
 
     #  Month helpers
     def month_label(ym: str) -> str:
@@ -1176,8 +1222,10 @@ async def dashboard_page() -> None:
     all_month_map: dict = defaultdict(list)
     for txn in all_transactions:
         booking_date = txn.get("booking_date", "")
+
         if booking_date and len(booking_date) >= 7:
             all_month_map[booking_date[:7]].append(txn)
+
     sorted_months = sorted(all_month_map.keys(), reverse=True)
     #  DASHBOARD LAYOUT
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -1249,18 +1297,83 @@ async def dashboard_page() -> None:
                     ui.label("Overview of all audit transactions").classes(
                         "text-[12px] text-gray-400"
                     )
-
                 with ui.row().classes("items-center gap-3 shrink-0"):
+                    # =========================================
+                    # DEALERSHIP FILTER
+                    # =========================================
+
+                    dealership_options = {"": "All Dealerships"} | {
+                        str(d["id"]): d["name"] for d in dealerships
+                    }
+
+                    dealership_select = (
+                        ui.select(
+                            options=dealership_options, value="", label="Dealership"
+                        )
+                        .classes("w-48")
+                        .props("outlined dense")
+                    )
+
+                    # =========================================
+                    # OUTLET FILTER
+                    # =========================================
+
+                    outlet_options = {
+                        "": "All Showrooms",
+                    } | {str(o["id"]): o["name"] for o in outlets}
+
+                    outlet_select = (
+                        ui.select(options=outlet_options, value="", label="Showroom")
+                        .classes("w-52")
+                        .props("outlined dense")
+                    )
+
+                    # =========================================
+                    # MONTH FILTER
+                    # =========================================
+
                     month_options = {"": "All Months"} | {
                         ym: month_label(ym) for ym in sorted_months
                     }
+
                     month_select = (
-                        ui.select(
-                            options=month_options, value="", label="Filter by Month"
-                        )
+                        ui.select(options=month_options, value="", label="Month")
                         .classes("w-44")
                         .props("outlined dense")
                     )
+
+                    def on_dealership_change(e):
+
+                        selected = e.value
+
+                        if not selected:
+                            filtered = outlets
+
+                        else:
+                            filtered = [
+                                o
+                                for o in outlets
+                                if str(o["dealership_id"]) == str(selected)
+                            ]
+
+                        outlet_select.options = {
+                            "": "All Showrooms",
+                            **{str(o["id"]): o["name"] for o in filtered},
+                        }
+
+                        outlet_select.update()
+
+                    # with ui.row().classes("items-center gap-3 shrink-0"):
+                    #     month_options = {"": "All Months"} | {
+                    #         ym: month_label(ym) for ym in sorted_months
+                    #     }
+                    #     month_select = (
+                    #         ui.select(
+                    #             options=month_options, value="", label="Filter by Month"
+                    #         )
+                    #         .classes("w-44")
+                    #         .props("outlined dense")
+                    #     )
                     with (
                         ui.button(on_click=open_new_entry_dialog)
                         .classes(
@@ -9023,7 +9136,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         title="AutoAudit",
         favicon="🚗",
         host="0.0.0.0",
-        storage_secret=SECRET_KEY,
+        storage_secret=SECRET_KEY_FRONTEND,
         reload=True,  # make false at the time of deployement
         port=3000,
         reconnect_timeout=60,
