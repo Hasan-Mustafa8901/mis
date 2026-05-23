@@ -5721,9 +5721,7 @@ async def resolve_form_mode(
     # SAVE TRANSACTION DATA
     if txn_data:
         state.transaction_data = txn_data
-
         state.booking_data = txn_data
-
         state.txn_id = transaction_id
 
     return txn_data
@@ -5771,11 +5769,11 @@ async def hydrate_vehicle_section(
             state.exec_select.set_value(exec_id)
 
         # Delivery Date
-        if delivery_date:
+        if delivery_date and state.delivery_date:
             state.delivery_date.set_value(delivery_date)
-        if registration_date:
+        if registration_date and state.regn_date:
             state.regn_date.set_value(registration_date)
-        if registration_number:
+        if registration_number and state.vehicle_regn_no:
             state.vehicle_regn_no.set_value(registration_number)
 
     finally:
