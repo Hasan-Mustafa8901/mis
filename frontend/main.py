@@ -1146,25 +1146,42 @@ async def dashboard_page() -> None:
 
     user_data = app.storage.user
     allowed_outlet_ids = user_data.get("allowed_outlet_ids", []) or []
-    user_role = user_data.get("role", [""])[0]
+    user_role = user_data.get("role", [""])[0].lower()
+    print("ROLE: ", user_role)
 
+    current_transactions: list[dict] = []
+
+    dealerships: list[dict] = []
     try:
-        dealerships = await api_get("/complaints/dealerships")
+        dealerships = await api_get("/complaints/dealerships") or []
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
         print("ERROR While loading dealerships on Dashboard: ", str(e))
 
+    outlets: list[dict] = []
     try:
-        outlets = await api_get("/outlets")
+        outlets = await api_get("/outlets") or []
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
         print("ERROR While loading outlets on Dashboard: ", str(e))
 
     # ADMIN => unrestricted
     if user_role != "admin":
+        # FILTER OUTLETS
         outlets = [o for o in outlets if o["id"] in allowed_outlet_ids]
 
+        # FIND ALLOWED DEALERSHIP IDS
+        allowed_dealership_ids = {o["dealership_id"] for o in outlets}
+
+        # FILTER DEALERSHIPS
+        dealerships = [d for d in dealerships if d["id"] in allowed_dealership_ids]
+
+    default_dealership: str | None = None
+    if user_role != "admin" and len(dealerships) == 1:
+        default_dealership = str(dealerships[0]["id"])
+
     async def load_dashboard_data():
+        nonlocal current_transactions
 
         params = {}
 
@@ -1172,29 +1189,33 @@ async def dashboard_page() -> None:
             params["dealership_id"] = int(dealership_select.value)
 
         if outlet_select.value:
-            params["showroom_id"] = int(outlet_select.value)
+            params["outlet_id"] = int(outlet_select.value)
 
-        txns = await api_get(
-            "/transactions",
-            params=params,
+        txns: list[dict] = await api_get("/transactions", params=params) or []
+
+        current_transactions = txns
+        all_month_map = defaultdict(list)
+        for txn in txns:
+            booking_date = txn.get(
+                "booking_date",
+                "",
+            )
+
+            if booking_date and len(booking_date) >= 7:
+                all_month_map[booking_date[:7]].append(txn)
+        sorted_months_local = sorted(
+            all_month_map.keys(),
+            reverse=True,
         )
-
-        selected_month = month_select.value or ""
-
-        if selected_month:
-            txns = [
-                t
-                for t in txns
-                if (
-                    t.get(
-                        "booking_date",
-                        "",
-                    )
-                    or ""
-                ).startswith(selected_month)
-            ]
-
+        month_select.options = {
+            "": "All Months",
+            **{ym: month_label(ym) for ym in sorted_months_local},
+        }
+        month_select.update()
         render_dashboard(txns)
+
+    async def reload_backend_data(_=None):
+        await load_dashboard_data()
 
     #  Month helpers
     def month_label(ym: str) -> str:
@@ -1218,15 +1239,6 @@ async def dashboard_page() -> None:
     def get_allowed_discount(t: dict) -> float:
         return sum(float(t.get(f"{k}_allowed", 0) or 0) for k in DISCOUNT_KEYS)
 
-    # Build month map over ALL transactions (for sidebar + filter options)
-    all_month_map: dict = defaultdict(list)
-    for txn in all_transactions:
-        booking_date = txn.get("booking_date", "")
-
-        if booking_date and len(booking_date) >= 7:
-            all_month_map[booking_date[:7]].append(txn)
-
-    sorted_months = sorted(all_month_map.keys(), reverse=True)
     #  DASHBOARD LAYOUT
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
         #  SIDEBAR
@@ -1301,14 +1313,29 @@ async def dashboard_page() -> None:
                     # =========================================
                     # DEALERSHIP FILTER
                     # =========================================
+                    if user_role == "admin":
+                        default_dealership = ""
 
-                    dealership_options = {"": "All Dealerships"} | {
-                        str(d["id"]): d["name"] for d in dealerships
-                    }
+                    else:
+                        default_dealership = (
+                            str(dealerships[0]["id"]) if dealerships else None
+                        )
+                    if user_role == "admin":
+                        dealership_options = {
+                            "": "All Dealerships",
+                            **{str(d["id"]): d["name"] for d in dealerships},
+                        }
+
+                    else:
+                        dealership_options = {
+                            str(d["id"]): d["name"] for d in dealerships
+                        }
 
                     dealership_select = (
                         ui.select(
-                            options=dealership_options, value="", label="Dealership"
+                            options=dealership_options,
+                            value=default_dealership,
+                            label="Dealership",
                         )
                         .classes("w-48")
                         .props("outlined dense")
@@ -1328,34 +1355,41 @@ async def dashboard_page() -> None:
                         .props("outlined dense")
                     )
 
+                    async def on_dealership_filter_change(e):
+                        on_dealership_change(e)
+                        await load_dashboard_data()
+
+                    async def on_outlet_filter_change(_):
+                        await load_dashboard_data()
+
+                    dealership_select.on_value_change(on_dealership_filter_change)
+                    outlet_select.on_value_change(on_outlet_filter_change)
+
                     # =========================================
                     # MONTH FILTER
                     # =========================================
 
-                    month_options = {"": "All Months"} | {
-                        ym: month_label(ym) for ym in sorted_months
-                    }
-
                     month_select = (
-                        ui.select(options=month_options, value="", label="Month")
+                        ui.select(
+                            options={"": "All Months"},
+                            value="",
+                            label="Month",
+                        )
                         .classes("w-44")
                         .props("outlined dense")
                     )
 
                     def on_dealership_change(e):
-
                         selected = e.value
 
                         if not selected:
                             filtered = outlets
-
                         else:
                             filtered = [
                                 o
                                 for o in outlets
                                 if str(o["dealership_id"]) == str(selected)
                             ]
-
                         outlet_select.options = {
                             "": "All Showrooms",
                             **{str(o["id"]): o["name"] for o in filtered},
@@ -1363,17 +1397,6 @@ async def dashboard_page() -> None:
 
                         outlet_select.update()
 
-                    # with ui.row().classes("items-center gap-3 shrink-0"):
-                    #     month_options = {"": "All Months"} | {
-                    #         ym: month_label(ym) for ym in sorted_months
-                    #     }
-                    #     month_select = (
-                    #         ui.select(
-                    #             options=month_options, value="", label="Filter by Month"
-                    #         )
-                    #         .classes("w-44")
-                    #         .props("outlined dense")
-                    #     )
                     with (
                         ui.button(on_click=open_new_entry_dialog)
                         .classes(
@@ -1481,14 +1504,14 @@ async def dashboard_page() -> None:
                     ex = get_excess(t)
 
                     model_sales[model] += 1
-                    model_discount[model] += disc
+                    model_discount[model] += int(float(disc))
 
                     if ex > 0:
                         model_excess[model] += ex
                         variant_excess[vname] += ex
 
                     outlet_sales[outlet] += 1
-                    outlet_disc[outlet] += disc
+                    outlet_disc[outlet] += int(float(disc))
                     outlet_excess[outlet] += ex
 
                     for k, v in (t.get("conditions", {}) or {}).items():
@@ -1545,8 +1568,6 @@ async def dashboard_page() -> None:
 
             def render_dashboard(all_txns: list) -> None:
                 """Build the full dashboard UI splitting by booking vs delivery."""
-                # booking_txns = [t for t in all_txns if t.get("stage") == "booking"]
-                # delivery_txns = [t for t in all_txns if t.get("stage") == "delivery"]
 
                 booking_analytics = compute_analytics(all_txns, "booking")
                 delivery_analytics = compute_analytics(all_txns, "delivery")
@@ -2123,20 +2144,24 @@ async def dashboard_page() -> None:
                                 )
 
             #  Initial render with all data
-            render_dashboard(all_transactions)
+            await load_dashboard_data()
 
-            #  Wire month filter
+            # MONTH FILTER
+            # FRONTEND ONLY
             def on_month_change(e):
+
                 selected = e.value or ""
-                filtered = (
+
+                filtered: list[dict] = (
                     [
                         t
-                        for t in all_transactions
+                        for t in current_transactions
                         if (t.get("booking_date", "") or "").startswith(selected)
                     ]
                     if selected
-                    else all_transactions
+                    else current_transactions
                 )
+
                 render_dashboard(filtered)
 
             month_select.on_value_change(on_month_change)
@@ -2170,7 +2195,6 @@ async def load_master_data(mstate):
     mstate.outlets = await api_get("/outlets")
 
 
-# PAGE: MIS TABLES (Booking & Delivery)
 # PAGE: MIS TABLES (Booking & Delivery)
 async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
@@ -2307,7 +2331,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     params["outlet_id"] = mstate.selected_outlet
                 elif mstate.selected_dealer:
                     params["dealership_id"] = mstate.selected_dealer
-                print("PARAMS: ", params)
 
                 data = await api_get("/transactions-pages", params=params)
 
@@ -4686,7 +4709,6 @@ async def settings_page():
                     with ui.card().classes(
                         "w-[500px] max-h-[260px] overflow-auto border rounded-lg p-3"
                     ):
-                        print(outlets)
                         for outlet_data in outlets:
                             checkbox = ui.checkbox(outlet_data["name"])
 
@@ -4746,8 +4768,6 @@ async def settings_page():
                                     [] if role.value == "Admin" else selected_outlet_ids
                                 ),
                             }
-
-                            print(payload)
 
                             try:
                                 await api_post(
@@ -5899,7 +5919,6 @@ FORM_COLUMNS = 3
 
 
 def build_vehicle_section(state: FormState) -> None:
-    print("CALLED build_vehicle_section")
     car_opts = {
         car["id"]: car["name"]
         for car in sorted(state.cars, key=lambda x: x["name"].lower())
@@ -7552,8 +7571,7 @@ def _fs_update_live(state) -> None:
             )
         )
     )
-    print("OTHER DISCOUNT DELIVERY:", parsed_val(state.other_discount_delivery))
-    print("OTHER DISCOUNT Booking:", parsed_val(state.total_discount_booking))
+
     total_discount_given = int(
         total_diff
         + acc_diff
