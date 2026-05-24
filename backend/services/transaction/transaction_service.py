@@ -488,6 +488,9 @@ class TransactionService:
         Reconstructs the full MIS data for a transaction in a flat format.
         This allows full fidelity to the original Excel MIS template.
         """
+        import time
+
+        start = time.perf_counter()
         transaction = session.get(Transaction, transaction_id)
         if not transaction:
             return {}
@@ -671,7 +674,8 @@ class TransactionService:
                 "adjustment_delivery": transaction.adjustment_delivery,
             }
         )
-
+        elased = start - time.perf_counter()
+        print(f"{round(elased, 4)}s elapsed in the reconstruction.")
         return data
 
     @staticmethod
