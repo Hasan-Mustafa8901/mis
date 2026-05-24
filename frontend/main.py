@@ -43,7 +43,7 @@ from api_old import (
 # CONFIG & SHARED CONSTANTS
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
