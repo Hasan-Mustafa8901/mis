@@ -464,14 +464,14 @@ class TransactionService:
                 select(Transaction)
                 .where(Transaction.id == transaction_id)
                 .options(
-                    joinedload(Transaction.customer),
-                    joinedload(Transaction.outlet).joinedload(Outlet.dealership),
-                    joinedload(Transaction.variant).joinedload(Variant.car),
-                    joinedload(Transaction.sales_executive),
-                    joinedload(Transaction.user),
-                    selectinload(Transaction.items),
-                    selectinload(Transaction.accessories).joinedload(
-                        TransactionAccessoryLink.accessory
+                    joinedload(Transaction.customer),  # type: ignore
+                    joinedload(Transaction.outlet).joinedload(Outlet.dealership),  # type: ignore
+                    joinedload(Transaction.variant).joinedload(Variant.car),  # type: ignore
+                    joinedload(Transaction.sales_executive),  # type: ignore
+                    joinedload(Transaction.user),  # type: ignore
+                    selectinload(Transaction.items),  # type: ignore
+                    selectinload(Transaction.accessories).joinedload(  # type: ignore
+                        TransactionAccessoryLink.accessory  # type: ignore
                     ),
                 )
             ).first()
