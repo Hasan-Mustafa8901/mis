@@ -219,9 +219,7 @@ class TransactionService:
         if transaction.stage == "delivery":
             raise ValueError("Already delivered")
 
-        # =========================
         # STEP 1: Decide data source
-        # =========================
         use_booking_data = payload.get("use_booking_data", True)
 
         if not use_booking_data:
@@ -230,18 +228,14 @@ class TransactionService:
                 session, transaction.id, payload
             )
 
-        # =========================
         # STEP 2: Update customer (edge case)
-        # =========================
         if "customer" in payload:
             customer = TransactionService.create_or_update_customer(
                 session, payload["customer"]
             )
             transaction.customer_id = customer.id
 
-        # =========================
         # STEP 3: Add delivery data
-        # =========================
         transaction.delivery_checklist = payload.get("delivery_checklist", {})
         # accessories
         if "accessory_ids" in payload:
@@ -249,9 +243,7 @@ class TransactionService:
                 session, transaction, payload["accessory_ids"]
             )
 
-        # =========================
         # STEP 4: Recalculate discount (if needed)
-        # =========================
         transaction.stage = "delivery"  # Set stage BEFORE calculation
         transaction.vin_number = payload.get("vin_number", "")
         transaction.engine_number = payload.get("engine_number", "")
@@ -282,9 +274,8 @@ class TransactionService:
             "status": transaction.status,
         }
 
-        # =========================
         # STEP 5: Reconciliation
-        # =========================
+
         TransactionService.apply_funds_reconciliation(session, transaction, payload)
 
         session.add(transaction)
@@ -476,8 +467,10 @@ class TransactionService:
                     joinedload(Transaction.customer),
                     joinedload(Transaction.outlet).joinedload(Outlet.dealership),
                     joinedload(Transaction.variant).joinedload(Variant.car),
-                    selectinload(Transaction.transaction_items),
-                    selectinload(Transaction.accessory_links).joinedload(
+                    joinedload(Transaction.sales_executive),
+                    joinedload(Transaction.user),
+                    selectinload(Transaction.items),
+                    selectinload(Transaction.accessories).joinedload(
                         TransactionAccessoryLink.accessory
                     ),
                 )
@@ -487,17 +480,9 @@ class TransactionService:
                 logger.info(f"Transaction {transaction_id} not found")
                 return {}
 
-            # TARGETED LOOKUPS - only if IDs exist
-            user = None
-            sales_exec = None
-
-            if transaction.created_by:
-                user = session.get(User, transaction.created_by)
-
-            if transaction.sales_executive_id:
-                sales_exec = session.get(Employee, transaction.sales_executive_id)
-
             # PRE-EXTRACT relationships to avoid repeated attribute access
+            sales_exec = transaction.sales_executive
+            user = transaction.user
             outlet = transaction.outlet
             dealership = outlet.dealership if outlet else None
             variant = transaction.variant
@@ -591,9 +576,7 @@ class TransactionService:
             component_metadata = TransactionService.get_discount_component_metadata()
 
             # Build lookup from preloaded transaction_items (no additional queries)
-            item_lookup = {
-                item.component_id: item for item in transaction.transaction_items
-            }
+            item_lookup = {item.component_id: item for item in transaction.items}
 
             # Populate component amounts - all in-memory operations
             for comp_id, comp_name, _ in component_metadata:
@@ -632,7 +615,7 @@ class TransactionService:
                     "name": link.accessory.name,
                     "listed_price": link.accessory.listed_price,
                 }
-                for link in transaction.accessory_links
+                for link in transaction.accessories
                 if link.accessory
             ]
 
@@ -832,16 +815,12 @@ class TransactionService:
                     payload[field],
                 )
 
-        # ─────────────────────────────
         # MODEL YEAR
-        # ─────────────────────────────
         transaction.model_year = (
             int(payload["model_year"]) if payload.get("model_year") else None
         )
 
-        # ─────────────────────────────
         # JSON FIELDS
-        # ─────────────────────────────
         JSON_FIELDS = [
             "conditions",
             "invoice_details",
@@ -861,18 +840,14 @@ class TransactionService:
                     payload.get(field) or {},
                 )
 
-        # ─────────────────────────────
         # ITEMS
-        # ─────────────────────────────
         TransactionService.create_transaction_items(
             session,
             transaction.id,
             payload,
         )
 
-        # ─────────────────────────────
         # ACCESSORIES
-        # ─────────────────────────────
         if "accessory_ids" in payload:
             TransactionService.update_transaction_accessories(
                 session,
@@ -880,24 +855,17 @@ class TransactionService:
                 payload["accessory_ids"],
             )
 
-        # ─────────────────────────────
         # RECONCILIATION
-        # ─────────────────────────────
         TransactionService.apply_funds_reconciliation(
             session,
             transaction,
             payload,
         )
 
-        # ─────────────────────────────
         # UPDATED TIMESTAMP
-        # ─────────────────────────────
         transaction.updated_at = get_ist_now()
-
         session.add(transaction)
-
         session.commit()
-
         session.refresh(transaction)
 
         return {
@@ -917,7 +885,7 @@ class TransactionService:
         if not transaction:
             raise HTTPException(status_code=404, detail="Transaction not found")
 
-        # ── Delete related TransactionItems ─────────────────
+        # Delete related TransactionItems
         items = session.exec(
             select(TransactionItem).where(
                 TransactionItem.transaction_id == transaction_id
@@ -927,7 +895,7 @@ class TransactionService:
         for item in items:
             session.delete(item)
 
-        # ── Delete accessory links ──────────────────────────
+        # Delete accessory links
         links = session.exec(
             select(TransactionAccessoryLink).where(
                 TransactionAccessoryLink.transaction_id == transaction_id
@@ -937,9 +905,7 @@ class TransactionService:
         for link in links:
             session.delete(link)
 
-        # ── Delete main transaction ─────────────────────────
+        # Delete main transaction
         session.delete(transaction)
-
         session.commit()
-
         return {"message": "Transaction deleted successfully", "id": transaction_id}
