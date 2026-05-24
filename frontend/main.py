@@ -2321,22 +2321,32 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 mstate._load_tasks.cancel()
 
             async def _run():
-                await load_meta()
-                params = {}
-                params["limit"] = mstate.limit
-                params["offset"] = mstate.offset
 
+                await load_meta()
+
+                params = {
+                    "limit": mstate.limit,
+                    "offset": mstate.offset,
+                }
+
+                # FILTERS
                 if mstate.selected_outlet:
                     params["outlet_id"] = mstate.selected_outlet
+
                 elif mstate.selected_dealer:
                     params["dealership_id"] = mstate.selected_dealer
 
+                # IMPORTANT FIX
+                if mstate.stage:
+                    params["stage"] = mstate.stage
+
+                print("PARAMS:", params)
+
+                # BACKEND FILTERING
                 data = await api_get("/transactions-pages", params=params)
 
-                # existing logic
-                if mstate.stage == "delivery":
-                    data = [t for t in data if t.get("stage") == "delivery"]
-
+                # OPTIONAL MONTH FILTER
+                # (can later also move to backend)
                 if mstate.month:
                     data = [
                         t
@@ -2346,14 +2356,60 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                 with mstate.table_container:
                     mstate.table_container.clear()
-                    render_table(data, mstate, stage=mstate.stage)
+
+                    render_table(
+                        data,
+                        mstate,
+                        stage=mstate.stage,
+                    )
 
             mstate._load_tasks = asyncio.create_task(_run())
 
             try:
                 await mstate._load_tasks
+
             except asyncio.CancelledError:
                 pass
+
+        # async def load_data():
+        #     if mstate._load_tasks and not mstate._load_tasks.done():
+        #         mstate._load_tasks.cancel()
+
+        #     async def _run():
+        #         await load_meta()
+        #         params = {}
+        #         params["limit"] = mstate.limit
+        #         params["offset"] = mstate.offset
+
+        #         if mstate.selected_outlet:
+        #             params["outlet_id"] = mstate.selected_outlet
+        #         elif mstate.selected_dealer:
+        #             params["dealership_id"] = mstate.selected_dealer
+        #         print("PARAMS: ", params)
+
+        #         data = await api_get("/transactions-pages", params=params)
+
+        #         # existing logic
+        #         if mstate.stage == "delivery":
+        #             data = [t for t in data if t.get("stage") == "delivery"]
+
+        #         if mstate.month:
+        #             data = [
+        #                 t
+        #                 for t in data
+        #                 if (t.get("booking_date", "") or "").startswith(mstate.month)
+        #             ]
+
+        #         with mstate.table_container:
+        #             mstate.table_container.clear()
+        #             render_table(data, mstate, stage=mstate.stage)
+
+        #     mstate._load_tasks = asyncio.create_task(_run())
+
+        #     try:
+        #         await mstate._load_tasks
+        #     except asyncio.CancelledError:
+        #         pass
 
         def schedule_load():
             if mstate._debounce:
