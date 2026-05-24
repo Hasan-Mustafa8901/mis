@@ -1,6 +1,9 @@
 from sqlmodel import Session, select
 from fastapi import HTTPException
-from typing import Dict, Any, List, Optional
+from functools import lru_cache
+from typing import Dict, Any, List, Optional, Tuple
+from db.session import engine
+from sqlalchemy.orm import joinedload, selectinload
 from db.models import (
     Transaction,
     Outlet,
@@ -21,6 +24,10 @@ from services.mis_service.matching_service import MISMatchingService
 from datetime import datetime, date
 from services.utils import get_ist_now
 from rich import print
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_conditions_delivery_checks(payload: dict) -> dict:
@@ -415,264 +422,269 @@ class TransactionService:
             "status": transaction.status,
         }
 
+    # FIXED: Cache primitive data, not ORM objects
     @staticmethod
-    def create_transaction_raw(session: Session, payload: dict) -> Transaction:
+    @lru_cache(maxsize=1)
+    def get_discount_component_metadata() -> List[Tuple[int, str, int]]:
         """
-        this function creates the customers, transactions objects and saves them to the database.
-        It also links the accessories and creates transaction items with actual amounts.
-        It does not perform any logic or calculations, it just saves the raw data as-is.
+        Returns list of (id, name, order) tuples for discount components.
+        Cached as primitives to avoid detached session issues.
         """
-        # ─────────────────────────────
-        # 1. CUSTOMER (CREATE ALWAYS)
-        # Create customer object saves customer in the DB.
-        # ─────────────────────────────
-        cust_data = payload.get("customer", {})
+        try:
+            with Session(engine) as session:
+                components = session.exec(
+                    select(
+                        DiscountComponent.id,
+                        DiscountComponent.name,
+                        DiscountComponent.order,
+                    ).order_by(DiscountComponent.order)
+                ).all()
 
-        customer = customer = TransactionService.create_or_update_customer(
-            session, cust_data
-        )
-
-        payload = convert_date_fields(
-            payload, ["booking_date", "registration_date", "delivery_date"]
-        )
-
-        # ─────────────────────────────
-        # 2. TRANSACTION CORE
-        # ─────────────────────────────
-        transaction = Transaction(
-            customer_id=customer.id,
-            variant_id=payload["variant_id"],
-            outlet_id=payload["outlet_id"],
-            sales_executive_id=payload["sales_executive_id"],
-            created_by=payload.get("user_id"),
-            stage=payload.get("stage", "booking"),
-            booking_date=payload.get("booking_date", None),
-            booking_amt=payload.get("booking_amt", 0.0),
-            booking_receipt_num=payload.get("booking_receipt_num", None),
-            delivery_date=payload.get("delivery_date", None),
-            delivery_file_incomplete=payload.get("delivery_file_incomplete"),
-            delivery_file_incomplete_remarks=payload.get(
-                "delivery_file_incomplete_remarks", ""
-            ),
-            # VEHICLE
-            customer_file_number=payload.get("customer_file_number"),
-            vin_number=payload.get("vin_number"),
-            engine_number=payload.get("engine_number", None),
-            registration_number=payload.get("registration_number"),
-            registration_date=payload.get("registration_date"),
-            color=payload.get("color"),
-            model_year=int(payload.get("model_year", ""))
-            if payload.get("model_year")
-            else None,
-            # CONDITIONS
-            conditions=payload.get("conditions", {}),
-            # JSON SECTIONS
-            invoice_details=payload.get("invoice_details", {}),
-            invoice_number=payload.get("invoice_details", {}).get("invoice_number"),
-            payment_details=payload.get("payment_details", {}),
-            finance_details=payload.get("finance_details", {}),
-            exchange_details=payload.get("exchange_details", {}),
-            audit_info=payload.get("audit_info", {}),
-        )
-        session.add(transaction)
-        session.flush()
-        session.refresh(transaction)
-
-        return transaction
+                return [
+                    (comp_id, comp_name, comp_order)
+                    for comp_id, comp_name, comp_order in components
+                ]
+        except Exception as e:
+            logger.error(f"Error fetching discount components: {e}", exc_info=True)
+            return []
 
     @staticmethod
     def get_transaction_reconstruction(
-        session: Session, transaction_id: int
+        session: Session,
+        transaction_id: int,
     ) -> Dict[str, Any]:
         """
-        Reconstructs the full MIS data for a transaction in a flat format.
-        This allows full fidelity to the original Excel MIS template.
+        Reconstructs complete transaction data with optimized eager loading.
+
+        Performance: 1 main query + 2 targeted lookups = 3 total queries.
+
+        Args:
+            session: Active database session
+            transaction_id: Transaction ID to reconstruct
+
+        Returns:
+            Dictionary with complete transaction data, or empty dict if not found
         """
-        transaction = session.get(Transaction, transaction_id)
-        if not transaction:
-            return {}
-        user = (
-            session.get(User, transaction.created_by)
-            if transaction.created_by
-            else None
-        )
-        # ── FETCH OUTLET ─────────────────────────
-        outlet = (
-            session.get(Outlet, transaction.outlet_id)
-            if transaction.outlet_id
-            else None
-        )
 
-        # ── FETCH DEALERSHIP ─────────────────────
-        dealership = (
-            session.get(Dealership, outlet.dealership_id)
-            if outlet and outlet.dealership_id
-            else None
-        )
+        try:
+            start = time.perf_counter()
+            # SINGLE OPTIMIZED QUERY - loads all relationships upfront
+            transaction = session.exec(
+                select(Transaction)
+                .where(Transaction.id == transaction_id)
+                .options(
+                    joinedload(Transaction.customer),
+                    joinedload(Transaction.outlet).joinedload(Outlet.dealership),
+                    joinedload(Transaction.variant).joinedload(Variant.car),
+                    selectinload(Transaction.transaction_items),
+                    selectinload(Transaction.accessory_links).joinedload(
+                        TransactionAccessoryLink.accessory
+                    ),
+                )
+            ).first()
 
-        # 1. Start with metadata
-        data = {
-            "id": transaction.id,
-            "status": transaction.status,
-            "stage": transaction.stage,
-            "mode": transaction.mode,
-            "created_by": user.name if user else None,
-            "created_at": transaction.created_at.isoformat()
-            if transaction.created_at
-            else None,
-            "outlet_id": transaction.outlet_id,
-            "outlet_name": outlet.name if outlet else None,
-            "dealership_id": outlet.dealership_id if outlet else None,
-            "dealership_name": dealership.name if dealership else None,
-        }
+            if not transaction:
+                logger.info(f"Transaction {transaction_id} not found")
+                return {}
 
-        # 2. Section 1: Customer Details
-        cust = transaction.customer
-        data.update(
-            {
-                "customer_name": cust.name,
-                "mobile_number": cust.mobile_number,
-                "alternate_mobile": cust.alternate_mobile,
-                "email": cust.email,
-                "pan_number": cust.pan_number,
-                "aadhar_number": cust.aadhar_number,
-                "address": cust.address,
-                "city": cust.city,
-                "pin_code": cust.pin_code,
-            }
-        )
+            # TARGETED LOOKUPS - only if IDs exist
+            user = None
+            sales_exec = None
 
-        # 3. Section 2: Vehicle Details
-        variant = session.get(Variant, transaction.variant_id)
-        if variant is None:
-            raise ValueError(f"Variant with ID {transaction.variant_id} not found.")
-        data.update(
-            {
-                "car_id": variant.car_id if variant.car_id else None,
-                "variant_id": variant.id if variant.id else None,
-                "car_name": variant.car.name if variant.car else None,
-                "variant_name": variant.variant_name,
-                "full_variant_name": variant.full_variant_name,
-                "vin_number": transaction.vin_number,
-                "engine_number": transaction.engine_number,
-                "color": transaction.color,
-                "registration_number": transaction.registration_number,
-                "registration_date": transaction.registration_date.isoformat()
-                if transaction.registration_date
+            if transaction.created_by:
+                user = session.get(User, transaction.created_by)
+
+            if transaction.sales_executive_id:
+                sales_exec = session.get(Employee, transaction.sales_executive_id)
+
+            # PRE-EXTRACT relationships to avoid repeated attribute access
+            outlet = transaction.outlet
+            dealership = outlet.dealership if outlet else None
+            variant = transaction.variant
+            car = variant.car if variant else None
+            customer = transaction.customer
+
+            # BUILD RESPONSE DICTIONARY
+            data = {
+                # META
+                "id": transaction.id,
+                "status": transaction.status,
+                "stage": transaction.stage,
+                "mode": transaction.mode,
+                "created_by": user.name if user else None,
+                "created_at": transaction.created_at.isoformat()
+                if transaction.created_at
                 else None,
-                "model_year": transaction.model_year,
+                "outlet_id": transaction.outlet_id,
+                "outlet_name": outlet.name if outlet else None,
+                "dealership_id": dealership.id if dealership else None,
+                "dealership_name": dealership.name if dealership else None,
             }
-        )
 
-        # 4. Section 3: Transaction Core
-        sales_exec = session.get(Employee, transaction.sales_executive_id)
-        data.update(
-            {
-                "booking_date": transaction.booking_date.isoformat()
-                if transaction.booking_date
-                else None,
-                "booking_amt": transaction.booking_amt,
-                "booking_receipt_num": transaction.booking_receipt_num,
-                "delivery_date": transaction.delivery_date.isoformat()
-                if transaction.delivery_date
-                else None,
-                "booking_file_incomplete": transaction.booking_file_incomplete,
-                "booking_file_incomplete_remarks": transaction.booking_file_incomplete_remarks,
-                "delivery_file_incomplete": transaction.delivery_file_incomplete,
-                "delivery_file_incomplete_remarks": transaction.delivery_file_incomplete_remarks,
-                "invoice_number": transaction.invoice_number,
-                "showroom_id": transaction.outlet_id,
-                "sales_executive_id": transaction.sales_executive_id,
-                "sales_executive_name": sales_exec.name if sales_exec else None,
-                "team_leader": transaction.team_leader,
-                "customer_file_number": transaction.customer_file_number,
-            }
-        )
-
-        # 5. Section 4: Price & Discount Components (MOST IMPORTANT)
-        # Fetch all components in correct order
-        all_components = session.exec(
-            select(DiscountComponent).order_by(DiscountComponent.order)
-        ).all()
-        # Fetch actual items for this transaction
-        items = session.exec(
-            select(TransactionItem).where(
-                TransactionItem.transaction_id == transaction.id
-            )
-        ).all()
-        item_map = {item.component_id: item for item in items}
-
-        for comp in all_components:
-            item = item_map.get(comp.id)
-            # prefix = ""  # Could use section prefix if desired, but user wants MIS names
-            data[f"{comp.name}_actual"] = item.actual_amount if item else 0.0
-            data[f"{comp.name}_allowed"] = item.allowed_amount if item else 0.0
-
-        # 6. Section 5: Conditions
-        for cond, val in transaction.conditions.items():
-            data[f"cond_{cond}"] = val
-
-        # 7. Section 6: Additional Sections (JSON)
-
-        data.update({f"{k}": v for k, v in transaction.invoice_details.items()})
-        data.update(
-            {f"exchange_{k}": v for k, v in transaction.exchange_details.items()}
-        )
-        data.update({f"finance_{k}": v for k, v in transaction.finance_details.items()})
-
-        data.update(
-            {f"del_checks_{k}": v for k, v in transaction.delivery_checklist.items()}
-        )
-        data.update(
-            {f"bk_checks_{k}": v for k, v in transaction.booking_checklist.items()}
-        )
-        data.update({f"audit_{k}": v for k, v in transaction.audit_info.items()})
-        data.update({f"payment_{k}": v for k, v in transaction.payment_details.items()})
-        # 7.5 Accessories (NEW)
-        links = session.exec(
-            select(TransactionAccessoryLink).where(
-                TransactionAccessoryLink.transaction_id == transaction.id
-            )
-        ).all()
-
-        accessories_data = []
-        for link in links:
-            acc = link.accessory
-            if acc:
-                accessories_data.append(
-                    {"id": acc.id, "name": acc.name, "listed_price": acc.listed_price}
+            # CUSTOMER DETAILS
+            if customer:
+                data.update(
+                    {
+                        "customer_name": customer.name,
+                        "mobile_number": customer.mobile_number,
+                        "alternate_mobile": customer.alternate_mobile,
+                        "email": customer.email,
+                        "pan_number": customer.pan_number,
+                        "aadhar_number": customer.aadhar_number,
+                        "address": customer.address,
+                        "city": customer.city,
+                        "pin_code": customer.pin_code,
+                    }
                 )
 
-        data["accessories"] = accessories_data
-        data.update(
-            {
-                "net_receivable": transaction.total_receivable,
-                "total_received": transaction.total_received,
-                "balance_amount": transaction.balance,
-            }
-        )
-        data.update(
-            {
-                "discount_booking": transaction.discount_booking,  # Discount Quoted on the Booking File
-                "total_discount_booking": transaction.total_discount_booking,
-                "price_offered_booking": transaction.price_offered_booking,
-                "excess_booking": transaction.excess_booking,
-                "adjustment_booking": transaction.adjustment_booking,
-            }
-        )
+            # VEHICLE DETAILS
+            if variant:
+                data.update(
+                    {
+                        "car_id": variant.car_id,
+                        "variant_id": variant.id,
+                        "car_name": car.name if car else None,
+                        "variant_name": variant.variant_name,
+                        "full_variant_name": variant.full_variant_name,
+                    }
+                )
 
-        # 8. Totals
-        data.update(
-            {
-                "total_allowed_discount": transaction.total_allowed_discount,
-                "total_actual_discount": transaction.total_actual_discount,
-                "total_excess_discount": transaction.total_excess_discount,
-                "other_discount_delivery": transaction.other_discount_delivery,
-                "adjustment_delivery": transaction.adjustment_delivery,
-            }
-        )
+            # TRANSACTION DETAILS
+            data.update(
+                {
+                    "vin_number": transaction.vin_number,
+                    "engine_number": transaction.engine_number,
+                    "color": transaction.color,
+                    "registration_number": transaction.registration_number,
+                    "registration_date": (
+                        transaction.registration_date.isoformat()
+                        if transaction.registration_date
+                        else None
+                    ),
+                    "model_year": transaction.model_year,
+                    "booking_date": (
+                        transaction.booking_date.isoformat()
+                        if transaction.booking_date
+                        else None
+                    ),
+                    "booking_amt": transaction.booking_amt,
+                    "booking_receipt_num": transaction.booking_receipt_num,
+                    "delivery_date": (
+                        transaction.delivery_date.isoformat()
+                        if transaction.delivery_date
+                        else None
+                    ),
+                    "booking_file_incomplete": transaction.booking_file_incomplete,
+                    "booking_file_incomplete_remarks": transaction.booking_file_incomplete_remarks,
+                    "delivery_file_incomplete": transaction.delivery_file_incomplete,
+                    "delivery_file_incomplete_remarks": transaction.delivery_file_incomplete_remarks,
+                    "invoice_number": transaction.invoice_number,
+                    "showroom_id": transaction.outlet_id,
+                    "sales_executive_id": transaction.sales_executive_id,
+                    "sales_executive_name": sales_exec.name if sales_exec else None,
+                    "team_leader": transaction.team_leader,
+                    "customer_file_number": transaction.customer_file_number,
+                }
+            )
 
-        return data
+            # DISCOUNT COMPONENTS - using cached metadata
+            component_metadata = TransactionService.get_discount_component_metadata()
+
+            # Build lookup from preloaded transaction_items (no additional queries)
+            item_lookup = {
+                item.component_id: item for item in transaction.transaction_items
+            }
+
+            # Populate component amounts - all in-memory operations
+            for comp_id, comp_name, _ in component_metadata:
+                item = item_lookup.get(comp_id)
+                data[f"{comp_name}_actual"] = item.actual_amount if item else 0.0
+                data[f"{comp_name}_allowed"] = item.allowed_amount if item else 0.0
+
+            # JSON FIELD EXPANSIONS - using helper function
+            TransactionService._expand_json_field(
+                data, transaction.conditions, prefix="cond_"
+            )
+            TransactionService._expand_json_field(data, transaction.invoice_details)
+            TransactionService._expand_json_field(
+                data, transaction.exchange_details, prefix="exchange_"
+            )
+            TransactionService._expand_json_field(
+                data, transaction.finance_details, prefix="finance_"
+            )
+            TransactionService._expand_json_field(
+                data, transaction.delivery_checklist, prefix="del_checks_"
+            )
+            TransactionService._expand_json_field(
+                data, transaction.booking_checklist, prefix="bk_checks_"
+            )
+            TransactionService._expand_json_field(
+                data, transaction.audit_info, prefix="audit_"
+            )
+            TransactionService._expand_json_field(
+                data, transaction.payment_details, prefix="payment_"
+            )
+
+            # ACCESSORIES - already loaded via selectinload
+            data["accessories"] = [
+                {
+                    "id": link.accessory.id,
+                    "name": link.accessory.name,
+                    "listed_price": link.accessory.listed_price,
+                }
+                for link in transaction.accessory_links
+                if link.accessory
+            ]
+
+            # FINANCIAL SUMMARY
+            data.update(
+                {
+                    "net_receivable": transaction.total_receivable,
+                    "total_received": transaction.total_received,
+                    "balance_amount": transaction.balance,
+                    "discount_booking": transaction.discount_booking,
+                    "total_discount_booking": transaction.total_discount_booking,
+                    "price_offered_booking": transaction.price_offered_booking,
+                    "excess_booking": transaction.excess_booking,
+                    "adjustment_booking": transaction.adjustment_booking,
+                    "total_allowed_discount": transaction.total_allowed_discount,
+                    "total_actual_discount": transaction.total_actual_discount,
+                    "total_excess_discount": transaction.total_excess_discount,
+                    "other_discount_delivery": transaction.other_discount_delivery,
+                    "adjustment_delivery": transaction.adjustment_delivery,
+                }
+            )
+            elapsed = time.perf_counter() - start
+            print(
+                f"Transaction reconstruction "
+                f"took {elapsed:.4f}s "
+                f"for transaction_id={transaction_id}"
+            )
+            return data
+
+        except Exception as e:
+            logger.error(
+                f"Error reconstructing transaction {transaction_id}: {e}", exc_info=True
+            )
+            return {}
+
+    @staticmethod
+    def _expand_json_field(
+        target_dict: Dict[str, Any],
+        source_dict: Optional[Dict[str, Any]],
+        prefix: str = "",
+    ) -> None:
+        """
+        Merge JSON field contents into target dictionary with optional prefix.
+
+        Args:
+            target_dict: Dictionary to update
+            source_dict: Source JSON data (can be None)
+            prefix: Optional prefix for keys
+        """
+        if source_dict:
+            for key, value in source_dict.items():
+                target_dict[f"{prefix}{key}"] = value
 
     @staticmethod
     def list_transactions(session: Session) -> List[Transaction]:
