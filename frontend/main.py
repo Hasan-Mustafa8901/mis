@@ -1147,7 +1147,6 @@ async def dashboard_page() -> None:
     user_data = app.storage.user
     allowed_outlet_ids = user_data.get("allowed_outlet_ids", []) or []
     user_role = user_data.get("role", [""])[0].lower()
-    print("ROLE: ", user_role)
 
     current_transactions: list[dict] = []
 
@@ -8151,7 +8150,6 @@ async def hydrate_form(
     state.is_hydrating = True
 
     try:
-        print("CALLED hydrate_form")
         # VEHICLE / CORE SELECTS
         outlet_id = txn.get("outlet_id")
 
