@@ -7986,6 +7986,7 @@ async def _fs_on_variant_change(variant_id, state: FormState) -> None:
 
 async def _fs_try_price_preload(state: FormState) -> None:
     """Call GET /price-list/preview when both variant + date are known."""
+    print("PRICE LIST CALLED DURING HYDRATION")
     # Extract booking date from available sources
     booking_date = None
     if state.booking_date and state.booking_date.value and state.model_year.value:
@@ -8023,7 +8024,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 toggle = state.price_match_toggles[name]
                 inp = state.price_inputs.get(name)
 
-                if toggle.value and inp:
+                if toggle.value and inp and parsed_val(inp) in [None, "", 0]:
                     inp.set_value(int(value))
                     inp.props("readonly")
                     filled += 1
@@ -8032,7 +8033,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 toggle = state.discount_match_toggles[name]
                 inp = state.discount_inputs.get(name)
 
-                if toggle.value and inp:
+                if toggle.value and inp and parsed_val(inp) in [None, "", 0]:
                     inp.set_value(int(value))
                     inp.props("readonly")
                     filled += 1
@@ -8898,11 +8899,7 @@ async def hydrate_form(
 
             state.car_id = car_id
 
-            await _fs_on_car_change(
-                car_id,
-                state,
-                preserve_variant=True,
-            )
+            await _fs_on_car_change(car_id, state, preserve_variant=True)
 
         if variant_id and state.variant_select:
             state.variant_select.set_value(variant_id)
@@ -8948,99 +8945,30 @@ async def hydrate_form(
                 widget.set_value(value)
 
         # CONDITIONS
-
-        for key, cb in getattr(
-            state,
-            "condition_cbs",
-            {},
-        ).items():
-            val = txn.get(
-                f"cond_{key}",
-                False,
-            )
+        for key, cb in getattr(state, "condition_cbs", {}).items():
+            val = txn.get(f"cond_{key}", False)
 
             cb.set_value(bool(val))
 
         # BOOKING CHECKLIST
         for key, cb in state.booking_cbs.items():
-            cb.set_value(
-                bool(
-                    txn.get(
-                        f"bk_checks_{key}",
-                        False,
-                    )
-                )
-            )
+            cb.set_value(bool(txn.get(f"bk_checks_{key}", False)))
+
         # DELIVERY CHECKLIST
         for key, cb in state.delivery_cbs.items():
-            cb.set_value(
-                bool(
-                    txn.get(
-                        f"del_checks_{key}",
-                        False,
-                    )
-                )
-            )
-        # PRICE INPUTS
-        await _fs_try_price_preload(
-            state,
-        )
-        for (
-            name,
-            inp,
-        ) in getattr(
-            state,
-            "price_inputs",
-            {},
-        ).items():
-            val = txn.get(f"{name}_actual")
-
-            if val not in [
-                None,
-                "",
-            ]:
-                inp.set_value(val)
-        # DISCOUNT INPUTS
-        for (
-            name,
-            inp,
-        ) in getattr(
-            state,
-            "discount_inputs",
-            {},
-        ).items():
-            val = txn.get(f"{name}_actual")
-
-            if val not in [
-                None,
-                "",
-            ]:
-                inp.set_value(val)
+            cb.set_value(bool(txn.get(f"del_checks_{key}", False)))
 
         # SUMMARY FIELDS
         if state.total_discount_booking:
-            state.total_discount_booking.set_value(
-                txn.get(
-                    "discount_booking",
-                    0,
-                )
-            )
+            state.total_discount_booking.set_value(txn.get("discount_booking", 0))
 
         if getattr(state, "other_discount_delivery", None):
             state.other_discount_delivery.set_value(
-                txn.get(
-                    "other_discount_delivery",
-                    0,
-                )
+                txn.get("other_discount_delivery", 0)
             )
 
         if state.adjustment_input:
-            state.adjustment_input.set_value(
-                txn.get(
-                    "adjustment_booking",
-                    0,
-                )
-            )
+            state.adjustment_input.set_value(txn.get("adjustment_booking", 0))
         await hydrate_vehicle_section(
             state,
             txn,
@@ -9069,6 +8997,20 @@ async def hydrate_form(
             state,
             txn,
         )
+        # PRICE INPUTS
+        await _fs_try_price_preload(state)
+
+        for name, inp in getattr(state, "price_inputs", {}).items():
+            val = txn.get(f"{name}_actual")
+
+            if val not in [None, ""]:
+                inp.set_value(val)
+        # DISCOUNT INPUTS
+        for name, inp in getattr(state, "discount_inputs", {}).items():
+            val = txn.get(f"{name}_actual")
+
+            if val not in [None, ""]:
+                inp.set_value(val)
 
         # UI REFRESH
         refresh_visibility(state)

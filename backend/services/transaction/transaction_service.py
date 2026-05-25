@@ -870,11 +870,7 @@ class TransactionService:
 
         for field in CORE_FIELDS:
             if field in payload:
-                setattr(
-                    transaction,
-                    field,
-                    payload[field],
-                )
+                setattr(transaction, field, payload[field])
 
         # MODEL YEAR
         transaction.model_year = (
@@ -895,33 +891,19 @@ class TransactionService:
 
         for field in JSON_FIELDS:
             if field in payload:
-                setattr(
-                    transaction,
-                    field,
-                    payload.get(field) or {},
-                )
+                setattr(transaction, field, payload.get(field) or {})
 
         # ITEMS
-        TransactionService.create_transaction_items(
-            session,
-            transaction.id,
-            payload,
-        )
+        TransactionService.create_transaction_items(session, transaction.id, payload)
 
         # ACCESSORIES
         if "accessory_ids" in payload:
             TransactionService.update_transaction_accessories(
-                session,
-                transaction,
-                payload["accessory_ids"],
+                session, transaction, payload["accessory_ids"]
             )
 
         # RECONCILIATION
-        TransactionService.apply_funds_reconciliation(
-            session,
-            transaction,
-            payload,
-        )
+        TransactionService.apply_funds_reconciliation(session, transaction, payload)
 
         # UPDATED TIMESTAMP
         transaction.updated_at = get_ist_now()

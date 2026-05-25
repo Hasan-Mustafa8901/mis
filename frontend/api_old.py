@@ -101,37 +101,25 @@ async def api_request(
             **kwargs,
         )
 
-        # =================================================
         # AUTH ERRORS
-        # =================================================
-
         if response.status_code == 401:
             raise UnauthorizedError("Session expired")
 
         if response.status_code == 403:
             raise ForbiddenError("Access denied")
 
-        # =================================================
         # SERVER ERRORS
-        # =================================================
-
         if response.status_code >= 500:
             raise ServerError(f"Server error: {response.status_code}")
 
         # RAISE OTHER HTTP ERRORS
         response.raise_for_status()
 
-        # =================================================
         # EMPTY RESPONSE
-        # =================================================
-
         if not response.content:
             return None
 
-        # =================================================
         # JSON RESPONSE
-        # =================================================
-
         content_type = response.headers.get("content-type", "")
 
         if "application/json" in content_type:
@@ -160,11 +148,7 @@ async def api_request(
         raise APIError(f"HTTP Error: {status}") from exc
 
 
-# =========================================================
 # WRAPPER METHODS
-# =========================================================
-
-
 async def api_get(
     path: str,
     params: dict | None = None,
@@ -209,11 +193,7 @@ async def api_delete(
     )
 
 
-# =========================================================
 # FILE UPLOAD
-# =========================================================
-
-
 async def api_post_file(
     path: str,
     file,
