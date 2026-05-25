@@ -110,6 +110,67 @@ class TransactionService:
         session.flush()
 
     @staticmethod
+    def create_transaction_raw(session: Session, payload: dict) -> Transaction:
+        """
+        this function creates the customers, transactions objects and saves them to the database.
+        It also links the accessories and creates transaction items with actual amounts.
+        It does not perform any logic or calculations, it just saves the raw data as-is.
+        """
+        # 1. CUSTOMER (CREATE ALWAYS)
+        # Create customer object saves customer in the DB.
+        cust_data = payload.get("customer", {})
+
+        customer = customer = TransactionService.create_or_update_customer(
+            session, cust_data
+        )
+
+        payload = convert_date_fields(
+            payload, ["booking_date", "registration_date", "delivery_date"]
+        )
+
+        # 2. TRANSACTION CORE
+        transaction = Transaction(
+            customer_id=customer.id,
+            variant_id=payload["variant_id"],
+            outlet_id=payload["outlet_id"],
+            sales_executive_id=payload["sales_executive_id"],
+            created_by=payload.get("user_id"),
+            stage=payload.get("stage", "booking"),
+            booking_date=payload.get("booking_date", None),
+            booking_amt=payload.get("booking_amt", 0.0),
+            booking_receipt_num=payload.get("booking_receipt_num", None),
+            delivery_date=payload.get("delivery_date", None),
+            delivery_file_incomplete=payload.get("delivery_file_incomplete"),
+            delivery_file_incomplete_remarks=payload.get(
+                "delivery_file_incomplete_remarks", ""
+            ),
+            # VEHICLE
+            customer_file_number=payload.get("customer_file_number"),
+            vin_number=payload.get("vin_number"),
+            engine_number=payload.get("engine_number", None),
+            registration_number=payload.get("registration_number"),
+            registration_date=payload.get("registration_date"),
+            color=payload.get("color"),
+            model_year=int(payload.get("model_year", ""))
+            if payload.get("model_year")
+            else None,
+            # CONDITIONS
+            conditions=payload.get("conditions", {}),
+            # JSON SECTIONS
+            invoice_details=payload.get("invoice_details", {}),
+            invoice_number=payload.get("invoice_details", {}).get("invoice_number"),
+            payment_details=payload.get("payment_details", {}),
+            finance_details=payload.get("finance_details", {}),
+            exchange_details=payload.get("exchange_details", {}),
+            audit_info=payload.get("audit_info", {}),
+        )
+        session.add(transaction)
+        session.flush()
+        session.refresh(transaction)
+
+        return transaction
+
+    @staticmethod
     def create_or_update_customer(session: Session, cust_data: Dict[str, Any]):
 
         if not cust_data:

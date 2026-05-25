@@ -27,7 +27,8 @@ def token_is_valid() -> bool:
 
         return exp > now
 
-    except Exception:
+    except Exception as e:
+        print("TOKEN ERROR:", str(e))
         return False
 
 
@@ -136,8 +137,8 @@ def require_roles(*allowed_roles: str):
         async def wrapper(*args, **kwargs):
 
             # AUTH CHECK
+            print("AUTH: ", is_authenticated())
             if not is_authenticated():
-                print("AUTH: ", is_authenticated())
                 await logout_user()
 
                 return
