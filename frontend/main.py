@@ -2616,7 +2616,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                 elif mstate.selected_dealer:
                     params["dealership_id"] = mstate.selected_dealer
-                print("PARAM: ", params)
+
                 response = await api_get("/transactions-pages", params=params)
 
                 if not response:
