@@ -519,7 +519,7 @@ class TransactionService:
         """
 
         try:
-            start = time.perf_counter()
+            # start = time.perf_counter()
             # SINGLE OPTIMIZED QUERY - loads all relationships upfront
             transaction = session.exec(
                 select(Transaction)
@@ -698,12 +698,12 @@ class TransactionService:
                     "adjustment_delivery": transaction.adjustment_delivery,
                 }
             )
-            elapsed = start - time.perf_counter()
-            print(
-                f"Transaction reconstruction "
-                f"took {elapsed:.4f}s "
-                f"for transaction_id={transaction_id}"
-            )
+            # elapsed = start - time.perf_counter()
+            # print(
+            #     f"Transaction reconstruction "
+            #     f"took {elapsed:.4f}s "
+            #     f"for transaction_id={transaction_id}"
+            # )
             return data
 
         except Exception as e:
