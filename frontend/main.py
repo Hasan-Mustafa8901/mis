@@ -363,7 +363,51 @@ async def api_request(
 
 
 # Cached version of the fetch references date:
-REFERENCE_CACHE = None
+# REFERENCE_CACHE: dict = {}
+
+
+# async def fetch_reference_data(
+#     force_refresh: bool = False,
+# ) -> dict:
+
+#     global REFERENCE_CACHE
+
+#     if REFERENCE_CACHE and not force_refresh:
+#         return REFERENCE_CACHE
+
+#     tasks = {
+#         "cars": api_get("/cars"),
+#         "variants": api_get("/variants"),
+#         "outlets": api_get("/outlets"),
+#         "executives": api_get("/sales-executives"),
+#         "accessories": api_get("/accessories"),
+#         "dealerships": api_get("/complaints/dealerships"),
+#         "components": api_get("/components"),
+#     }
+
+#     results = await asyncio.gather(
+#         *tasks.values(),
+#         return_exceptions=True,
+#     )
+
+#     final = {}
+
+#     for key, result in zip(tasks.keys(), results):
+#         if isinstance(result, Exception):
+#             print(
+#                 f"REFERENCE DATA ERROR [{key}]:",
+#                 result,
+#             )
+
+#             final[key] = []
+
+#         else:
+#             final[key] = result or []
+
+#     REFERENCE_CACHE = final
+
+#     return final
+REFERENCE_CACHE: dict = {}
 
 
 async def fetch_reference_data(
@@ -385,28 +429,23 @@ async def fetch_reference_data(
         "components": api_get("/components"),
     }
 
-    results = await asyncio.gather(
-        *tasks.values(),
-        return_exceptions=True,
-    )
-
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
     final = {}
 
     for key, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
-            print(
-                f"REFERENCE DATA ERROR [{key}]:",
-                result,
-            )
-
+            print(f"REFERENCE DATA ERROR [{key}]:", result)
             final[key] = []
-
         else:
             final[key] = result or []
 
     REFERENCE_CACHE = final
 
-    return final
+    return REFERENCE_CACHE
+
+
+def get_reference_data() -> dict:
+    return REFERENCE_CACHE
 
 
 # GLOBAL WIDGETS & INP HELPER
@@ -1036,7 +1075,7 @@ def render_table(transactions, state, stage: str = "booking"):
                 text="Next",
                 icon="chevron_right",
                 on_click=go_next,
-            ).props("unelevated").classes("bg-[#E8402A] text-white rounded-lg px-4")
+            ).props("unelevated").classes("bg-primary text-white rounded-lg px-4")
 
     def create_dialog(txn_id):
         with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
@@ -5211,7 +5250,7 @@ async def daily_reporting_page() -> None:
 class SettingsState:
     def __init__(self) -> None:
         self.outlets: list[dict] = []
-        self.dealers: list[dict] = []
+        self.dealerships: list[dict] = []
 
 
 # PAGE: SETTINGS
@@ -5229,8 +5268,9 @@ async def settings_page():
 
     # FETCH MASTER DATA
     await load_master_data(state=sstate)
+
     outlet_names = [o["name"] for o in sstate.outlets]
-    dealer_names = [d["name"] for d in sstate.dealers]
+    dealer_names = [d["name"] for d in sstate.dealerships]
 
     # PAGE
     render_topbar("Settings")
@@ -5282,7 +5322,6 @@ async def settings_page():
                     with ui.card().classes(
                         "w-[500px] max-h-[260px] overflow-auto border rounded-lg p-3"
                     ):
-                        print(sstate.outlets)
                         for outlet_data in sstate.outlets:
                             checkbox = ui.checkbox(outlet_data["name"])
 
@@ -5343,18 +5382,9 @@ async def settings_page():
                                 ),
                             }
 
-                            print(payload)
-
                             try:
-                                await api_post(
-                                    "/auth/register",
-                                    payload=payload,
-                                )
-
-                                ui.notify(
-                                    "User created successfully",
-                                    type="positive",
-                                )
+                                await api_post("/auth/register", payload=payload)
+                                ui.notify("User created successfully", type="positive")
 
                                 # RESET FORM
                                 name.value = ""
@@ -5386,32 +5416,15 @@ async def settings_page():
                                 )
 
                             except ConnectionFailedError:
-                                ui.notify(
-                                    "Server unreachable",
-                                    type="negative",
-                                )
+                                ui.notify("Server unreachable", type="negative")
 
                             except APIError as e:
-                                print(
-                                    "USER REGISTRATION API ERROR:",
-                                    e,
-                                )
-
-                                ui.notify(
-                                    str(e),
-                                    type="negative",
-                                )
+                                print("USER REGISTRATION API ERROR:", e)
+                                ui.notify(str(e), type="negative")
 
                             except Exception as e:
-                                print(
-                                    "USER REGISTRATION ERROR:",
-                                    e,
-                                )
-
-                                ui.notify(
-                                    "Something went wrong",
-                                    type="negative",
-                                )
+                                print("USER REGISTRATION ERROR:", e)
+                                ui.notify("Something went wrong", type="negative")
 
                         ui.button("Create User", on_click=handle_register).classes(
                             "bg-[#E8402A] text-white px-4 py-2 rounded-md"
@@ -5425,11 +5438,7 @@ async def settings_page():
                                 setattr(password, "value", ""),
                                 setattr(role, "value", None),
                                 [
-                                    setattr(
-                                        item["checkbox"],
-                                        "value",
-                                        False,
-                                    )
+                                    setattr(item["checkbox"], "value", False)
                                     for item in outlet_checkboxes
                                 ],
                             ],
@@ -5610,6 +5619,8 @@ async def settings_page():
 
                         await api_post_file("/price-list/upload", e, payload)
 
+                        await fetch_reference_data(force_refresh=True)
+
                         status_label.text = "✅ Upload successful"
                         status_label.classes("text-green-600")
 
@@ -5630,7 +5641,7 @@ async def settings_page():
                     except ServerError:
                         ui.notify(
                             "Some Error Occured while updating file, please try again.",
-                            tyoe="negative",
+                            type="negative",
                         )
 
                     except APIError as e:
@@ -5670,6 +5681,8 @@ async def settings_page():
                             "code": d_code.value,
                         },
                     )
+                    # Refresh Cache
+                    await fetch_reference_data(force_refresh=True)
                     ui.notify("Dealership created", type="positive")
                     d_name.value = ""
                     d_code.value = ""
@@ -5719,10 +5732,12 @@ async def settings_page():
                             "code": o_code.value,
                             "address": o_address.value,
                             "dealership_id": get_id_by_name(
-                                sstate.dealers, dealership_select.value
+                                sstate.dealerships, dealership_select.value
                             ),
                         },
                     )
+                    # Refresh Cache
+                    await fetch_reference_data(force_refresh=True)
                     ui.notify("Outlet created", type="positive")
 
                     o_name.value = ""
@@ -5779,10 +5794,14 @@ async def settings_page():
                         "/sales-executive",
                         {
                             "name": e_name.value,
-                            "outlet_id": get_id_by_name(outlets, outlet_select.value),
+                            "outlet_id": get_id_by_name(
+                                sstate.outlets, outlet_select.value
+                            ),
                             "designation": e_designation.value,
                         },
                     )
+                    # Refresh Cache
+                    await fetch_reference_data(force_refresh=True)
                     ui.notify("Employee created", type="positive")
 
                     e_name.value = ""
@@ -5835,7 +5854,11 @@ class FormController:
         self.attach_handlers()
 
     async def load_reference_data(self):
-        data = await fetch_reference_data()
+
+        data = get_reference_data()
+
+        if not data:
+            data = await fetch_reference_data()
 
         self.state.cars = data.get("cars", [])
         self.state.variants = data.get("variants", [])
@@ -8014,7 +8037,6 @@ async def _fs_on_variant_change(variant_id, state: FormState) -> None:
 
 async def _fs_try_price_preload(state: FormState) -> None:
     """Call GET /price-list/preview when both variant + date are known."""
-    print("PRICE LIST CALLED DURING HYDRATION")
     # Extract booking date from available sources
     booking_date = None
     if state.booking_date and state.booking_date.value and state.model_year.value:
@@ -8284,50 +8306,17 @@ def _fs_update_live(state) -> None:
             dl.style("color:#9CA3AF")
 
     # 4. EXCESS CALCULATION
-    adjustment = int(
-        float(
-            parsed_val(
-                getattr(
-                    state,
-                    "adjustment_input",
-                    None,
-                )
-            )
-        )
-    )
-    print("OTHER DISCOUNT DELIVERY:", parsed_val(state.other_discount_delivery))
-    print("OTHER DISCOUNT Booking:", parsed_val(state.total_discount_booking))
+    adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
     total_discount_given = int(
         total_diff
         + acc_diff
-        + int(
-            parsed_val(
-                getattr(
-                    state,
-                    "total_discount_booking",
-                    None,
-                )
-            )
-        )
-        + int(
-            parsed_val(
-                getattr(
-                    state,
-                    "other_discount_delivery",
-                    None,
-                )
-            )
-        )
+        + int(parsed_val(getattr(state, "total_discount_booking", None)))
+        + int(parsed_val(getattr(state, "other_discount_delivery", None)))
         + total_given_discount
         - adjustment
     )
 
-    excess = int(
-        max(
-            0,
-            total_discount_given - total_allowed_discount,
-        )
-    )
+    excess = int(max(0, total_discount_given - total_allowed_discount))
 
     # 5. UPDATE LABELS
     if getattr(state, "total_allowed", None):
@@ -8897,7 +8886,6 @@ async def hydrate_form(
     state.is_hydrating = True
 
     try:
-        print("CALLED hydrate_form")
         # VEHICLE / CORE SELECTS
         outlet_id = txn.get("outlet_id")
 
