@@ -965,8 +965,6 @@ def render_table(transactions, state, stage: str = "booking"):
                 "domLayout": "normal",
                 "suppressColumnVirtualization": False,
                 "animateRows": True,
-                # "pagination": True,
-                # "paginationPageSize": 25,
                 "rowSelection": "multiple",
                 "suppressRowClickSelection": True,
                 "rowHeight": 38,
@@ -979,6 +977,66 @@ def render_table(transactions, state, stage: str = "booking"):
         .style("font-family:Inter,sans-serif;font-size:13px;")
     )
     state.grid = grid
+
+    async def go_prev():
+        if state.offset <= 0:
+            return
+        state.offset = max(0, state.offset - state.limit)
+        await state.load_data()
+
+    async def go_next():
+        next_offset = state.offset + state.limit
+        # OPTIONAL GUARD
+        if next_offset >= state.total_rows:
+            ui.notify("No more records", type="info")
+            return
+        state.offset = next_offset
+
+        await state.load_data()
+
+    async def on_limit_change(e):
+        new_limit = int(e.value)
+        # RESET TO FIRST PAGE
+        state.offset = 0
+        state.limit = new_limit
+        await state.load_data()
+
+    with ui.row().classes("w-full justify-between items-center px-4 py-4"):
+        # LEFT SIDE
+        with ui.row().classes("items-center gap-3"):
+            ui.label().bind_text_from(
+                state,
+                "offset",
+                backward=lambda o: (
+                    f"Showing "
+                    f"{o + 1}"
+                    f" - "
+                    f"{min(o + state.limit, state.total_rows)}"
+                    f" of "
+                    f"{state.total_rows}"
+                ),
+            )
+            ui.space().classes("w-5")
+            ui.select(
+                options=[25, 50, 100],
+                value=state.limit,
+                label="Rows per Page",
+                on_change=on_limit_change,
+            ).props("dense outlined").classes("w-36")
+
+        # RIGHT SIDE
+        with ui.row().classes("gap-2"):
+            ui.button(
+                icon="chevron_left",
+                text="Previous",
+                on_click=go_prev,
+            ).props("outline").classes("rounded-lg px-4")
+
+            ui.button(
+                text="Next",
+                icon="chevron_right",
+                on_click=go_next,
+            ).props("unelevated").classes("bg-[#E8402A] text-white rounded-lg px-4")
 
     def create_dialog(txn_id):
         with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
@@ -2133,9 +2191,11 @@ class MISState:
         self.stage: str = "booking"
         self.month: str | None = None
         self.grid = None
+        self.load_data = []
         self.selected_ids: list[int] = []
         self.limit: int = 0
         self.offset: int = 0
+        self.total_rows: int = 0
         self.total_entries = 0
         self.total_excess = 0
         self.sorted_months = {}
@@ -2301,6 +2361,25 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                         "text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
                     )
 
+        @ui.refreshable
+        def render_header_meta():
+            with ui.column().classes("gap-1"):
+                title = (
+                    f"{label}"
+                    f"{' — ' + month_label_local(month) if month else ' — All Months'}"
+                )
+                ui.label(title).classes(
+                    "text-[18px] font-bold text-gray-900 leading-none"
+                )
+                exc_txt = (
+                    f" · ₹{mstate.total_excess:,} excess"
+                    if mstate.total_excess > 0
+                    else ""
+                )
+                ui.label(f"{mstate.total_entries} records{exc_txt}").classes(
+                    "text-[12px] text-gray-400"
+                )
+
         async def load_meta():
             try:
                 params = {"stage": mstate.stage}
@@ -2343,105 +2422,73 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
         # Refactor this after merge this is change now in the main branch.
         async def load_data():
-            # CANCEL PREVIOUS RUNNING TASK
-            if mstate._load_tasks and not mstate._load_tasks.done():
-                mstate._load_tasks.cancel()
-
-            async def _run():
-                try:
-                    # LOAD META FIRST
-                    await load_meta()
-                    params = {"limit": mstate.limit, "offset": mstate.offset}
-                    if mstate.selected_outlet:
-                        params["outlet_id"] = mstate.selected_outlet
-
-                    elif mstate.selected_dealer:
-                        params["dealership_id"] = mstate.selected_dealer
-
-                    data = await api_get("/transactions-pages", params=params)
-
-                    if not data:
-                        data = []
-
-                    # DELIVERY FILTER
-                    if mstate.stage == "delivery":
-                        data = [t for t in data if t.get("stage") == "delivery"]
-
-                    # MONTH FILTER
-                    if mstate.month:
-                        data = [
-                            t
-                            for t in data
-                            if (t.get("booking_date", "") or "").startswith(
-                                mstate.month
-                            )
-                        ]
-
-                    # SAFE TABLE RENDER
-                    with mstate.table_container:
-                        mstate.table_container.clear()
-
-                        render_table(data, mstate, stage=mstate.stage)
-
-                except asyncio.CancelledError:
-                    # TASK CANCELLATION IS EXPECTED
-                    # DO NOT SHOW UI ERRORS
-                    pass
-
-                except UnauthorizedError:
-                    await logout_user()
-
-                    ui.notify("Session expired. Please login again.", type="warning")
-                    ui.navigate.to("/login")
-
-                except ConnectionFailedError:
-                    ui.notify("Unable to load transactions", type="negative")
-
-                except APIError as e:
-                    print("LOAD DATA API ERROR:", e)
-                    ui.notify("Failed to load transactions", type="negative")
-
-                except Exception as e:
-                    print("LOAD DATA ERROR:", e)
-                    ui.notify("Something went wrong", type="negative")
-
-            mstate._load_tasks = asyncio.create_task(_run())
 
             try:
-                await mstate._load_tasks
+                # LOAD META
+                await load_meta()
 
-            except asyncio.CancelledError:
-                # OUTER CANCELLATION SAFETY
-                pass
+                params = {"limit": mstate.limit, "offset": mstate.offset}
+
+                if mstate.selected_outlet:
+                    params["outlet_id"] = mstate.selected_outlet
+
+                elif mstate.selected_dealer:
+                    params["dealership_id"] = mstate.selected_dealer
+                print("PARAM: ", params)
+                response = await api_get("/transactions-pages", params=params)
+
+                if not response:
+                    response = {}
+
+                mstate.total_rows = response.get("total", 0)
+
+                data = response.get("rows", [])
+
+                # DELIVERY FILTER
+                if mstate.stage == "delivery":
+                    data = [t for t in data if t.get("stage") == "delivery"]
+
+                # MONTH FILTER
+                if mstate.month:
+                    data = [
+                        t
+                        for t in data
+                        if (t.get("booking_date", "") or "").startswith(mstate.month)
+                    ]
+
+                # SAFE UI CONTEXT
+                with mstate.table_container:
+                    mstate.table_container.clear()
+
+                    render_table(data, mstate, stage=mstate.stage)
+
+            except UnauthorizedError:
+                await logout_user()
+
+                ui.notify("Session expired. Please login again.", type="warning")
+
+                ui.navigate.to("/login")
+
+            except ConnectionFailedError:
+                ui.notify("Unable to load transactions", type="negative")
+
+            except APIError as e:
+                print("LOAD DATA API ERROR:", e)
+
+                ui.notify("Failed to load transactions", type="negative")
+
+            except Exception as e:
+                print("LOAD DATA ERROR:", e)
+
+                ui.notify("Something went wrong", type="negative")
 
         def schedule_load():
             if mstate._debounce:
                 mstate._debounce.cancel()
 
-            mstate._debounce = ui.timer(
-                0.3,
-                lambda: load_data(),
-                once=True,
-            )
+            mstate._debounce = ui.timer(0.3, lambda: load_data(), once=True)
 
-        @ui.refreshable
-        def render_header_meta():
-            with ui.column().classes("gap-1"):
-                title = (
-                    f"{label}"
-                    f"{' — ' + month_label_local(month) if month else ' — All Months'}"
-                )
-                ui.label(title).classes(
-                    "text-[18px] font-bold text-gray-900 leading-none"
-                )
-                exc_txt = (
-                    f" · ₹{mstate.total_excess:,} excess"
-                    if mstate.total_excess > 0
-                    else ""
-                )
-                ui.label(f"{mstate.total_entries} records{exc_txt}").classes(
-                    "text-[12px] text-gray-400"
-                )
+        mstate.load_data = load_data
 
         #  MAIN CONTENT
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
@@ -2523,25 +2570,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ) as table_container:
                 mstate.table_container = table_container
                 await load_data()
-            with ui.row().classes("w-full justify-end gap-2 mt-4"):
-
-                async def next_page():
-                    mstate.offset += mstate.limit
-                    await load_data()
-
-                async def prev_page():
-                    mstate.offset = max(0, mstate.offset - mstate.limit)
-                    await load_data()
-
-                ui.button(
-                    "Previous",
-                    on_click=lambda: prev_page(),
-                )
-
-                ui.button(
-                    "Next",
-                    on_click=lambda: next_page(),
-                )
 
 
 @ui.page("/booking-mis")

@@ -698,7 +698,7 @@ class TransactionService:
                     "adjustment_delivery": transaction.adjustment_delivery,
                 }
             )
-            elapsed = time.perf_counter() - start
+            elapsed = start - time.perf_counter()
             print(
                 f"Transaction reconstruction "
                 f"took {elapsed:.4f}s "
@@ -733,6 +733,45 @@ class TransactionService:
     @staticmethod
     def list_transactions(session: Session) -> List[Transaction]:
         return list(session.exec(select(Transaction)).all())
+
+    @staticmethod
+    def serialize_transaction_row(tx: Transaction):
+
+        customer = tx.customer
+        variant = tx.variant
+        outlet = tx.outlet
+        sales_exec = tx.sales_executive
+        user = tx.user
+
+        car = variant.car if variant else None
+
+        return {
+            "id": tx.id,
+            "status": tx.status,
+            "stage": tx.stage,
+            "mode": tx.mode,
+            "customer_name": customer.name if customer else None,
+            "mobile_number": customer.mobile_number if customer else None,
+            "pan_number": customer.pan_number if customer else None,
+            "car_name": car.name if car else None,
+            "variant_name": variant.variant_name if variant else None,
+            "outlet_name": outlet.name if outlet else None,
+            "sales_executive_name": (sales_exec.name if sales_exec else None),
+            "booking_date": tx.booking_date.isoformat() if tx.booking_date else None,
+            "delivery_date": tx.delivery_date.isoformat() if tx.delivery_date else None,
+            "booking_amt": tx.booking_amt,
+            "invoice_number": tx.invoice_number,
+            "registration_number": tx.registration_number,
+            "price_offered_booking": tx.price_offered_booking,
+            "total_discount_booking": tx.total_discount_booking,
+            "total_actual_discount": tx.total_actual_discount,
+            "total_allowed_discount": tx.total_allowed_discount,
+            "total_excess_discount": tx.total_excess_discount,
+            "payment_status": tx.payment_status,
+            "audit_observations": tx.audit_info.get("observations", ""),
+            "created_at": tx.created_at.isoformat() if tx.created_at else None,
+            "created_by": user.name if user else None,
+        }
 
     @staticmethod
     def get_transaction_by_id(
