@@ -27,7 +27,8 @@ def token_is_valid() -> bool:
 
         return exp > now
 
-    except Exception:
+    except Exception as e:
+        print("TOKEN ERROR:", str(e))
         return False
 
 
@@ -38,20 +39,6 @@ def set_auth(token: str, roles: list[str]):
 
 def get_roles() -> list[str]:
     return app.storage.user.get("roles", [])
-
-
-# def require_roles(*allowed_roles: str):
-#     def decorator(func):
-#         @wraps(func)
-#         async def wrapper(*args, **kwargs):
-#             user_roles = set(app.storage.user.get("roles", []))
-#             if not user_roles.intersection(allowed_roles):
-#                 ui.notify("Access Denied", type="negative")
-#                 ui.navigate.to("/")  # fallback page
-#                 return
-#             return await func(*args, **kwargs)
-#         return wrapper
-#     return decorator
 
 
 def is_authenticated():
@@ -137,7 +124,6 @@ def require_roles(*allowed_roles: str):
 
             # AUTH CHECK
             if not is_authenticated():
-                print("AUTH: ", is_authenticated())
                 await logout_user()
 
                 return

@@ -1,5 +1,12 @@
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, JSON, UniqueConstraint, Enum as SQLEnum
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Integer,
+    JSON,
+    UniqueConstraint,
+    Enum as SQLEnum,
+)
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date
 from services.utils import get_ist_now, get_ist_today
@@ -81,6 +88,7 @@ class Outlet(SQLModel, table=True):
     dealership: Optional["Dealership"] = Relationship(back_populates="outlets")
     employees: List["Employee"] = Relationship(back_populates="outlet")
     users: List["User"] = Relationship(back_populates="outlet")
+    transactions: List["Transaction"] = Relationship(back_populates="outlet")
 
     created_at: datetime = Field(default_factory=get_ist_now)
 
@@ -94,6 +102,7 @@ class Employee(SQLModel, table=True):
     created_at: datetime = Field(default_factory=get_ist_now)
 
     outlet: Optional["Outlet"] = Relationship(back_populates="employees")
+    transactions: List["Transaction"] = Relationship(back_populates="sales_executive")
 
 
 ## User Table
@@ -159,6 +168,7 @@ class Variant(SQLModel, table=True):
 
     car: Optional[Car] = Relationship(back_populates="variants")
     price_list_items: List["PriceListItem"] = Relationship(back_populates="variant")
+    transactions: List["Transaction"] = Relationship(back_populates="variant")
 
 
 class Bank(SQLModel, table=True):
@@ -313,6 +323,9 @@ class Transaction(SQLModel, table=True):
     updated_at: Optional[datetime] = None
 
     # Relationships
+    outlet: Optional[Outlet] = Relationship(back_populates="transactions")
+    variant: Optional[Variant] = Relationship(back_populates="transactions")
+    sales_executive: Optional[Employee] = Relationship(back_populates="transactions")
     user: Optional["User"] = Relationship(back_populates="transactions")
     customer: Customer = Relationship(back_populates="transactions")
     items: List["TransactionItem"] = Relationship(
@@ -471,8 +484,11 @@ class MISRecord(SQLModel, table=True):
     # Transaction Linking
     transaction_id: Optional[int] = Field(
         default=None,
-        foreign_key="transaction.id",
-        index=True,
+        sa_column=Column(
+            Integer,
+            ForeignKey("transaction.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
     )
 
     matching_status: MISMatchingStatus = Field(

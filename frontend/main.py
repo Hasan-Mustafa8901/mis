@@ -30,15 +30,27 @@ from auth_old import (
     token_is_valid,
     clear_user,
 )
+from api_old import (
+    api_get,
+    api_post,
+    api_delete,
+    api_put,
+    api_post_file,
+    http_client,
+    APIError,
+    UnauthorizedError,
+    ForbiddenError,
+    ConnectionFailedError,
+    ServerError,
+)
 
 
 # CONFIG & SHARED CONSTANTS
-
 load_dotenv()
 
 SECRET_KEY_FRONTEND = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
-# BASE_URL = ************
+
 
 CONDITION_KEYS = {
     "Price Component": [
@@ -273,54 +285,140 @@ async def api_request(
         raise
 
 
-async def api_get(path: str, params=None):
-    return await api_request("GET", path, params=params)
+# async def api_get(path: str, params=None):
+#     return await api_request("GET", path, params=params)
 
 
-async def api_post(path: str, payload: dict):
-    return await api_request("POST", path, json=payload)
+# async def api_post(path: str, payload: dict):
+#     return await api_request("POST", path, json=payload)
 
 
-async def api_delete(path: str, payload=None):
-    return await api_request("DELETE", path, json=payload)
+# async def api_delete(path: str, payload=None):
+#     return await api_request("DELETE", path, json=payload)
 
 
-async def api_put(path: str, payload: dict):
-    return await api_request("PUT", path, json=payload)
+# async def api_put(path: str, payload: dict):
+#     return await api_request("PUT", path, json=payload)
 
 
 # DO NOT CHANGE, DO NOT FIX SOMETHING THAT IS NOT BROKEN
 # THE CODE LOOKS UGLY???
 # BUT F*CKING WORKS, F OFF
 # THIS NOT ANY OTHER DEV THIS WARNING IS FOR ME...
-async def api_post_file(path: str, file, data: dict):
-    token = app.storage.user.get("token")
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    name = file.file.name
-    content = await file.file.read()
+# async def api_post_file(path: str, file, data: dict):
+#     token = app.storage.user.get("token")
+#     headers = {}
+#     if token:
+#         headers["Authorization"] = f"Bearer {token}"
+#     name = file.file.name
+#     content = await file.file.read()
 
-    async with httpx.AsyncClient() as client:
-        r = await client.post(
-            f"{BASE_URL}{path}",
-            files={
-                "file": (name, content)  # no await
-            },
-            data=data,
-            headers=headers,
-            timeout=20,
-        )
-        r.raise_for_status()
-        return r.json()
+#     async with httpx.AsyncClient() as client:
+#         r = await client.post(
+#             f"{BASE_URL}{path}",
+#             files={
+#                 "file": (name, content)  # no await
+#             },
+#             data=data,
+#             headers=headers,
+#             timeout=20,
+#         )
+#         r.raise_for_status()
+#         return r.json()
 
 
 # SHARED BOOTSTRAP FETCH
-async def fetch_reference_data() -> dict:
-    """
-    Fetch all static reference data needed by the form.
-    Returns a dict with keys: cars, components, outlets, executives
-    """
+# async def fetch_reference_data() -> dict:
+
+#     tasks = {
+#         "cars": api_get("/cars"),
+#         "variants": api_get("/variants"),
+#         "outlets": api_get("/outlets"),
+#         "executives": api_get("/sales-executives"),
+#         "accessories": api_get("/accessories"),
+#         "dealerships": api_get("/complaints/dealerships"),
+#         "components": api_get("/components"),
+#     }
+
+#     results = await asyncio.gather(
+#         *tasks.values(),
+#         return_exceptions=True,
+#     )
+
+#     final = {}
+
+#     for key, result in zip(tasks.keys(), results):
+#         if isinstance(result, Exception):
+#             print(
+#                 f"REFERENCE DATA ERROR [{key}]:",
+#                 result,
+#             )
+
+#             final[key] = []
+
+#         else:
+#             final[key] = result or []
+
+#     return final
+
+
+# Cached version of the fetch references date:
+# REFERENCE_CACHE: dict = {}
+
+
+# async def fetch_reference_data(
+#     force_refresh: bool = False,
+# ) -> dict:
+
+#     global REFERENCE_CACHE
+
+#     if REFERENCE_CACHE and not force_refresh:
+#         return REFERENCE_CACHE
+
+#     tasks = {
+#         "cars": api_get("/cars"),
+#         "variants": api_get("/variants"),
+#         "outlets": api_get("/outlets"),
+#         "executives": api_get("/sales-executives"),
+#         "accessories": api_get("/accessories"),
+#         "dealerships": api_get("/complaints/dealerships"),
+#         "components": api_get("/components"),
+#     }
+
+#     results = await asyncio.gather(
+#         *tasks.values(),
+#         return_exceptions=True,
+#     )
+
+#     final = {}
+
+#     for key, result in zip(tasks.keys(), results):
+#         if isinstance(result, Exception):
+#             print(
+#                 f"REFERENCE DATA ERROR [{key}]:",
+#                 result,
+#             )
+
+#             final[key] = []
+
+#         else:
+#             final[key] = result or []
+
+#     REFERENCE_CACHE = final
+
+#     return final
+REFERENCE_CACHE: dict = {}
+
+
+async def fetch_reference_data(
+    force_refresh: bool = False,
+) -> dict:
+
+    global REFERENCE_CACHE
+
+    if REFERENCE_CACHE and not force_refresh:
+        return REFERENCE_CACHE
+
     tasks = {
         "cars": api_get("/cars"),
         "variants": api_get("/variants"),
@@ -330,15 +428,24 @@ async def fetch_reference_data() -> dict:
         "dealerships": api_get("/complaints/dealerships"),
         "components": api_get("/components"),
     }
-    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
     final = {}
-    for (key, _), result in zip(tasks.items(), results):
-        if isinstance(results, Exception):
+
+    for key, result in zip(tasks.keys(), results):
+        if isinstance(result, Exception):
+            print(f"REFERENCE DATA ERROR [{key}]:", result)
             final[key] = []
         else:
-            final[key] = result
-    return final
+            final[key] = result or []
+
+    REFERENCE_CACHE = final
+
+    return REFERENCE_CACHE
+
+
+def get_reference_data() -> dict:
+    return REFERENCE_CACHE
 
 
 # GLOBAL WIDGETS & INP HELPER
@@ -515,32 +622,42 @@ def login_page():
             async def handle_login():
 
                 try:
-                    async with httpx.AsyncClient() as client:
-                        r = await client.post(
-                            f"{BASE_URL}/auth/login",
-                            json={
-                                "name": username.value,
-                                "password": password.value,
-                            },
-                            timeout=10,
-                        )
-                        r.raise_for_status()
-                        data = r.json()
+                    data = await api_post(
+                        "/auth/login",
+                        payload={
+                            "name": username.value,
+                            "password": password.value,
+                        },
+                    )
+
+                    if not data:
+                        ui.notify("Login failed", type="negative")
+                        return
 
                     set_user(data)
                     ui.notify("Login successful", type="positive")
                     ui.navigate.to("/")
 
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code == 401:
-                        ui.notify("Invalid Credentials", type="negative")
-                    elif exc.response.status_code == 404:
-                        ui.notify("Not Found", type="negative")
+                except UnauthorizedError:
+                    ui.notify("Invalid credentials", type="negative")
 
-                except httpx.ConnectError as exc:
-                    # log this exc error
+                except ForbiddenError:
+                    ui.notify("Access denied", type="negative")
+
+                except ConnectionFailedError as e:
                     ui.notify(
-                        str(exc),
+                        str(e),
+                        type="negative",
+                    )
+
+                except APIError as e:
+                    ui.notify(str(e), type="negative")
+
+                except Exception as e:
+                    print("LOGIN ERROR:", e)
+
+                    ui.notify(
+                        "Something went wrong",
                         type="negative",
                     )
 
@@ -631,6 +748,8 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "total_actual_discount",
         "total_allowed_discount",
         "total_excess_discount",
+        "created_by",
+        "created_at",
     ]
 
     # remove duplicates + preserve order
@@ -885,8 +1004,6 @@ def render_table(transactions, state, stage: str = "booking"):
                 "domLayout": "normal",
                 "suppressColumnVirtualization": False,
                 "animateRows": True,
-                # "pagination": True,
-                # "paginationPageSize": 25,
                 "rowSelection": "multiple",
                 "suppressRowClickSelection": True,
                 "rowHeight": 38,
@@ -899,6 +1016,66 @@ def render_table(transactions, state, stage: str = "booking"):
         .style("font-family:Inter,sans-serif;font-size:13px;")
     )
     state.grid = grid
+
+    async def go_prev():
+        if state.offset <= 0:
+            return
+        state.offset = max(0, state.offset - state.limit)
+        await state.load_data()
+
+    async def go_next():
+        next_offset = state.offset + state.limit
+        # OPTIONAL GUARD
+        if next_offset >= state.total_rows:
+            ui.notify("No more records", type="info")
+            return
+        state.offset = next_offset
+
+        await state.load_data()
+
+    async def on_limit_change(e):
+        new_limit = int(e.value)
+        # RESET TO FIRST PAGE
+        state.offset = 0
+        state.limit = new_limit
+        await state.load_data()
+
+    with ui.row().classes("w-full justify-between items-center px-4 py-4"):
+        # LEFT SIDE
+        with ui.row().classes("items-center gap-3"):
+            ui.label().bind_text_from(
+                state,
+                "offset",
+                backward=lambda o: (
+                    f"Showing "
+                    f"{o + 1}"
+                    f" - "
+                    f"{min(o + state.limit, state.total_rows)}"
+                    f" of "
+                    f"{state.total_rows}"
+                ),
+            )
+            ui.space().classes("w-5")
+            ui.select(
+                options=[25, 50, 100],
+                value=state.limit,
+                label="Rows per Page",
+                on_change=on_limit_change,
+            ).props("dense outlined").classes("w-36")
+
+        # RIGHT SIDE
+        with ui.row().classes("gap-2"):
+            ui.button(
+                icon="chevron_left",
+                text="Previous",
+                on_click=go_prev,
+            ).props("outline").classes("rounded-lg px-4")
+
+            ui.button(
+                text="Next",
+                icon="chevron_right",
+                on_click=go_next,
+            ).props("unelevated").classes("bg-primary text-white rounded-lg px-4")
 
     def create_dialog(txn_id):
         with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
@@ -1215,6 +1392,22 @@ async def dashboard_page() -> None:
 
     async def reload_backend_data(_=None):
         await load_dashboard_data()
+
+    #  Fetch all transactions
+    try:
+        all_transactions: list = await api_get("/transactions")
+    except UnauthorizedError:
+        await logout_user()
+        ui.notify("Session expired. Please login again.", type="warning")
+        ui.navigate.to("/login")
+
+    except ConnectionFailedError:
+        ui.notify("Unable to connect to server", type="negative")
+        all_transactions = []
+    except APIError as e:
+        print("ERROR ON DASHBOARD: ", str(e))
+        ui.notify("An Error Occured", type="negative")
+        all_transactions = []
 
     #  Month helpers
     def month_label(ym: str) -> str:
@@ -2180,18 +2373,62 @@ class MISState:
         self.stage: str = "booking"
         self.month: str | None = None
         self.grid = None
+        self.load_data = []
         self.selected_ids: list[int] = []
         self.limit: int = 0
         self.offset: int = 0
+        self.total_rows: int = 0
         self.total_entries = 0
         self.total_excess = 0
         self.sorted_months = {}
         self.month_map = {}
 
 
-async def load_master_data(mstate):
-    mstate.dealerships = await api_get("/dealerships")
-    mstate.outlets = await api_get("/outlets")
+async def load_master_data(state):
+    try:
+        state.dealerships = await api_get("/dealerships")
+        state.outlets = await api_get("/outlets")
+
+    except UnauthorizedError:
+        await logout_user()
+
+        ui.notify(
+            "Session expired. Please login again.",
+            type="warning",
+        )
+
+        ui.navigate.to("/login")
+
+    except ConnectionFailedError:
+        ui.notify(
+            "Unable to connect to server",
+            type="negative",
+        )
+
+        state.dealerships = []
+        state.outlets = []
+
+    except APIError as e:
+        print("MASTER DATA ERROR:", e)
+
+        ui.notify(
+            "Unable to load master data",
+            type="negative",
+        )
+
+        state.dealerships = []
+        state.outlets = []
+
+    except Exception as e:
+        print("UNEXPECTED MASTER DATA ERROR:", e)
+
+        ui.notify(
+            "Something went wrong",
+            type="negative",
+        )
+
+        state.dealerships = []
+        state.outlets = []
 
 
 # PAGE: MIS TABLES (Booking & Delivery)
@@ -2235,6 +2472,14 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.notify("Deleted the entry successfully", type="positive")
 
             await load_data()
+
+        except UnauthorizedError:
+            await logout_user()
+            ui.notify("Session Expired. Please Login in again.")
+            ui.navigate.to("/login")
+
+        except ForbiddenError:
+            ui.notify("You are not allowed to delete.")
 
         except Exception as e:
             print("ERROR: error occured while deletion", e)
@@ -2298,89 +2543,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                         "text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500"
                     )
 
-        async def load_meta():
-            params = {"stage": mstate.stage}
-            if mstate.selected_outlet:
-                params["outlet_id"] = mstate.selected_outlet
-            elif mstate.selected_dealer:
-                params["dealership_id"] = mstate.selected_dealer
-
-            meta = await api_get("/transactions/meta", params=params)
-
-            mstate.total_entries = meta.get("total_entries", 0)
-            mstate.total_excess = meta.get("total_excess", 0)
-            mstate.month_map = meta.get("months", {})
-            mstate.sorted_months = sorted(
-                mstate.month_map.keys(),
-                reverse=True,
-            )
-            render_header_meta.refresh()
-
-        async def load_data():
-            if mstate._load_tasks and not mstate._load_tasks.done():
-                mstate._load_tasks.cancel()
-
-            async def _run():
-
-                await load_meta()
-
-                params = {
-                    "limit": mstate.limit,
-                    "offset": mstate.offset,
-                }
-
-                # FILTERS
-                if mstate.selected_outlet:
-                    params["outlet_id"] = mstate.selected_outlet
-
-                elif mstate.selected_dealer:
-                    params["dealership_id"] = mstate.selected_dealer
-
-                # IMPORTANT FIX
-                if mstate.stage:
-                    params["stage"] = mstate.stage
-
-                print("PARAMS:", params)
-
-                # BACKEND FILTERING
-                data = await api_get("/transactions-pages", params=params)
-
-                # OPTIONAL MONTH FILTER
-                # (can later also move to backend)
-                if mstate.month:
-                    data = [
-                        t
-                        for t in data
-                        if (t.get("booking_date", "") or "").startswith(mstate.month)
-                    ]
-
-                with mstate.table_container:
-                    mstate.table_container.clear()
-
-                    render_table(
-                        data,
-                        mstate,
-                        stage=mstate.stage,
-                    )
-
-            mstate._load_tasks = asyncio.create_task(_run())
-
-            try:
-                await mstate._load_tasks
-
-            except asyncio.CancelledError:
-                pass
-
-        def schedule_load():
-            if mstate._debounce:
-                mstate._debounce.cancel()
-
-            mstate._debounce = ui.timer(
-                0.3,
-                lambda: load_data(),
-                once=True,
-            )
-
         @ui.refreshable
         def render_header_meta():
             with ui.column().classes("gap-1"):
@@ -2399,6 +2561,116 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ui.label(f"{mstate.total_entries} records{exc_txt}").classes(
                     "text-[12px] text-gray-400"
                 )
+
+        async def load_meta():
+            try:
+                params = {"stage": mstate.stage}
+
+                if mstate.selected_outlet:
+                    params["outlet_id"] = mstate.selected_outlet
+
+                elif mstate.selected_dealer:
+                    params["dealership_id"] = mstate.selected_dealer
+
+                meta = await api_get("/transactions/meta", params=params)
+
+                if not meta:
+                    return
+
+                mstate.total_entries = meta.get("total_entries", 0)
+                mstate.total_excess = meta.get("total_excess", 0)
+                mstate.month_map = meta.get("months", {})
+                mstate.sorted_months = sorted(mstate.month_map.keys(), reverse=True)
+                render_header_meta.refresh()
+
+            except UnauthorizedError:
+                await logout_user()
+
+                ui.notify("Session expired. Please login again.", type="warning")
+                ui.navigate.to("/login")
+
+            except ConnectionFailedError:
+                ui.notify("Unable to load metadata", type="negative")
+
+            except APIError as e:
+                print("LOAD META API ERROR:", e)
+
+                ui.notify("Failed to load metadata", type="negative")
+
+            except Exception as e:
+                print("LOAD META ERROR:", e)
+
+                ui.notify("Something went wrong", type="negative")
+
+        # Refactor this after merge this is change now in the main branch.
+        async def load_data():
+
+            try:
+                # LOAD META
+                await load_meta()
+
+                params = {"limit": mstate.limit, "offset": mstate.offset}
+
+                if mstate.selected_outlet:
+                    params["outlet_id"] = mstate.selected_outlet
+
+                elif mstate.selected_dealer:
+                    params["dealership_id"] = mstate.selected_dealer
+                print("PARAM: ", params)
+                response = await api_get("/transactions-pages", params=params)
+
+                if not response:
+                    response = {}
+
+                mstate.total_rows = response.get("total", 0)
+
+                data = response.get("rows", [])
+
+                # DELIVERY FILTER
+                if mstate.stage == "delivery":
+                    data = [t for t in data if t.get("stage") == "delivery"]
+
+                # MONTH FILTER
+                if mstate.month:
+                    data = [
+                        t
+                        for t in data
+                        if (t.get("booking_date", "") or "").startswith(mstate.month)
+                    ]
+
+                # SAFE UI CONTEXT
+                with mstate.table_container:
+                    mstate.table_container.clear()
+
+                    render_table(data, mstate, stage=mstate.stage)
+
+            except UnauthorizedError:
+                await logout_user()
+
+                ui.notify("Session expired. Please login again.", type="warning")
+
+                ui.navigate.to("/login")
+
+            except ConnectionFailedError:
+                ui.notify("Unable to load transactions", type="negative")
+
+            except APIError as e:
+                print("LOAD DATA API ERROR:", e)
+
+                ui.notify("Failed to load transactions", type="negative")
+
+            except Exception as e:
+                print("LOAD DATA ERROR:", e)
+
+                ui.notify("Something went wrong", type="negative")
+
+        def schedule_load():
+            if mstate._debounce:
+                mstate._debounce.cancel()
+
+            mstate._debounce = ui.timer(0.3, lambda: load_data(), once=True)
+
+        mstate.load_data = load_data
 
         #  MAIN CONTENT
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
@@ -2480,25 +2752,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ) as table_container:
                 mstate.table_container = table_container
                 await load_data()
-            with ui.row().classes("w-full justify-end gap-2 mt-4"):
-
-                async def next_page():
-                    mstate.offset += mstate.limit
-                    await load_data()
-
-                async def prev_page():
-                    mstate.offset = max(0, mstate.offset - mstate.limit)
-                    await load_data()
-
-                ui.button(
-                    "Previous",
-                    on_click=lambda: prev_page(),
-                )
-
-                ui.button(
-                    "Next",
-                    on_click=lambda: next_page(),
-                )
 
 
 @ui.page("/booking-mis")
@@ -2715,13 +2968,24 @@ def render_complaints_table(complaints):
 async def complaints_ctrl_page():
 
     render_topbar("Complaints Control Panel")
-
+    complaints: list[dict] = []
+    total_entries: int = 0
     try:
         response: dict = await api_get("/complaints/")
-        complaints = response.get("data", [])
+        complaints: list[dict] = response.get("data", [])
         total_entries = response.get("total", 0)
+    except UnauthorizedError:
+        await logout_user()
+        ui.notify("Session expired. Please login again.", type="warning")
+        ui.navigate.to("/login")
 
-    except Exception:
+    except ConnectionFailedError:
+        ui.notify("Unable to connect to server", type="negative")
+        complaints = []
+        total_entries = 0
+    except APIError as e:
+        print("ERROR ON DASHBOARD: ", str(e))
+        ui.notify("An Error Occured", type="negative")
         complaints = []
         total_entries = 0
 
@@ -2813,11 +3077,21 @@ async def complaints_ctrl_page():
                 ui.label("Actions Panel").classes("text-lg font-bold mb-4")
 
                 # STATUS
-
+                status_options_raw = []
                 try:
                     status_resp = await api_get("/complaints/statuses")
                     status_options_raw = status_resp.get("data", [])
-                except Exception:
+                except UnauthorizedError:
+                    await logout_user()
+                    ui.notify("Session expired. Please login again.", type="warning")
+                    ui.navigate.to("/login")
+
+                except ConnectionFailedError:
+                    ui.notify("Unable to connect to server", type="negative")
+                    status_options_raw = []
+                except APIError as e:
+                    print("ERROR ON DASHBOARD: ", str(e))
+                    ui.notify("An Error Occured", type="negative")
                     status_options_raw = []
 
                 status_options = {
@@ -2834,21 +3108,43 @@ async def complaints_ctrl_page():
                 )
 
                 async def update_status():
-                    row = await get_selected_row()
 
-                    if not row:
-                        ui.notify("Select a complaint first", type="warning")
-                        return
+                    try:
+                        row = await get_selected_row()
 
-                    await api_post(
-                        "/complaints/update-status",
-                        {
-                            "complaint_code": row["complaint_code"],
-                            "status": status_select.value,
-                        },
-                    )
+                        if not row:
+                            ui.notify("Select a complaint first", type="warning")
 
-                    ui.notify("Status updated", type="positive")
+                            return
+
+                        await api_post(
+                            "/complaints/update-status",
+                            payload={
+                                "complaint_code": row["complaint_code"],
+                                "status": (status_select.value),
+                            },
+                        )
+
+                        ui.notify("Status updated", type="positive")
+
+                    except UnauthorizedError:
+                        await logout_user()
+                        ui.notify(
+                            "Session expired. Please login again.", type="warning"
+                        )
+
+                        ui.navigate.to("/login")
+
+                    except ConnectionFailedError:
+                        ui.notify("Unable to update status", type="negative")
+
+                    except APIError as e:
+                        print("UPDATE STATUS API ERROR:", e)
+                        ui.notify("Failed to update status", type="negative")
+
+                    except Exception as e:
+                        print("UPDATE STATUS ERROR:", e)
+                        ui.notify("Something went wrong", type="negative")
 
                 ui.button("Update Status", on_click=update_status).classes(
                     "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
@@ -2863,34 +3159,103 @@ async def complaints_ctrl_page():
                 )
 
                 async def submit_remarks():
-                    row = await get_selected_row()
 
-                    if not row:
-                        ui.notify("Select a complaint first", type="warning")
-                        return
+                    try:
+                        row = await get_selected_row()
 
-                    await api_post(
-                        "/complaints/remarks",
-                        {
-                            "code": row["complaint_code"],
-                            "remark": remarks_input.value,
-                            "submitted_by": "admin",
-                        },
-                    )
+                        if not row:
+                            ui.notify("Select a complaint first", type="warning")
 
-                    remarks_input.set_value("")
-                    ui.notify("Remarks added", type="positive")
+                            return
+
+                        remark = (remarks_input.value or "").strip()
+
+                        if not remark:
+                            ui.notify(
+                                "Remark cannot be empty",
+                                type="warning",
+                            )
+
+                            return
+
+                        await api_post(
+                            "/complaints/remarks",
+                            payload={
+                                "code": row["complaint_code"],
+                                "remark": remark,
+                                "submitted_by": "admin",
+                            },
+                        )
+
+                        remarks_input.set_value("")
+
+                        ui.notify(
+                            "Remarks added",
+                            type="positive",
+                        )
+
+                    except UnauthorizedError:
+                        await logout_user()
+
+                        ui.notify(
+                            "Session expired. Please login again.",
+                            type="warning",
+                        )
+
+                        ui.navigate.to("/login")
+
+                    except ConnectionFailedError:
+                        ui.notify(
+                            "Unable to submit remarks",
+                            type="negative",
+                        )
+
+                    except APIError as e:
+                        print(
+                            "SUBMIT REMARKS API ERROR:",
+                            e,
+                        )
+
+                        ui.notify(
+                            "Failed to submit remarks",
+                            type="negative",
+                        )
+
+                    except Exception as e:
+                        print(
+                            "SUBMIT REMARKS ERROR:",
+                            e,
+                        )
+
+                        ui.notify(
+                            "Something went wrong",
+                            type="negative",
+                        )
 
                 ui.button("Submit Remarks", on_click=submit_remarks).classes(
                     "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
                 ).props("no-caps unelevated")
 
                 # FLAG
-
+                flag_options_raw = []
                 try:
                     flag_resp = await api_get("/complaints/flags")
                     flag_options_raw = flag_resp.get("data", [])
-                except Exception:
+                except UnauthorizedError:
+                    await logout_user()
+                    ui.notify("Session expired. Please login again.", type="warning")
+                    ui.navigate.to("/login")
+
+                except ConnectionFailedError:
+                    ui.notify("Unable to connect to server", type="negative")
+                    flag_options_raw = []
+                except APIError as e:
+                    print("ERROR ON DASHBOARD: ", str(e))
+                    ui.notify("An Error Occured", type="negative")
+                    flag_options_raw = []
+                except Exception as exc:
+                    print("ERROR ON DASHBOARD: ", str(exc))
+                    ui.notify("An Error Occured", type="negative")
                     flag_options_raw = []
 
                 flag_options = {
@@ -2908,21 +3273,78 @@ async def complaints_ctrl_page():
                 )
 
                 async def update_flag():
-                    row = await get_selected_row()
 
-                    if not row:
-                        ui.notify("Select a complaint first", type="warning")
-                        return
+                    try:
+                        row = await get_selected_row()
 
-                    await api_post(
-                        "/complaints/update-flag",
-                        {
-                            "complaint_code": row["complaint_code"],
-                            "flag": flag_select.value,
-                        },
-                    )
+                        if not row:
+                            ui.notify(
+                                "Select a complaint first",
+                                type="warning",
+                            )
 
-                    ui.notify("Flag updated", type="positive")
+                            return
+
+                        flag = flag_select.value
+
+                        if not flag:
+                            ui.notify(
+                                "Select a flag",
+                                type="warning",
+                            )
+
+                            return
+
+                        await api_post(
+                            "/complaints/update-flag",
+                            payload={
+                                "complaint_code": row["complaint_code"],
+                                "flag": flag,
+                            },
+                        )
+
+                        ui.notify(
+                            "Flag updated",
+                            type="positive",
+                        )
+
+                    except UnauthorizedError:
+                        await logout_user()
+
+                        ui.notify(
+                            "Session expired. Please login again.",
+                            type="warning",
+                        )
+
+                        ui.navigate.to("/login")
+
+                    except ConnectionFailedError:
+                        ui.notify(
+                            "Unable to update flag",
+                            type="negative",
+                        )
+
+                    except APIError as e:
+                        print(
+                            "UPDATE FLAG API ERROR:",
+                            e,
+                        )
+
+                        ui.notify(
+                            "Failed to update flag",
+                            type="negative",
+                        )
+
+                    except Exception as e:
+                        print(
+                            "UPDATE FLAG ERROR:",
+                            e,
+                        )
+
+                        ui.notify(
+                            "Something went wrong",
+                            type="negative",
+                        )
 
                 ui.button("Update Flag", on_click=update_flag).classes(
                     "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
@@ -3235,18 +3657,59 @@ async def daily_reporting_page() -> None:
                                                 record_date=receiving_date,
                                             ):
 
-                                                await api_post(
-                                                    "/mis/toggle-received",
-                                                    {
-                                                        "mis_record_id": record_id,
-                                                        "receiving_date": record_date.value,
-                                                        "value": e.value,
-                                                    },
-                                                )
+                                                try:
+                                                    await api_post(
+                                                        "/mis/toggle-received",
+                                                        payload={
+                                                            "mis_record_id": record_id,
+                                                            "receiving_date": (
+                                                                record_date.value
+                                                            ),
+                                                            "value": e.value,
+                                                        },
+                                                    )
 
-                                                await _fetch_and_show_dialog()
+                                                    await _fetch_and_show_dialog()
 
-                                                await reload_current_range()
+                                                    await reload_current_range()
+
+                                                except UnauthorizedError:
+                                                    await logout_user()
+
+                                                    ui.notify(
+                                                        "Session expired. Please login again.",
+                                                        type="warning",
+                                                    )
+
+                                                    ui.navigate.to("/login")
+
+                                                except ConnectionFailedError:
+                                                    ui.notify(
+                                                        "Unable to update status",
+                                                        type="negative",
+                                                    )
+
+                                                except APIError as e:
+                                                    print(
+                                                        "TOGGLE RECEIVED API ERROR:",
+                                                        e,
+                                                    )
+
+                                                    ui.notify(
+                                                        "Failed to update status",
+                                                        type="negative",
+                                                    )
+
+                                                except Exception as e:
+                                                    print(
+                                                        "TOGGLE RECEIVED ERROR:",
+                                                        e,
+                                                    )
+
+                                                    ui.notify(
+                                                        "Something went wrong",
+                                                        type="negative",
+                                                    )
 
                                             ui.checkbox(
                                                 value=row.get(
@@ -3278,18 +3741,59 @@ async def daily_reporting_page() -> None:
                                                 inp=remarks_input,
                                             ):
 
-                                                await api_post(
-                                                    "/mis/toggle-oos",
-                                                    {
-                                                        "mis_record_id": record_id,
-                                                        "value": e.value,
-                                                        "reason": inp.value or "",
-                                                    },
-                                                )
+                                                try:
+                                                    await api_post(
+                                                        "/mis/toggle-oos",
+                                                        payload={
+                                                            "mis_record_id": record_id,
+                                                            "value": e.value,
+                                                            "reason": (
+                                                                inp.value or ""
+                                                            ).strip(),
+                                                        },
+                                                    )
 
-                                                await _fetch_and_show_dialog()
+                                                    await _fetch_and_show_dialog()
 
-                                                await reload_current_range()
+                                                    await reload_current_range()
+
+                                                except UnauthorizedError:
+                                                    await logout_user()
+
+                                                    ui.notify(
+                                                        "Session expired. Please login again.",
+                                                        type="warning",
+                                                    )
+
+                                                    ui.navigate.to("/login")
+
+                                                except ConnectionFailedError:
+                                                    ui.notify(
+                                                        "Unable to update out-of-scope status",
+                                                        type="negative",
+                                                    )
+
+                                                except APIError as e:
+                                                    print(
+                                                        "TOGGLE OOS API ERROR:",
+                                                        e,
+                                                    )
+
+                                                    ui.notify(
+                                                        "Failed to update out-of-scope status",
+                                                        type="negative",
+                                                    )
+
+                                                except Exception as e:
+                                                    print(
+                                                        "TOGGLE OOS ERROR:",
+                                                        e,
+                                                    )
+
+                                                    ui.notify(
+                                                        "Something went wrong",
+                                                        type="negative",
+                                                    )
 
                                             ui.checkbox(
                                                 value=row.get(
@@ -3310,18 +3814,53 @@ async def daily_reporting_page() -> None:
                                                 e,
                                                 record_id=row["id"],
                                             ):
+                                                try:
+                                                    await api_post(
+                                                        "/mis/toggle-approve",
+                                                        {
+                                                            "mis_record_id": record_id,
+                                                            "value": e.value,
+                                                        },
+                                                    )
 
-                                                await api_post(
-                                                    "/mis/toggle-approve",
-                                                    {
-                                                        "mis_record_id": record_id,
-                                                        "value": e.value,
-                                                    },
-                                                )
+                                                    await _fetch_and_show_dialog()
 
-                                                await _fetch_and_show_dialog()
+                                                    await reload_current_range()
+                                                except UnauthorizedError:
+                                                    await logout_user()
+                                                    ui.notify(
+                                                        "Session expired. Please Login again."
+                                                    )
+                                                    ui.navigate.to("/login")
+                                                except ConnectionFailedError:
+                                                    ui.notify(
+                                                        "Unable to connect to the server. Please Try again after a while.",
+                                                        type="negative",
+                                                    )
+                                                except ServerError:
+                                                    ui.notify(
+                                                        "Some error occured. Not Updated.",
+                                                        type="negative",
+                                                    )
 
-                                                await reload_current_range()
+                                                except APIError as exc:
+                                                    ui.notify(
+                                                        "Some Error Occured.",
+                                                        type="negative",
+                                                    )
+                                                    print(
+                                                        "ERROR OCCURED WHILE APPROVING: ",
+                                                        str(exc),
+                                                    )
+                                                except Exception as e:
+                                                    ui.notify(
+                                                        "Some Error Occured.",
+                                                        type="negative",
+                                                    )
+                                                    print(
+                                                        "ERROR OCCURED WHILE APPROVING: ",
+                                                        str(e),
+                                                    )
 
                                             ui.checkbox(
                                                 value=row.get(
@@ -3353,19 +3892,56 @@ async def daily_reporting_page() -> None:
                                                     record_id=row["id"],
                                                     inp=reason_input,
                                                 ):
+                                                    try:
+                                                        await api_post(
+                                                            "/mis/toggle-reject",
+                                                            {
+                                                                "mis_record_id": record_id,
+                                                                "value": e.value,
+                                                                "reason": inp.value
+                                                                or "",
+                                                            },
+                                                        )
 
-                                                    await api_post(
-                                                        "/mis/toggle-reject",
-                                                        {
-                                                            "mis_record_id": record_id,
-                                                            "value": e.value,
-                                                            "reason": inp.value or "",
-                                                        },
-                                                    )
+                                                        await _fetch_and_show_dialog()
 
-                                                    await _fetch_and_show_dialog()
+                                                        await reload_current_range()
 
-                                                    await reload_current_range()
+                                                    except UnauthorizedError:
+                                                        await logout_user()
+                                                        ui.notify(
+                                                            "Session expired. Please Login again."
+                                                        )
+                                                        ui.navigate.to("/login")
+                                                    except ConnectionFailedError:
+                                                        ui.notify(
+                                                            "Unable to connect to the server. Please Try again after a while.",
+                                                            type="negative",
+                                                        )
+                                                    except ServerError:
+                                                        ui.notify(
+                                                            "Some error occured. Not Updated.",
+                                                            type="negative",
+                                                        )
+
+                                                    except APIError as exc:
+                                                        ui.notify(
+                                                            "Some Error Occured.",
+                                                            type="negative",
+                                                        )
+                                                        print(
+                                                            "ERROR OCCURED WHILE APPROVING: ",
+                                                            str(exc),
+                                                        )
+                                                    except Exception as e:
+                                                        ui.notify(
+                                                            "Some Error Occured.",
+                                                            type="negative",
+                                                        )
+                                                        print(
+                                                            "ERROR OCCURED WHILE APPROVING: ",
+                                                            str(e),
+                                                        )
 
                                                 ui.checkbox(
                                                     value=row.get(
@@ -3395,20 +3971,55 @@ async def daily_reporting_page() -> None:
                                                 record_id=row["id"],
                                                 scan_date=scanning_date,
                                             ):
+                                                try:
+                                                    payload = {
+                                                        "mis_record_id": record_id,
+                                                        "value": e.value,
+                                                        "scanning_date": scan_date.value,
+                                                    }
+                                                    await api_post(
+                                                        "/mis/toggle-scanned",
+                                                        payload=payload,
+                                                    )
 
-                                                payload = {
-                                                    "mis_record_id": record_id,
-                                                    "value": e.value,
-                                                    "scanning_date": scan_date.value,
-                                                }
-                                                await api_post(
-                                                    "/mis/toggle-scanned",
-                                                    payload=payload,
-                                                )
+                                                    await _fetch_and_show_dialog()
 
-                                                await _fetch_and_show_dialog()
+                                                    await reload_current_range()
+                                                except UnauthorizedError:
+                                                    await logout_user()
+                                                    ui.notify(
+                                                        "Session expired. Please Login again."
+                                                    )
+                                                    ui.navigate.to("/login")
+                                                except ConnectionFailedError:
+                                                    ui.notify(
+                                                        "Unable to connect to the server. Please Try again after a while.",
+                                                        type="negative",
+                                                    )
+                                                except ServerError:
+                                                    ui.notify(
+                                                        "Some error occured. Not Updated.",
+                                                        type="negative",
+                                                    )
 
-                                                await reload_current_range()
+                                                except APIError as exc:
+                                                    ui.notify(
+                                                        "Some Error Occured.",
+                                                        type="negative",
+                                                    )
+                                                    print(
+                                                        "ERROR OCCURED WHILE APPROVING: ",
+                                                        str(exc),
+                                                    )
+                                                except Exception as e:
+                                                    ui.notify(
+                                                        "Some Error Occured.",
+                                                        type="negative",
+                                                    )
+                                                    print(
+                                                        "ERROR OCCURED WHILE APPROVING: ",
+                                                        str(e),
+                                                    )
 
                                             ui.checkbox(
                                                 value=row.get(
@@ -3458,22 +4069,56 @@ async def daily_reporting_page() -> None:
 
                 async def bulk_delete_selected():
 
-                    ids = list(_dlg_state["selected_ids"])
+                    try:
+                        ids = list(_dlg_state["selected_ids"])
 
-                    if not ids:
-                        ui.notify("No records selected", type="warning")
-                        return
+                        if not ids:
+                            ui.notify("No records selected", type="warning")
+                            return
 
-                    await api_delete(
-                        "/mis/bulk-delete",
-                        {
-                            "ids": ids,
-                        },
-                    )
-                    ui.notify(f"{len(ids)} records deleted", type="positive")
-                    _dlg_state["selected_ids"].clear()
-                    await _fetch_and_show_dialog()
-                    await reload_current_range()
+                        await api_delete(
+                            "/mis/bulk-delete",
+                            {
+                                "ids": ids,
+                            },
+                        )
+                        ui.notify(f"{len(ids)} records deleted", type="positive")
+                        _dlg_state["selected_ids"].clear()
+                        await _fetch_and_show_dialog()
+                        await reload_current_range()
+                    except UnauthorizedError:
+                        await logout_user()
+                        ui.notify("Session expired. Please Login again.")
+                        ui.navigate.to("/login")
+                    except ConnectionFailedError:
+                        ui.notify(
+                            "Unable to connect to the server. Please Try again after a while.",
+                            type="negative",
+                        )
+                    except ServerError:
+                        ui.notify(
+                            "Some error occured. Not Updated.",
+                            type="negative",
+                        )
+
+                    except APIError as exc:
+                        ui.notify(
+                            "Some Error Occured.",
+                            type="negative",
+                        )
+                        print(
+                            "ERROR OCCURED WHILE APPROVING: ",
+                            str(exc),
+                        )
+                    except Exception as e:
+                        ui.notify(
+                            "Some Error Occured.",
+                            type="negative",
+                        )
+                        print(
+                            "ERROR OCCURED WHILE APPROVING: ",
+                            str(e),
+                        )
 
                 ui.button(
                     "Delete Selected",
@@ -3677,12 +4322,13 @@ async def daily_reporting_page() -> None:
                 ).classes("bg-[#E8402A] text-white text-[13px] px-5")
 
     async def _fetch_and_show_dialog():
-        """Populate dialog using already fetched transactions (no API call)."""
+        """
+        Populate dialog using already fetched transactions.
+        """
         try:
             dealer_id = (
                 int(rstate.dealer_select.value) if rstate.dealer_select.value else None
             )
-
             outlet_id = (
                 int(rstate.outlet_select.value) if rstate.outlet_select.value else None
             )
@@ -3697,17 +4343,13 @@ async def daily_reporting_page() -> None:
                 "end_date": rstate.report_to,
             }
 
+            rows = []
+
             # DERIVED VERIFIED (DELIVERY ONLY)
-
             if _dlg_state["tt"] == "delivery" and _dlg_state["col"] == "files_verified":
-                to_verify_rows = await api_get(
-                    "/mis/details",
-                    params=params,
-                )
-
-                incomplete_rows = await api_get(
-                    "/mis/details",
-                    params=params,
+                to_verify_rows, incomplete_rows = await asyncio.gather(
+                    api_get("/mis/details", params=params),
+                    api_get("/mis/details", params=params),
                 )
 
                 incomplete_ids = {row["id"] for row in incomplete_rows}
@@ -3715,24 +4357,42 @@ async def daily_reporting_page() -> None:
                 rows = [
                     row for row in to_verify_rows if row["id"] not in incomplete_ids
                 ]
-
             else:
-                rows = await api_get(
-                    "/mis/details",
-                    params,
-                )
-        except Exception as e:
-            print("ERROR: While Loading EBD data", e)
+                rows = await api_get("/mis/details", params=params)
+
+            if not rows:
+                rows = []
+
+        except UnauthorizedError:
+            await logout_user()
+            ui.notify("Session expired. Please login again.", type="warning")
+            ui.navigate.to("/login")
             rows = []
 
-        count_lbl = _dlg_state.get("count_label")
-        if count_lbl:
-            num = f"{len(rows)}"
-            record = " records" if len(rows) > 1 else " record"
-            message = num + record
-            count_lbl.set_text(message)
-        _dlg_state["all_rows"] = rows
+        except ConnectionFailedError:
+            ui.notify("Unable to load report details", type="negative")
+            rows = []
 
+        except APIError as e:
+            print("MIS DETAILS API ERROR:", e)
+            ui.notify("Failed to load report details", type="negative")
+            rows = []
+
+        except Exception as e:
+            print("ERROR: While Loading EBD data", e)
+            ui.notify("Something went wrong", type="negative")
+            rows = []
+
+        # UPDATE COUNT LABEL
+        count_lbl = _dlg_state.get("count_label")
+
+        if count_lbl:
+            count = len(rows)
+            message = f"{count} records" if count != 1 else "1 record"
+            count_lbl.set_text(message)
+
+        # STORE + FILTER
+        _dlg_state["all_rows"] = rows
         apply_dialog_filter()
 
     def open_detail_dialog(row, column, is_footer) -> None:
@@ -4188,85 +4848,85 @@ async def daily_reporting_page() -> None:
         report_from: str,
         report_to: str,
     ):
-        params = {
-            "report_from": report_from,
-            "report_to": report_to,
-        }
 
-        if rstate.selected_outlet:
-            params["outlet_id"] = rstate.outlet_select.value
+        try:
+            params = {"report_from": report_from, "report_to": report_to}
 
-        elif rstate.selected_dealer:
-            params["dealership_id"] = rstate.dealer_select.value
+            if rstate.selected_outlet:
+                params["outlet_id"] = rstate.outlet_select.value
 
-        # FETCH
-        data = await api_get(
-            "/report/",
-            params=params,
-        )
+            elif rstate.selected_dealer:
+                params["dealership_id"] = rstate.dealer_select.value
 
-        # BOOKINGS
-        booking_rows = []
+            # FETCH REPORT DATA
+            data = await api_get("/report/", params=params)
 
-        for row in data.get(
-            "bookings",
-            [],
-        ):
-            row["files_to_be_verified"] = max(
-                (row.get("files_received", 0) - row.get("files_out_of_scope", 0)),
-                0,
-            )
+            if not data:
+                data = {}
 
-            booking_rows.append(row)
+            # BOOKINGS
+            booking_rows = []
 
-        # DELIVERIES
-        delivery_rows = []
+            for row in data.get("bookings", []):
+                row["files_to_be_verified"] = max(
+                    (row.get("files_received", 0) - row.get("files_out_of_scope", 0)),
+                    0,
+                )
 
-        for row in data.get(
-            "deliveries",
-            [],
-        ):
-            row["files_to_be_verified"] = max(
-                row.get("files_received", 0) - row.get("files_out_of_scope", 0), 0
-            )
+                row["files_verified"] = max(
+                    (
+                        row.get("files_to_be_verified", 0)
+                        - row.get("files_incomplete", 0)
+                    ),
+                    0,
+                )
 
-            delivery_rows.append(row)
-        # Placeholder
-        booking_rows = ensure_today_row(
-            booking_rows,
-            "booking",
-        )
-        # Placeholder
-        delivery_rows = ensure_today_row(
-            delivery_rows,
-            "delivery",
-        )
-        # DERIVED VERIFIED COUNTS
-        for row in booking_rows:
-            row["files_verified"] = max(
-                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)), 0
-            )
+                booking_rows.append(row)
 
-        for row in delivery_rows:
-            row["files_verified"] = max(
-                (row.get("files_to_be_verified", 0) - row.get("files_incomplete", 0)), 0
-            )
+            # DELIVERIES
+            delivery_rows = []
 
-        # RENDER
-        booking_wrap.clear()
-        delivery_wrap.clear()
+            for row in data.get("deliveries", []):
+                row["files_to_be_verified"] = max(
+                    (row.get("files_received", 0) - row.get("files_out_of_scope", 0)),
+                    0,
+                )
 
-        build_table(
-            stage="booking",
-            rows=booking_rows,
-            parent=booking_wrap,
-        )
+                row["files_verified"] = max(
+                    (
+                        row.get("files_to_be_verified", 0)
+                        - row.get("files_incomplete", 0)
+                    ),
+                    0,
+                )
 
-        build_table(
-            stage="delivery",
-            rows=delivery_rows,
-            parent=delivery_wrap,
-        )
+                delivery_rows.append(row)
+
+            # PLACEHOLDER ROWS
+            booking_rows = ensure_today_row(booking_rows, "booking")
+            delivery_rows = ensure_today_row(delivery_rows, "delivery")
+
+            # RENDER
+            booking_wrap.clear()
+            delivery_wrap.clear()
+            build_table(stage="booking", rows=booking_rows, parent=booking_wrap)
+            build_table(stage="delivery", rows=delivery_rows, parent=delivery_wrap)
+
+        except UnauthorizedError:
+            await logout_user()
+            ui.notify("Session expired. Please login again.", type="warning")
+            ui.navigate.to("/login")
+
+        except ConnectionFailedError:
+            ui.notify("Unable to load report", type="negative")
+
+        except APIError as e:
+            print("DAILY REPORT API ERROR:", e)
+            ui.notify("Failed to load report", type="negative")
+
+        except Exception as e:
+            print("LOAD DAILY REPORT ERROR:", e)
+            ui.notify("Something went wrong", type="negative")
 
     async def reload_current_range():
         selection = range_select.value or "today"
@@ -4274,49 +4934,121 @@ async def daily_reporting_page() -> None:
 
     async def download_report():
         try:
+            # VALIDATION
             if not rstate.selected_dealer and not rstate.selected_outlet:
                 ui.notify("Select atleast a dealership or a showroom.", type="info")
+
                 return
 
             params = {
-                "start_date": rstate.report_from,
-                "end_date": rstate.report_to,
+                "start_date": (rstate.report_from),
+                "end_date": (rstate.report_to),
             }
+
             if rstate.selected_outlet:
                 params["outlet_id"] = rstate.selected_outlet
 
             elif rstate.selected_dealer:
                 params["dealership_id"] = rstate.selected_dealer
 
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{BASE_URL}/reports/daily",
-                    headers=get_auth_headers(),
-                    params=params,
-                    timeout=60,
-                )
-                response.raise_for_status()
-                filename = "daily-report.xlsx"
-                content_disposition = response.headers.get("Content-Disposition")
-                if content_disposition and "filename=" in content_disposition:
-                    filename = (
-                        content_disposition.split("filename=")[-1]
-                        .replace('"', "")
-                        .strip()
-                    )
-                ui.download(
-                    src=response.content,
-                    filename=filename,
-                )
-                ui.notify(
-                    "Report downloaded successfully",
-                    type="positive",
-                )
-        except Exception as e:
-            ui.notify(
-                f"Download failed: {str(e)}",
-                type="negative",
+            # DOWNLOAD REQUEST
+            response = await http_client.get(
+                f"{BASE_URL}/reports/daily",
+                headers=get_auth_headers(),
+                params=params,
+                timeout=60,
             )
+
+            # AUTH / STATUS
+            if response.status_code == 401:
+                await logout_user()
+                ui.notify("Session expired. Please login again.", type="warning")
+                ui.navigate.to("/login")
+                return
+
+            if response.status_code == 403:
+                ui.notify(
+                    "You do not have permission to download reports", type="negative"
+                )
+
+                return
+
+            response.raise_for_status()
+
+            # FILENAME
+            filename = "daily-report.xlsx"
+
+            content_disposition = response.headers.get("Content-Disposition")
+
+            if content_disposition and "filename=" in content_disposition:
+                filename = (
+                    content_disposition.split("filename=")[-1].replace('"', "").strip()
+                )
+
+            # DOWNLOAD
+            ui.download(src=response.content, filename=filename)
+
+            ui.notify("Report downloaded successfully", type="positive")
+
+        except ConnectionFailedError:
+            ui.notify("Server unreachable", type="negative")
+
+        except httpx.TimeoutException:
+            ui.notify("Download timed out", type="negative")
+
+        except httpx.HTTPStatusError as e:
+            print("DOWNLOAD REPORT HTTP ERROR:", e)
+            ui.notify(f"Download failed: {e.response.status_code}", type="negative")
+
+        except Exception as e:
+            print("DOWNLOAD REPORT ERROR:", e)
+            ui.notify("Download failed", type="negative")
+
+    # async def download_report():
+    #     try:
+    #         if not rstate.selected_dealer and not rstate.selected_outlet:
+    #             ui.notify("Select atleast a dealership or a showroom.", type="info")
+    #             return
+
+    #         params = {
+    #             "start_date": rstate.report_from,
+    #             "end_date": rstate.report_to,
+    #         }
+    #         if rstate.selected_outlet:
+    #             params["outlet_id"] = rstate.selected_outlet
+
+    #         elif rstate.selected_dealer:
+    #             params["dealership_id"] = rstate.selected_dealer
+
+    #         async with httpx.AsyncClient() as client:
+    #             response = await client.get(
+    #                 f"{BASE_URL}/reports/daily",
+    #                 headers=get_auth_headers(),
+    #                 params=params,
+    #                 timeout=60,
+    #             )
+    #             response.raise_for_status()
+    #             filename = "daily-report.xlsx"
+    #             content_disposition = response.headers.get("Content-Disposition")
+    #             if content_disposition and "filename=" in content_disposition:
+    #                 filename = (
+    #                     content_disposition.split("filename=")[-1]
+    #                     .replace('"', "")
+    #                     .strip()
+    #                 )
+    #             ui.download(
+    #                 src=response.content,
+    #                 filename=filename,
+    #             )
+    #             ui.notify(
+    #                 "Report downloaded successfully",
+    #                 type="positive",
+    #             )
+    #     except Exception as e:
+    #         ui.notify(
+    #             f"Download failed: {str(e)}",
+    #             type="negative",
+    #         )
 
     # Page layout
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -4391,8 +5123,7 @@ async def daily_reporting_page() -> None:
                     ui.label("Track booking & delivery file status by date").classes(
                         "text-[12px] text-gray-400"
                     )
-                rstate.dealerships = await api_get("/complaints/dealerships")
-                rstate.outlets = await api_get("/outlets")
+                await load_master_data(rstate)
                 dealer_opts = {d["id"]: d["name"] for d in rstate.dealerships}
                 outlet_opts = {o["id"]: o["name"] for o in rstate.outlets}
 
@@ -4562,10 +5293,13 @@ async def daily_reporting_page() -> None:
                         )
 
                         status_label.text = f"✅ Upload successful ({created} records)"
-
                         status_label.classes("text-green-600")
+                    except UnauthorizedError:
+                        await logout_user()
+                        ui.notify("Session Expired. Please Login Again")
+                        ui.navigate.to("/login")
 
-                    except Exception as ex:
+                    except APIError as ex:
                         print("Error While EBD UPLOADING: ", str(ex))
                         if "500" in str(ex).strip():
                             status_label.text = "❌ Server Side Error Contact Admin"
@@ -4656,10 +5390,17 @@ async def daily_reporting_page() -> None:
     await load_daily_report(today_str, today_str)
 
 
+class SettingsState:
+    def __init__(self) -> None:
+        self.outlets: list[dict] = []
+        self.dealerships: list[dict] = []
+
+
 # PAGE: SETTINGS
 @ui.page("/settings")
 @require_roles("admin")
 async def settings_page():
+    sstate = SettingsState()
 
     def get_id_by_name(items: list[dict], name: str) -> int | None:
         for item in items:
@@ -4669,10 +5410,10 @@ async def settings_page():
         return None
 
     # FETCH MASTER DATA
-    dealers = await api_get("/complaints/dealerships")
-    outlets = await api_get("/outlets")
-    outlet_names = [o["name"] for o in outlets]
-    dealer_names = [d["name"] for d in dealers]
+    await load_master_data(state=sstate)
+
+    outlet_names = [o["name"] for o in sstate.outlets]
+    dealer_names = [d["name"] for d in sstate.dealerships]
 
     # PAGE
     render_topbar("Settings")
@@ -4724,7 +5465,7 @@ async def settings_page():
                     with ui.card().classes(
                         "w-[500px] max-h-[260px] overflow-auto border rounded-lg p-3"
                     ):
-                        for outlet_data in outlets:
+                        for outlet_data in sstate.outlets:
                             checkbox = ui.checkbox(outlet_data["name"])
 
                             outlet_checkboxes.append(
@@ -4785,15 +5526,8 @@ async def settings_page():
                             }
 
                             try:
-                                await api_post(
-                                    "/auth/register",
-                                    payload,
-                                )
-
-                                ui.notify(
-                                    "User created successfully",
-                                    type="positive",
-                                )
+                                await api_post("/auth/register", payload=payload)
+                                ui.notify("User created successfully", type="positive")
 
                                 # RESET FORM
                                 name.value = ""
@@ -4802,32 +5536,38 @@ async def settings_page():
                                 role.value = None
 
                                 for item in outlet_checkboxes:
-                                    item["checkbox"].value = False
-                                    item["checkbox"].enable()
+                                    checkbox = item["checkbox"]
 
-                            except httpx.HTTPStatusError as e:
-                                try:
-                                    error_detail = e.response.json()
+                                    checkbox.value = False
 
-                                except Exception:
-                                    error_detail = e.response.text
+                                    checkbox.enable()
+
+                            except UnauthorizedError:
+                                await logout_user()
 
                                 ui.notify(
-                                    f"Error: {error_detail}",
+                                    "Session expired. Please login again.",
+                                    type="warning",
+                                )
+
+                                ui.navigate.to("/login")
+
+                            except ForbiddenError:
+                                ui.notify(
+                                    "You do not have permission to create users",
                                     type="negative",
                                 )
 
-                            except httpx.ConnectError:
-                                ui.notify(
-                                    "Server unreachable",
-                                    type="negative",
-                                )
+                            except ConnectionFailedError:
+                                ui.notify("Server unreachable", type="negative")
+
+                            except APIError as e:
+                                print("USER REGISTRATION API ERROR:", e)
+                                ui.notify(str(e), type="negative")
 
                             except Exception as e:
-                                ui.notify(
-                                    str(e),
-                                    type="negative",
-                                )
+                                print("USER REGISTRATION ERROR:", e)
+                                ui.notify("Something went wrong", type="negative")
 
                         ui.button("Create User", on_click=handle_register).classes(
                             "bg-[#E8402A] text-white px-4 py-2 rounded-md"
@@ -4841,11 +5581,7 @@ async def settings_page():
                                 setattr(password, "value", ""),
                                 setattr(role, "value", None),
                                 [
-                                    setattr(
-                                        item["checkbox"],
-                                        "value",
-                                        False,
-                                    )
+                                    setattr(item["checkbox"], "value", False)
                                     for item in outlet_checkboxes
                                 ],
                             ],
@@ -4867,32 +5603,33 @@ async def settings_page():
                     ui.label("Client → Dealership access")
                     ui.label("Audit Assistant → Assigned showroom access")
         # USERS TABLE
+        users = []
         try:
             users = await api_get("/auth/users")
+        except UnauthorizedError:
+            await logout_user()
+            ui.notify("Session expired. Please Login again", type="warning")
+            ui.navigate.to("/login")
+        except ForbiddenError:
+            ui.notify("Access Denied", type="negative")
+            ui.navigate.to("/")
+        except ConnectionFailedError:
+            ui.notify("Unable to connect to the server", type="negative")
+            users = []
+        except APIError as exc:
+            print("ERROR FETCHING USERS:", exc)
+            ui.notify(str(exc), type="negative")
+            users = []
 
         except Exception as e:
-            print(
-                "ERROR FETCHING USERS:",
-                e,
-            )
-
-            ui.notify(
-                str(e),
-                type="negative",
-            )
-
+            print("ERROR FETCHING USERS:", e)
+            ui.notify(str(e), type="negative")
             users = []
 
         row_data = []
 
         for user in users:
-            allowed_outlets = (
-                user.get(
-                    "allowed_outlets",
-                    [],
-                )
-                or []
-            )
+            allowed_outlets = user.get("allowed_outlets", []) or []
 
             # ADMIN
             if not allowed_outlets:
@@ -5025,9 +5762,34 @@ async def settings_page():
 
                         await api_post_file("/price-list/upload", e, payload)
 
+                        await fetch_reference_data(force_refresh=True)
+
                         status_label.text = "✅ Upload successful"
                         status_label.classes("text-green-600")
 
+                    except UnauthorizedError:
+                        await logout_user()
+                        ui.notify(
+                            "Session expired. Please login again.", type="warning"
+                        )
+                        ui.navigate.to("/login")
+                    except ForbiddenError:
+                        ui.notify(
+                            "You don't have the permission to create dealerships",
+                            type="negative",
+                        )
+
+                    except ConnectionFailedError:
+                        ui.notify("Unable to load transaction", type="negative")
+                    except ServerError:
+                        ui.notify(
+                            "Some Error Occured while updating file, please try again.",
+                            type="negative",
+                        )
+
+                    except APIError as e:
+                        print("LOAD TRANSACTION API ERROR:", e)
+                        ui.notify("Failed to load transaction", type="negative")
                     except Exception as ex:
                         status_label.text = f"❌ {str(ex)}"
                         status_label.classes("text-red-500")
@@ -5062,11 +5824,31 @@ async def settings_page():
                             "code": d_code.value,
                         },
                     )
+                    # Refresh Cache
+                    await fetch_reference_data(force_refresh=True)
                     ui.notify("Dealership created", type="positive")
                     d_name.value = ""
                     d_code.value = ""
+                except UnauthorizedError:
+                    await logout_user()
+                    ui.notify("Session expired. Please login again.", type="warning")
+                    ui.navigate.to("/login")
+                except ForbiddenError:
+                    ui.notify(
+                        "You don't have the permission to create dealerships",
+                        type="negative",
+                    )
+
+                except ConnectionFailedError:
+                    ui.notify("Unable to load transaction", type="negative")
+
+                except APIError as e:
+                    print("LOAD TRANSACTION API ERROR:", e)
+                    ui.notify("Failed to load transaction", type="negative")
+
                 except Exception as e:
-                    ui.notify(str(e), type="negative")
+                    print("LOAD TRANSACTION ERROR:", e)
+                    ui.notify("Something went wrong", type="negative")
 
             ui.button("Create Dealership", on_click=create_dealership).classes(
                 "mt-3 bg-[#E8402A] text-white"
@@ -5093,10 +5875,12 @@ async def settings_page():
                             "code": o_code.value,
                             "address": o_address.value,
                             "dealership_id": get_id_by_name(
-                                dealers, dealership_select.value
+                                sstate.dealerships, dealership_select.value
                             ),
                         },
                     )
+                    # Refresh Cache
+                    await fetch_reference_data(force_refresh=True)
                     ui.notify("Outlet created", type="positive")
 
                     o_name.value = ""
@@ -5104,8 +5888,26 @@ async def settings_page():
                     o_address.value = ""
                     dealership_select.value = None
 
+                except UnauthorizedError:
+                    await logout_user()
+                    ui.notify("Session expired. Please login again.", type="warning")
+                    ui.navigate.to("/login")
+                except ForbiddenError:
+                    ui.notify(
+                        "You don't have the permission to create dealerships",
+                        type="negative",
+                    )
+
+                except ConnectionFailedError:
+                    ui.notify("Unable to load transaction", type="negative")
+
+                except APIError as e:
+                    print("LOAD TRANSACTION API ERROR:", e)
+                    ui.notify("Failed to load transaction", type="negative")
+
                 except Exception as e:
-                    ui.notify(str(e), type="negative")
+                    print("LOAD TRANSACTION ERROR:", e)
+                    ui.notify("Something went wrong", type="negative")
 
             ui.button("Create Outlet", on_click=create_outlet).classes(
                 "mt-3 bg-[#E8402A] text-white"
@@ -5135,18 +5937,40 @@ async def settings_page():
                         "/sales-executive",
                         {
                             "name": e_name.value,
-                            "outlet_id": get_id_by_name(outlets, outlet_select.value),
+                            "outlet_id": get_id_by_name(
+                                sstate.outlets, outlet_select.value
+                            ),
                             "designation": e_designation.value,
                         },
                     )
+                    # Refresh Cache
+                    await fetch_reference_data(force_refresh=True)
                     ui.notify("Employee created", type="positive")
 
                     e_name.value = ""
                     e_designation.value = ""
                     outlet_select.value = None
 
+                except UnauthorizedError:
+                    await logout_user()
+                    ui.notify("Session expired. Please login again.", type="warning")
+                    ui.navigate.to("/login")
+                except ForbiddenError:
+                    ui.notify(
+                        "You don't have the permission to create dealerships",
+                        type="negative",
+                    )
+
+                except ConnectionFailedError:
+                    ui.notify("Unable to load transaction", type="negative")
+
+                except APIError as e:
+                    print("LOAD TRANSACTION API ERROR:", e)
+                    ui.notify("Failed to load transaction", type="negative")
+
                 except Exception as e:
-                    ui.notify(str(e), type="negative")
+                    print("LOAD TRANSACTION ERROR:", e)
+                    ui.notify("Something went wrong", type="negative")
 
             ui.button("Create Employee", on_click=create_employee).classes(
                 "mt-3 bg-[#E8402A] text-white"
@@ -5173,7 +5997,11 @@ class FormController:
         self.attach_handlers()
 
     async def load_reference_data(self):
-        data = await fetch_reference_data()
+
+        data = get_reference_data()
+
+        if not data:
+            data = await fetch_reference_data()
 
         self.state.cars = data.get("cars", [])
         self.state.variants = data.get("variants", [])
@@ -5185,11 +6013,31 @@ class FormController:
 
     async def load_transaction_if_needed(self):
         transaction_id = self.state.transaction_id
-
         if not transaction_id:
             return
 
-        self.state.transaction_data = await api_get(f"/transactions/{transaction_id}")
+        try:
+            data = await api_get(f"/transactions/{transaction_id}")
+            if not data:
+                return
+
+            self.state.transaction_data = data
+
+        except UnauthorizedError:
+            await logout_user()
+            ui.notify("Session expired. Please login again.", type="warning")
+            ui.navigate.to("/login")
+
+        except ConnectionFailedError:
+            ui.notify("Unable to load transaction", type="negative")
+
+        except APIError as e:
+            print("LOAD TRANSACTION API ERROR:", e)
+            ui.notify("Failed to load transaction", type="negative")
+
+        except Exception as e:
+            print("LOAD TRANSACTION ERROR:", e)
+            ui.notify("Something went wrong", type="negative")
 
     def build_form(self):
         build_full_form(self.state)
@@ -5819,60 +6667,81 @@ async def resolve_form_mode(
     transaction_id: int | None,
     mode: str | None,
 ):
-    txn_data = None
-    # BOOKING
-    if stage == "booking":
-        if transaction_id:
-            state.form_mode = "booking_edit"
 
+    txn_data = None
+
+    try:
+        # LOAD TRANSACTION IF AVAILABLE
+        if transaction_id:
             txn_data = await api_get(f"/transactions/{transaction_id}")
 
             state.edit_mode = True
 
-        else:
-            state.form_mode = "booking_create"
-    # DELIVERY
-    elif stage == "delivery":
-        # DIRECT DELIVERY
-        if mode == "direct":
+        # BOOKING
+        if stage == "booking":
             if transaction_id:
-                state.form_mode = "delivery_edit"
-
-                txn_data = await api_get(f"/transactions/{transaction_id}")
-
-                state.edit_mode = True
+                state.form_mode = "booking_edit"
 
             else:
-                state.form_mode = "delivery_direct_create"
+                state.form_mode = "booking_create"
 
-        # DELIVERY FROM BOOKING
-        else:
-            if transaction_id:
-                txn_data = await api_get(f"/transactions/{transaction_id}")
-
-                txn_stage = txn_data.get("stage")
-
-                # EXISTING DELIVERY
-                if txn_stage == "delivery":
+        # DELIVERY
+        elif stage == "delivery":
+            # DIRECT DELIVERY
+            if mode == "direct":
+                if transaction_id:
                     state.form_mode = "delivery_edit"
 
-                    state.edit_mode = True
-
-                # BOOKING → DELIVERY
                 else:
-                    state.form_mode = "delivery_from_booking"
-                    state.edit_mode = True
+                    state.form_mode = "delivery_direct_create"
 
+            # DELIVERY FROM BOOKING
             else:
-                state.form_mode = "delivery_direct_create"
+                if transaction_id and txn_data:
+                    txn_stage = txn_data.get("stage")
 
-    # SAVE TRANSACTION DATA
-    if txn_data:
-        state.transaction_data = txn_data
-        state.booking_data = txn_data
-        state.txn_id = transaction_id
+                    # EXISTING DELIVERY
+                    if txn_stage == "delivery":
+                        state.form_mode = "delivery_edit"
 
-    return txn_data
+                    # BOOKING → DELIVERY
+                    else:
+                        state.form_mode = "delivery_from_booking"
+
+                else:
+                    state.form_mode = "delivery_direct_create"
+
+        # SAVE TRANSACTION DATA
+        if txn_data:
+            state.transaction_data = txn_data
+
+            state.booking_data = txn_data
+
+            state.txn_id = transaction_id
+
+        return txn_data
+
+    except UnauthorizedError:
+        await logout_user()
+
+        ui.notify("Session expired. Please login again.", type="warning")
+
+        ui.navigate.to("/login")
+
+    except ConnectionFailedError:
+        ui.notify("Unable to load transaction", type="negative")
+
+    except APIError as e:
+        print("RESOLVE FORM MODE API ERROR:", e)
+
+        ui.notify("Failed to load transaction", type="negative")
+
+    except Exception as e:
+        print("RESOLVE FORM MODE ERROR:", e)
+
+        ui.notify("Something went wrong", type="negative")
+
+    return None
 
 
 async def hydrate_vehicle_section(
@@ -7283,11 +8152,16 @@ async def _fs_on_car_change(
         state.variant_select.options = options
         state.variant_select.update()
 
+    except UnauthorizedError:
+        await logout_user()
+        ui.notify("Session expired. Please Login again.", type="warning")
+        ui.navigate.to("/login")
+    except ConnectionFailedError:
+        ui.notify("Unable to connect to the server. Please Try Again.", type="negative")
+    except APIError:
+        ui.notify("AN ERROR OCCURED", type="negative")
     except Exception as ex:
-        _fs_show_error(
-            state,
-            f"Failed to load variants: {ex}",
-        )
+        _fs_show_error(state, f"Failed to load variants: {ex}")
 
 
 async def _fs_on_variant_change(variant_id, state: FormState) -> None:
@@ -7343,7 +8217,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 toggle = state.price_match_toggles[name]
                 inp = state.price_inputs.get(name)
 
-                if toggle.value and inp:
+                if toggle.value and inp and parsed_val(inp) in [None, "", 0]:
                     inp.set_value(int(value))
                     inp.props("readonly")
                     filled += 1
@@ -7352,7 +8226,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 toggle = state.discount_match_toggles[name]
                 inp = state.discount_inputs.get(name)
 
-                if toggle.value and inp:
+                if toggle.value and inp and parsed_val(inp) in [None, "", 0]:
                     inp.set_value(int(value))
                     inp.props("readonly")
                     filled += 1
@@ -7575,49 +8449,17 @@ def _fs_update_live(state) -> None:
             dl.style("color:#9CA3AF")
 
     # 4. EXCESS CALCULATION
-    adjustment = int(
-        float(
-            parsed_val(
-                getattr(
-                    state,
-                    "adjustment_input",
-                    None,
-                )
-            )
-        )
-    )
-
+    adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
     total_discount_given = int(
         total_diff
         + acc_diff
-        + int(
-            parsed_val(
-                getattr(
-                    state,
-                    "total_discount_booking",
-                    None,
-                )
-            )
-        )
-        + int(
-            parsed_val(
-                getattr(
-                    state,
-                    "other_discount_delivery",
-                    None,
-                )
-            )
-        )
+        + int(parsed_val(getattr(state, "total_discount_booking", None)))
+        + int(parsed_val(getattr(state, "other_discount_delivery", None)))
         + total_given_discount
         - adjustment
     )
 
-    excess = int(
-        max(
-            0,
-            total_discount_given - total_allowed_discount,
-        )
-    )
+    excess = int(max(0, total_discount_given - total_allowed_discount))
 
     # 5. UPDATE LABELS
     if getattr(state, "total_allowed", None):
@@ -7691,30 +8533,35 @@ def _fs_clear_error(state: FormState) -> None:
         state.error_msg_label.set_text("")
 
 
-async def _fs_handle_submit(state: FormState) -> None:
+async def _fs_handle_submit(
+    state: FormState,
+) -> None:
 
     if not state.error_banner or not state.error_msg_label:
         return
+
+    # =====================================================
+    # VALIDATION
+    # =====================================================
 
     valid, msg = state.is_valid()
 
     if not valid:
         state.error_msg_label.set_text(msg)
+
         state.error_banner.set_visibility(True)
+
         return
 
     payload = build_payload(state)
 
     try:
+        # HIDE OLD ERROR
+        state.error_banner.set_visibility(False)
+
         # UPDATE FLOW
-        # booking_edit
-        # delivery_from_booking
-        # delivery_edit
         if state.edit_mode and state.txn_id:
-            await api_put(
-                f"/transactions/{state.txn_id}",
-                payload,
-            )
+            await api_put(f"/transactions/{state.txn_id}", payload)
 
             if state.stage == "delivery":
                 if state.form_mode == "delivery_from_booking":
@@ -7726,45 +8573,59 @@ async def _fs_handle_submit(state: FormState) -> None:
 
                 else:
                     ui.notify(
-                        "Delivery updated successfully",
-                        color="green",
-                        type="positive",
+                        "Delivery updated successfully", color="green", type="positive"
                     )
 
             else:
                 ui.notify(
-                    "Booking updated successfully",
-                    color="green",
-                    type="positive",
+                    "Booking updated successfully", color="green", type="positive"
                 )
 
         # CREATE FLOW
-        # booking_create
-        # delivery_direct_create
         else:
-            await api_post(
-                "/transactions",
-                payload,
-            )
+            await api_post("/transactions", payload)
 
             if state.stage == "delivery":
                 ui.notify(
-                    "Delivery created successfully",
-                    color="green",
-                    type="positive",
+                    "Delivery created successfully", color="green", type="positive"
                 )
 
             else:
                 ui.notify(
-                    "Booking created successfully",
-                    color="green",
-                    type="positive",
+                    "Booking created successfully", color="green", type="positive"
                 )
 
-        # SUCCESS UI
-        state.error_banner.set_visibility(False)
+        # SUCCESS NAVIGATION
+        ui.navigate.reload()
+
+    except UnauthorizedError:
+        await logout_user()
+
+        ui.notify(
+            "Session expired. Please login again.",
+            type="warning",
+        )
+
+        ui.navigate.to("/login")
+
+    except ConnectionFailedError as e:
+        state.error_msg_label.set_text(str(e))
+
+        state.error_banner.set_visibility(True)
+
+    except APIError as e:
+        print(
+            "FORM SUBMIT API ERROR:",
+            e,
+        )
+
+        state.error_msg_label.set_text(str(e))
+
+        state.error_banner.set_visibility(True)
 
     except Exception as e:
+        print("FORM SUBMIT ERROR:", e)
+
         state.error_msg_label.set_text(str(e))
 
         state.error_banner.set_visibility(True)
@@ -8084,13 +8945,15 @@ async def load_transaction(state: FormState):
         state.transaction_data = txn
         state.booking_data = txn
 
+    except UnauthorizedError:
+        await logout_user()
+        ui.notify("Session expired. Please Login again.")
+        ui.navigate.to("/login")
+    except ConnectionFailedError:
+        ui.notify("Unable to connect to the server. Please Try again.")
     except Exception as e:
         print("ERROR: in loading the transaction: ", str(e))
-
-        ui.notify(
-            "Failed to load entry",
-            type="negative",
-        )
+        ui.notify("Failed to load entry", type="negative")
 
 
 def build_form(state: FormState):
@@ -8195,11 +9058,7 @@ async def hydrate_form(
 
             state.car_id = car_id
 
-            await _fs_on_car_change(
-                car_id,
-                state,
-                preserve_variant=True,
-            )
+            await _fs_on_car_change(car_id, state, preserve_variant=True)
 
         if variant_id and state.variant_select:
             state.variant_select.set_value(variant_id)
@@ -8245,99 +9104,30 @@ async def hydrate_form(
                 widget.set_value(value)
 
         # CONDITIONS
-
-        for key, cb in getattr(
-            state,
-            "condition_cbs",
-            {},
-        ).items():
-            val = txn.get(
-                f"cond_{key}",
-                False,
-            )
+        for key, cb in getattr(state, "condition_cbs", {}).items():
+            val = txn.get(f"cond_{key}", False)
 
             cb.set_value(bool(val))
 
         # BOOKING CHECKLIST
         for key, cb in state.booking_cbs.items():
-            cb.set_value(
-                bool(
-                    txn.get(
-                        f"bk_checks_{key}",
-                        False,
-                    )
-                )
-            )
+            cb.set_value(bool(txn.get(f"bk_checks_{key}", False)))
+
         # DELIVERY CHECKLIST
         for key, cb in state.delivery_cbs.items():
-            cb.set_value(
-                bool(
-                    txn.get(
-                        f"del_checks_{key}",
-                        False,
-                    )
-                )
-            )
-        # PRICE INPUTS
-        await _fs_try_price_preload(
-            state,
-        )
-        for (
-            name,
-            inp,
-        ) in getattr(
-            state,
-            "price_inputs",
-            {},
-        ).items():
-            val = txn.get(f"{name}_actual")
-
-            if val not in [
-                None,
-                "",
-            ]:
-                inp.set_value(val)
-        # DISCOUNT INPUTS
-        for (
-            name,
-            inp,
-        ) in getattr(
-            state,
-            "discount_inputs",
-            {},
-        ).items():
-            val = txn.get(f"{name}_actual")
-
-            if val not in [
-                None,
-                "",
-            ]:
-                inp.set_value(val)
+            cb.set_value(bool(txn.get(f"del_checks_{key}", False)))
 
         # SUMMARY FIELDS
         if state.total_discount_booking:
-            state.total_discount_booking.set_value(
-                txn.get(
-                    "discount_booking",
-                    0,
-                )
-            )
+            state.total_discount_booking.set_value(txn.get("discount_booking", 0))
 
         if getattr(state, "other_discount_delivery", None):
             state.other_discount_delivery.set_value(
-                txn.get(
-                    "other_discount_delivery",
-                    0,
-                )
+                txn.get("other_discount_delivery", 0)
             )
 
         if state.adjustment_input:
-            state.adjustment_input.set_value(
-                txn.get(
-                    "adjustment_booking",
-                    0,
-                )
-            )
+            state.adjustment_input.set_value(txn.get("adjustment_booking", 0))
         await hydrate_vehicle_section(
             state,
             txn,
@@ -8366,6 +9156,20 @@ async def hydrate_form(
             state,
             txn,
         )
+        # PRICE INPUTS
+        await _fs_try_price_preload(state)
+
+        for name, inp in getattr(state, "price_inputs", {}).items():
+            val = txn.get(f"{name}_actual")
+
+            if val not in [None, ""]:
+                inp.set_value(val)
+        # DISCOUNT INPUTS
+        for name, inp in getattr(state, "discount_inputs", {}).items():
+            val = txn.get(f"{name}_actual")
+
+            if val not in [None, ""]:
+                inp.set_value(val)
 
         # UI REFRESH
         refresh_visibility(state)
@@ -8687,7 +9491,14 @@ def build_complaint_dealership_section(state: FormState) -> None:
                     if outs:
                         state.complainant_showroom.options = {o: o for o in outs}
                         state.complainant_showroom.update()
-                except Exception as ex:
+                except UnauthorizedError:
+                    await logout_user()
+                    ui.notify("Session Expired. Please Login again.", type="warning")
+                    ui.navigate.to("/login")
+                except ConnectionFailedError:
+                    ui.notify("Unable to connect to the server", type="warning")
+
+                except APIError as ex:
                     print(f"Error fetching outlets: {ex}")
 
             async def handle_complainee_change(dlr):
@@ -8707,7 +9518,8 @@ def build_complaint_dealership_section(state: FormState) -> None:
                             opts[o] = o
                         state.complainee_showroom.options = opts
                         state.complainee_showroom.update()
-                except Exception as ex:
+
+                except APIError as ex:
                     print(f"Error fetching outlets: {ex}")
 
             # Handlers
@@ -8879,20 +9691,46 @@ def build_complaint_action_bar(state: FormState) -> None:
         ).props("flat no-caps")
 
         async def handle_complaint_submit():
+            if not state.error_banner or not state.error_msg_label:
+                return
+            # VALIDATION
             valid, msg = state.is_valid()
+
             if not valid:
                 state.error_msg_label.set_text(msg)
                 state.error_banner.set_visibility(True)
                 return
 
             payload = build_complaint_payload(state)
+
             try:
+                # CLEAR OLD ERRORS
+                state.error_banner.set_visibility(False)
+                # SUBMIT
                 await api_post("/complaints/save-complaint", payload)
                 ui.notify(
                     "Complaint Submitted Successfully", color="green", type="positive"
                 )
+
+                # SUCCESS NAVIGATION
                 ui.navigate.to("/")
+
+            except UnauthorizedError:
+                await logout_user()
+                ui.notify("Session expired. Please login again.", type="warning")
+                ui.navigate.to("/login")
+
+            except ConnectionFailedError as e:
+                state.error_msg_label.set_text(str(e))
+                state.error_banner.set_visibility(True)
+
+            except APIError as e:
+                print("COMPLAINT SUBMIT API ERROR:", e)
+                state.error_msg_label.set_text(str(e))
+                state.error_banner.set_visibility(True)
+
             except Exception as e:
+                print("COMPLAINT SUBMIT ERROR:", e)
                 state.error_msg_label.set_text(str(e))
                 state.error_banner.set_visibility(True)
 
@@ -9158,7 +9996,7 @@ async def complaint_form_page(
             )
             if target:
                 populate_from_complaint(state, target)
-        except Exception as e:
+        except APIError as e:
             ui.notify(f"Failed to load complaint: {str(e)}", type="negative")
 
 
