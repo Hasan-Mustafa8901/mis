@@ -1393,22 +1393,6 @@ async def dashboard_page() -> None:
     async def reload_backend_data(_=None):
         await load_dashboard_data()
 
-    #  Fetch all transactions
-    try:
-        all_transactions: list = await api_get("/transactions")
-    except UnauthorizedError:
-        await logout_user()
-        ui.notify("Session expired. Please login again.", type="warning")
-        ui.navigate.to("/login")
-
-    except ConnectionFailedError:
-        ui.notify("Unable to connect to server", type="negative")
-        all_transactions = []
-    except APIError as e:
-        print("ERROR ON DASHBOARD: ", str(e))
-        ui.notify("An Error Occured", type="negative")
-        all_transactions = []
-
     #  Month helpers
     def month_label(ym: str) -> str:
         try:
@@ -2545,6 +2529,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
         @ui.refreshable
         def render_header_meta():
+            print("render_header_meta called")
             with ui.column().classes("gap-1"):
                 title = (
                     f"{label}"
