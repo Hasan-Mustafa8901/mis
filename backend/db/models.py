@@ -486,7 +486,7 @@ class MISRecord(SQLModel, table=True):
         default=None,
         sa_column=Column(
             Integer,
-            ForeignKey("transaction.id", on_delete="SET NULL"),
+            ForeignKey("transaction.id", ondelete="SET NULL"),
             nullable=True,
         ),
     )
