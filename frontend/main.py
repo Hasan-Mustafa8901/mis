@@ -6008,6 +6008,14 @@ class FormState:
         self.discount_match_toggles = {}
         self.discount_given_labels = {}  # already used elsewhere
 
+        # Customer Ledger vars
+        self.total_receivable: ui.label | None = None
+        self.total_received: ui.label | None = None
+        self.balance_amount: ui.label | None = None
+        self.ledger_adjustment: ui.input | None = None
+        self.ledger_adjustment_remarks: ui.input | None = None
+        self.adjustment_type: ui.select | str = ""
+
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
         self.delivery_cbs: dict[str, ui.checkbox] = {}
@@ -6933,11 +6941,13 @@ def build_booking_checklist_section(state: FormState) -> None:
 
 def build_booking_section(state: FormState):
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
-        ):
-            ui.label("📖").classes("text-[20px] select-none")
-            ui.label("Booking Details").classes("text-[15px] font-bold text-gray-900")
+        # Header
+        _section_header(
+            emoji="📖",
+            title="Booking Details",
+            subtitle="Record booking details",
+            icon_bg="bg-blue-50",
+        )
 
         # Basic Info
         with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-5"):
@@ -7016,17 +7026,28 @@ def build_prices_section(state: FormState) -> None:
         with ui.column().classes("w-full gap-0 p-5"):
             # CARD HEADER
             with ui.row().classes(
-                "w-full items-center gap-2 pb-3 border-b border-gray-100"
+                "w-full items-center gap-2 pb-3 border-b border-gray-100 flex-nowrap"
             ):
-                ui.label("Price & Discounts").classes(
-                    "text-[15px] font-bold text-gray-900 flex-1"
+                # Header
+                _section_header(
+                    emoji="💲",
+                    title="Prices & Discount",
+                    subtitle="Manage vehicle pricing, discounts, and adjustments",
+                    icon_bg="bg-blue-50",
                 )
+
                 if is_delivery and not is_direct:
-                    ui.badge("Delivery Stage", color="blue").props("outline")
+                    ui.badge("Delivery Stage", color="blue").classes(
+                        "items-center"
+                    ).props("outline")
                 elif is_direct:
-                    ui.badge("Direct Delivery", color="purple").props("outline")
+                    ui.badge("Direct Delivery", color="purple").classes(
+                        "items-center"
+                    ).props("outline")
                 else:
-                    ui.badge("Booking Stage", color="green").props("outline")
+                    ui.badge("Booking Stage", color="green").classes(
+                        "items-center"
+                    ).props("outline")
 
             # SECTION 1 — PRICE CHARGED AS PER BOOKS
             ui.label("Price charged as per books of accounts").classes(
@@ -7374,11 +7395,13 @@ def build_prices_section(state: FormState) -> None:
 
 def build_accessories_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
-        ):
-            ui.label("🔧").classes("text-[20px] select-none")
-            ui.label("Accessories").classes("text-[15px] font-bold text-gray-900")
+        # Header
+        _section_header(
+            emoji="🔧",
+            title="Accessories",
+            subtitle="Record accessories details",
+            icon_bg="bg-blue-50",
+        )
 
         options = {
             acc_id: f"{data['name']} (₹{data['listed_price']})"
@@ -7426,90 +7449,213 @@ def build_accessories_section(state: FormState) -> None:
 
 
 def build_delivery_checklist_section(state: FormState) -> None:
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        # Header
+        _section_header(
+            emoji="✅",
+            title="Delivery Checklist",
+            subtitle="Verify all delivery requirements before vehicle handover",
+            icon_bg="bg-emerald-50",
+        )
+
+        # Checklist Container
+        with ui.column().classes(
+            "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-4"
         ):
-            ui.label("✅").classes("text-[20px] select-none")
-            ui.label("Delivery Checklist").classes(
-                "text-[15px] font-bold text-gray-900"
+            ui.label("Pre-Delivery Verification").classes(
+                "text-[13px] font-semibold text-gray-700"
             )
-        with ui.grid(columns=5).classes("w-full gap-y-2"):
-            for key, label in DELIVERY_CHECK_KEYS:
-                state.delivery_cbs[key] = ui.checkbox(label, value=False).props("dense")
+
+            ui.label(
+                "Ensure all mandatory documents, accessories, and delivery "
+                "formalities are completed."
+            ).classes("text-[12px] text-gray-500 leading-5")
+
+            # Checklist Grid
+            with ui.grid(columns=5).classes("w-full gap-x-6 gap-y-4 pt-2"):
+                for key, label in DELIVERY_CHECK_KEYS:
+                    with ui.row().classes(
+                        "items-center gap-2 bg-white border border-gray-100 "
+                        "rounded-lg px-3 py-2 shadow-sm"
+                    ):
+                        state.delivery_cbs[key] = ui.checkbox(value=False).props(
+                            "dense size='sm'"
+                        )
+
+                        ui.label(label).classes("text-[13px] text-gray-700")
 
 
 def build_audit_section(state: FormState) -> None:
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
-        ):
-            ui.label("📋").classes("text-[20px] select-none")
-            ui.label("Audit").classes("text-[15px] font-bold text-gray-900")
-        with ui.grid(columns=2).classes("w-full gap-2"):
-            state.audit_obs = (
-                ui.textarea(label="Observations", placeholder="Enter observations...")
-                .classes("w-full")
-                .props("outlined dense rows=3")
-            )
-            state.audit_action = (
-                ui.textarea(label="Follow-up Action", placeholder="Enter actions...")
-                .classes("w-full")
-                .props("outlined dense rows=3")
-            )
+
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        # Header
+        _section_header(
+            emoji="📋",
+            title="Audit & Compliance",
+            subtitle="Track observations and corrective actions",
+            icon_bg="bg-purple-50",
+        )
+
+        with ui.grid(columns=2).classes("w-full gap-5 items-start"):
+            # Observation Section
+            with ui.column().classes(
+                "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-3"
+            ):
+                ui.label("Observations").classes(
+                    "text-[13px] font-semibold text-gray-700"
+                )
+
+                ui.label("Record discrepancies, issues, or audit findings.").classes(
+                    "text-[12px] text-gray-500 leading-5"
+                )
+
+                state.audit_obs = (
+                    ui.textarea(
+                        label="Observations",
+                        placeholder=(
+                            "Enter audit observations, missing documents, "
+                            "policy deviations, or other remarks..."
+                        ),
+                    )
+                    .classes("w-full")
+                    .props("outlined dense rows=6")
+                )
+
+            # Action Section
+            with ui.column().classes(
+                "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-3"
+            ):
+                ui.label("Follow-up Action").classes(
+                    "text-[13px] font-semibold text-gray-700"
+                )
+
+                ui.label("Document corrective actions or next steps.").classes(
+                    "text-[12px] text-gray-500 leading-5"
+                )
+
+                state.audit_action = (
+                    ui.textarea(
+                        label="Follow-up Action",
+                        placeholder=(
+                            "Enter corrective actions, approvals needed, "
+                            "responsible person, or closure notes..."
+                        ),
+                    )
+                    .classes("w-full")
+                    .props("outlined dense rows=6")
+                )
 
 
 def build_file_status_section(state: FormState) -> None:
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
-        ):
-            ui.label("⏳").classes("text-[20px] select-none")
-            ui.label("File Status").classes("text-[15px] font-bold text-gray-900")
-        with ui.grid(columns=2).classes("w-full gap-2"):
-            if state.stage == "booking":
-                state.booking_file_incomplete = (
-                    ui.checkbox("Booking File Incomplete")
-                    .classes("w-full")
-                    .props("outlined dense")
-                )
-                state.booking_file_incomplete_remarks = (
-                    ui.textarea(
-                        "Reason For Incomplete",
-                        placeholder="Reason for marking incomplete...",
-                    )
-                    .classes("w-full")
-                    .props("outlined dense rows=3")
-                )
-            else:
-                state.delivery_file_incomplete = (
-                    ui.checkbox("Delivery File Incomplete")
-                    .classes("w-full")
-                    .props("outlined dense")
-                )
-                state.delivery_file_incomplete_remarks = (
-                    ui.textarea(
-                        "Reason For Incomplete",
-                        placeholder="Reason for marking incomplete...",
-                    )
-                    .classes("w-full")
-                    .props("outlined dense rows=3")
+
+    is_booking = state.stage == "booking"
+
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        # Header
+        _section_header(
+            emoji="⏳",
+            title="File Status",
+            subtitle="Track incomplete documentation status",
+            icon_bg="bg-amber-50",
+        )
+
+        with ui.grid(columns=2).classes("w-full gap-5 items-start"):
+            # Status Card
+            with ui.column().classes(
+                "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-4"
+            ):
+                ui.label("Document Verification").classes(
+                    "text-[13px] font-semibold text-gray-700"
                 )
 
+                if is_booking:
+                    state.booking_file_incomplete = (
+                        ui.checkbox("Booking File Incomplete")
+                        .classes("w-full")
+                        .props("dense")
+                    )
+                else:
+                    state.delivery_file_incomplete = (
+                        ui.checkbox("Delivery File Incomplete")
+                        .classes("w-full")
+                        .props("dense")
+                    )
 
-def build_invoice_section(
-    state: FormState,
+                ui.label(
+                    "Mark this if required documents or approvals are pending."
+                ).classes("text-[12px] text-gray-500 leading-5")
+
+            # Remarks Section
+            with ui.column().classes(
+                "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-3"
+            ):
+                ui.label("Remarks / Reason").classes(
+                    "text-[13px] font-semibold text-gray-700"
+                )
+
+                if is_booking:
+                    state.booking_file_incomplete_remarks = (
+                        ui.textarea(
+                            "Reason For Incomplete",
+                            placeholder="Explain missing documents, approvals, or pending actions...",
+                        )
+                        .classes("w-full")
+                        .props("outlined dense rows=5")
+                    )
+                else:
+                    state.delivery_file_incomplete_remarks = (
+                        ui.textarea(
+                            "Reason For Incomplete",
+                            placeholder="Explain missing documents, approvals, or pending actions...",
+                        )
+                        .classes("w-full")
+                        .props("outlined dense rows=5")
+                    )
+
+
+def _section_header(
+    emoji: str,
+    title: str,
+    subtitle: str,
+    icon_bg: str = "bg-gray-100",
 ) -> None:
+    with ui.row().classes(
+        "w-full items-center justify-between mb-5 pb-3 border-b border-gray-100"
+    ):
+        with ui.row().classes("items-center gap-3"):
+            with ui.element("div").classes(
+                f"w-10 h-10 rounded-xl {icon_bg} flex items-center justify-center"
+            ):
+                ui.label(emoji).classes("text-[18px]")
 
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
-        ):
-            ui.label("🧾").classes("text-[20px] select-none")
+            with ui.column().classes("gap-0"):
+                ui.label(title).classes("text-[16px] font-bold text-gray-900")
+                ui.label(subtitle).classes("text-[12px] text-gray-500")
 
-            ui.label("Invoice Details").classes("text-[15px] font-bold text-gray-900")
 
-        with ui.grid(columns=3).classes("w-full gap-5"):
+def build_invoice_section(state: FormState) -> None:
+
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        # Header
+        _section_header(
+            emoji="🧾",
+            title="Invoice Details",
+            subtitle="Manage invoice pricing and taxation",
+            icon_bg="bg-orange-50",
+        )
+
+        # Form
+        with ui.grid(columns=3).classes("w-full gap-4 items-start"):
+            # Invoice Meta
             state.invoice_number = (
                 ui.input(label="Invoice Number")
                 .classes("uppercase")
@@ -7525,39 +7671,178 @@ def build_invoice_section(
                 },
             ).props('outlined dense type="date"')
 
-            state.invoice_ex_showroom = accounting_input(
-                label_text=("Ex-Showroom Price (From Price List)")
-            )
+            state.invoice_ex_showroom = accounting_input(label_text="Ex-Showroom Price")
             state.invoice_ex_showroom.props("readonly")
+
+            # Pricing
             state.invoice_discount = accounting_input(
-                label_text="Discount", placeholder="Enter Discount or Concession"
+                label_text="Discount",
+                placeholder="Enter discount or concession",
             )
+
             state.invoice_taxable_value = accounting_input(
                 label_text="Taxable Value",
-                placeholder="Enter taxable value or cost of vehicle",
+                placeholder="Enter taxable amount",
             )
-            state.invoice_cgst = accounting_input(label_text="CGST")
-            state.invoice_sgst = accounting_input(label_text="SGST")
-            state.igst_toggle = ui.switch("Apply IGST").props("dense")
-            state.invoice_igst = accounting_input(label_text="IGST")
-            state.cess_toggle = ui.switch("Apply CESS").props("dense")
-            state.invoice_cess = accounting_input(label_text="CESS")
+
             state.invoice_total = accounting_input(label_text="Total Invoice Value")
+
+            # Tax Section
+            with ui.column().classes(
+                "w-full bg-gray-50 border border-gray-100 rounded-xl p-4 gap-3"
+            ):
+                ui.label("GST Components").classes(
+                    "text-[13px] font-semibold text-gray-700"
+                )
+
+                state.invoice_cgst = accounting_input(label_text="CGST")
+                state.invoice_sgst = accounting_input(label_text="SGST")
+
+            # IGST Section
+            with ui.column().classes(
+                "w-full bg-gray-50 border border-gray-100 rounded-xl p-4 gap-3"
+            ):
+                with ui.row().classes("w-full items-center justify-between"):
+                    ui.label("IGST").classes("text-[13px] font-semibold text-gray-700")
+                    state.igst_toggle = ui.switch().props("dense")
+
+                state.invoice_igst = accounting_input(label_text="IGST")
+
+            # CESS Section
+            with ui.column().classes(
+                "w-full bg-gray-50 border border-gray-100 rounded-xl p-4 gap-3"
+            ):
+                with ui.row().classes("w-full items-center justify-between"):
+                    ui.label("CESS").classes("text-[13px] font-semibold text-gray-700")
+                    state.cess_toggle = ui.switch().props("dense")
+
+                state.invoice_cess = accounting_input(label_text="CESS")
+
+
+def _ledger_value(text: str, value: str = "₹ 0") -> ui.column:
+    with (
+        ui.column()
+        .classes(
+            "bg-gray-100 rounded-lg px-4 py-3 border border-gray-100 min-w-[180px]"
+        )
+        .props("elevated") as col
+    ):
+        ui.label(text).classes("text-[14px] font-bold  tracking-wide text-black-500")
+        value_label = ui.label(value).classes("text-[20px] font-bold text-gray-900")
+
+    col.value_label = value_label
+    return col
 
 
 def build_payment_section(state: FormState) -> None:
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        # Header
         with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+            "w-full items-center justify-between mb-5 pb-3 border-b border-gray-100"
         ):
-            ui.label("💳").classes("text-[20px] select-none")
-            ui.label("Payment Received").classes("text-[15px] font-bold text-gray-900")
+            with ui.row().classes("items-center gap-3"):
+                with ui.element("div").classes(
+                    "w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center"
+                ):
+                    ui.label("💳").classes("text-[18px]")
 
-        with ui.grid(columns=FORM_COLUMNS + 1).classes("w-full gap-2 items-start"):
+                with ui.column().classes("gap-0"):
+                    ui.label("Payment Received").classes(
+                        "text-[16px] font-bold text-gray-900"
+                    )
+                    ui.label("Capture all payment sources").classes(
+                        "text-[12px] text-gray-500"
+                    )
+
+        # Inputs
+        with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-4"):
             state.payment_cash = accounting_input("Cash Payment")
             state.payment_bank = accounting_input("Bank Payment")
             state.payment_finance = accounting_input("Finance")
             state.payment_exchange = accounting_input("Exchange")
+
+
+def build_ledger_section(state: FormState) -> None:
+
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        # Header
+        _section_header(
+            emoji="📒",
+            title="Ledger Summary",
+            subtitle="Real-time payment overview",
+            icon_bg="bg-blue-50",
+        )
+
+        # Summary Cards
+        with ui.grid(columns=3).classes("w-full gap-4 mb-5"):
+            total_receivable_card = _ledger_value("Total Receivable")
+            total_received_card = _ledger_value("Total Received")
+            balance_card = _ledger_value("Balance Amount")
+
+            state.total_receivable = total_receivable_card.value_label
+            state.total_received = total_received_card.value_label
+            state.balance_amount = balance_card.value_label
+
+        # Adjustment Section
+        with ui.column().classes(
+            "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-4"
+        ):
+            with ui.row().classes("items-center justify-between w-full"):
+                with ui.column().classes("gap-0"):
+                    ui.label("Ledger Adjustment").classes(
+                        "text-[13px] font-semibold text-gray-700"
+                    )
+
+                    ui.label("Apply manual debit or credit adjustments").classes(
+                        "text-[12px] text-gray-500"
+                    )
+
+            with ui.grid(columns=3).classes("w-full gap-4 items-start"):
+                # Positive / Negative
+                with ui.column().classes("gap-1"):
+                    ui.label("Adjustment Type").classes(
+                        "text-[12px] font-semibold text-gray-700 ml-1"
+                    )
+
+                    state.adjustment_type = (
+                        ui.select(
+                            {
+                                "positive": "➕ Positive",
+                                "negative": "➖ Negative",
+                            },
+                            value="negative",
+                        )
+                        .props("outlined")
+                        .classes("w-full")
+                    )
+
+                # Amount
+                with ui.column().classes("gap-1"):
+                    ui.label("Adjustment Amount").classes(
+                        "text-[12px] font-semibold text-gray-700 ml-1"
+                    )
+                    state.ledger_adjustment = accounting_input(
+                        "Adjustment Amount",
+                        placeholder="Enter adjustment amount",
+                        container_classes="w-full",
+                    )
+                    state.ledger_adjustment.props("style='min-height:46px'")
+
+                # Remarks
+                with ui.column().classes("gap-1 w-full"):
+                    ui.label("Remarks / Reason").classes(
+                        "text-[12px] font-semibold text-gray-700 ml-1"
+                    )
+
+                    state.ledger_adjustment_remarks = (
+                        ui.textarea(placeholder=("Explain reason for adjustment..."))
+                        .classes("w-full")
+                        .props("outlined rows=2")
+                    )
 
 
 # Internal CSS helpers
@@ -7768,7 +8053,7 @@ def handle_discount_toggle(
     _fs_update_live(state)
 
 
-def attach_form_handlers(state):
+def attach_form_handlers(state: FormState):
 
     if getattr(state, "handlers_attached", False):
         return
@@ -7926,6 +8211,20 @@ def attach_form_handlers(state):
         )
     attach_invoice_handlers(state)
 
+    # Payment Section
+    if getattr(state, "payment_cash", None):
+        state.payment_cash.on_value_change(live_update)
+    if getattr(state, "payment_bank", None):
+        state.payment_bank.on_value_change(live_update)
+    if getattr(state, "payment_finance", None):
+        state.payment_finance.on_value_change(live_update)
+    if getattr(state, "payment_exchange", None):
+        state.payment_exchange.on_value_change(live_update)
+    if getattr(state, "adjustment_type", None):
+        state.adjustment_type.on_value_change(live_update)
+    if getattr(state, "ledger_adjustment", None):
+        state.ledger_adjustment.on_value_change(live_update)
+
 
 def attach_invoice_handlers(
     state: FormState,
@@ -7964,13 +8263,7 @@ def attach_invoice_handlers(
         )
 
 
-async def _fs_on_car_change(
-    car_id,
-    state,
-    *,
-    preserve_variant=False,
-):
-
+async def _fs_on_car_change(car_id, state, *, preserve_variant=False):
     state.car_id = car_id
 
     if state.variant_select is None:
@@ -8312,7 +8605,33 @@ def _fs_update_live(state) -> None:
 
     excess = int(max(0, total_discount_given - total_allowed_discount))
 
+    # CUSTOMER LEDGER CALC
+    total_receivable = total_charged - total_discount_given
+    total_received = (
+        int(parsed_val(getattr(state, "payment_cash", None)))
+        + int(parsed_val(getattr(state, "payment_bank", None)))
+        + int(parsed_val(getattr(state, "payment_exchange", None)))
+        + int(parsed_val(getattr(state, "payment_finance", None)))
+    )
+
+    balance_amount = total_receivable - total_received
+
+    if state.adjustment_type.value == "positive" and state.ledger_adjustment:
+        balance_amount += int(parsed_val(getattr(state, "ledger_adjustment", None)))
+
+    elif state.adjustment_type.value == "negative" and state.ledger_adjustment:
+        balance_amount -= int(parsed_val(getattr(state, "ledger_adjustment", None)))
+
     # 5. UPDATE LABELS
+    if getattr(state, "total_receivable", None):
+        state.total_receivable.set_text(f"₹{total_receivable:,}")
+
+    if getattr(state, "total_received", None):
+        state.total_received.set_text(f"₹{total_received:,}")
+
+    if getattr(state, "balance_amount", None):
+        state.balance_amount.set_text(f"₹{balance_amount:,}")
+
     if getattr(state, "total_allowed", None):
         state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
 
@@ -8327,26 +8646,18 @@ def _fs_update_live(state) -> None:
 
     if getattr(state, "lbl_excess_discount", None):
         state.lbl_excess_discount.set_text(f"₹{excess:,}")
-
         state.lbl_excess_discount.style(
             "color:#DC2626; font-weight:700" if excess > 0 else "color:#9CA3AF"
         )
 
     if getattr(state, "lbl_excess_lv", None):
         state.lbl_excess_lv.set_text(f"₹{excess:,}")
-
         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
 
 
 def get_conditions(state) -> dict:
-
     return {
-        key: bool(cb.value)
-        for key, cb in getattr(
-            state,
-            "condition_cbs",
-            {},
-        ).items()
+        key: bool(cb.value) for key, cb in getattr(state, "condition_cbs", {}).items()
     }
 
 
@@ -8451,34 +8762,21 @@ async def _fs_handle_submit(
 
     except UnauthorizedError:
         await logout_user()
-
-        ui.notify(
-            "Session expired. Please login again.",
-            type="warning",
-        )
-
+        ui.notify("Session expired. Please login again.", type="warning")
         ui.navigate.to("/login")
 
     except ConnectionFailedError as e:
         state.error_msg_label.set_text(str(e))
-
         state.error_banner.set_visibility(True)
 
     except APIError as e:
-        print(
-            "FORM SUBMIT API ERROR:",
-            e,
-        )
-
+        print("FORM SUBMIT API ERROR:", e)
         state.error_msg_label.set_text(str(e))
-
         state.error_banner.set_visibility(True)
 
     except Exception as e:
         print("FORM SUBMIT ERROR:", e)
-
         state.error_msg_label.set_text(str(e))
-
         state.error_banner.set_visibility(True)
 
 
@@ -8682,6 +8980,11 @@ def build_payload(state: FormState) -> dict:
         )
         payload["adjustment_delivery"] = intval(state.adjustment_input)
         payload["other_discount_delivery"] = intval(state.other_discount_delivery)
+        payload["total_receivable"] = lbl_val(state.total_receivable)
+        payload["total_received"] = lbl_val(state.total_received)
+        payload["balance_amount"] = lbl_val(state.balance_amount)
+        payload["ledger_adjustment"] = intval(state.ledger_adjustment)
+        payload["ledger_adjustment_remarks"] = val(state.ledger_adjustment_remarks)
         payload["total_actual_discount"] = lbl_val(state.total_given)
         payload["total_allowed_discount"] = lbl_val(state.total_allowed)
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
@@ -8839,6 +9142,7 @@ def build_form(state: FormState):
         build_file_status_section(state)
         build_invoice_section(state)
         build_payment_section(state)
+        build_ledger_section(state)
         build_audit_section(state)
 
     elif state.form_mode in [
@@ -8863,6 +9167,7 @@ def build_form(state: FormState):
         build_file_status_section(state)
         build_invoice_section(state)
         build_payment_section(state)
+        build_ledger_section(state)
         build_audit_section(state)
 
     build_live_bar(state)
@@ -8979,34 +9284,16 @@ async def hydrate_form(
 
         if state.adjustment_input:
             state.adjustment_input.set_value(txn.get("adjustment_booking", 0))
-        await hydrate_vehicle_section(
-            state,
-            txn,
-        )
-        hydrate_invoice_section(
-            state,
-            txn,
-        )
 
-        hydrate_payment_section(
-            state,
-            txn,
-        )
+        await hydrate_vehicle_section(state, txn)
 
-        hydrate_audit_section(
-            state,
-            txn,
-        )
+        hydrate_invoice_section(state, txn)
+        hydrate_payment_section(state, txn)
+        hydrate_audit_section(state, txn)
+        hydrate_accessories_section(state, txn)
+        hydrate_file_status_section(state, txn)
+        hydrate_ledger_section(state, txn)
 
-        hydrate_accessories_section(
-            state,
-            txn,
-        )
-
-        hydrate_file_status_section(
-            state,
-            txn,
-        )
         # PRICE INPUTS
         await _fs_try_price_preload(state)
 
@@ -9031,6 +9318,17 @@ async def hydrate_form(
 
     finally:
         state.is_hydrating = False
+
+
+def hydrate_ledger_section(state: FormState, txn: dict):
+    print(json.dumps(txn, indent=4))
+    if state.ledger_adjustment:
+        state.ledger_adjustment.set_value(txn.get("ledger_adjustment", 0))
+
+    if state.ledger_adjustment_remarks:
+        state.ledger_adjustment_remarks.set_value(
+            txn.get("ledger_adjustment_remarks", "")
+        )
 
 
 def hydrate_invoice_section(

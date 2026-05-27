@@ -335,9 +335,14 @@ class TransactionService:
             "status": transaction.status,
         }
 
-        # STEP 5: Reconciliation
-
-        TransactionService.apply_funds_reconciliation(session, transaction, payload)
+        # Reconciliation
+        transaction.total_receivable = payload.get("total_receivable", 0)
+        transaction.total_received = payload.get("total_received", 0)
+        transaction.balance = payload.get("balance_amount", 0)
+        transaction.ledger_adjustment = payload.get("ledger_adjustment", 0)
+        transaction.ledger_adjustment_remarks = payload.get(
+            "ledger_adjustment_remarks", ""
+        )
 
         session.add(transaction)
         session.commit()
@@ -399,7 +404,13 @@ class TransactionService:
         }
 
         # STEP 6: Reconciliation (IMPORTANT)
-        TransactionService.apply_funds_reconciliation(session, transaction, payload)
+        transaction.total_receivable = payload.get("total_receivable", 0)
+        transaction.total_received = payload.get("total_received", 0)
+        transaction.balance = payload.get("balance_amount", 0)
+        transaction.ledger_adjustment = payload.get("ledger_adjustment", 0)
+        transaction.ledger_adjustment_remarks = payload.get(
+            "ledger_adjustment_remarks", ""
+        )
 
         session.add(transaction)
         session.commit()
@@ -682,9 +693,11 @@ class TransactionService:
             # FINANCIAL SUMMARY
             data.update(
                 {
-                    "net_receivable": transaction.total_receivable,
+                    "total_receivable": transaction.total_receivable,
                     "total_received": transaction.total_received,
                     "balance_amount": transaction.balance,
+                    "ledger_adjustment": transaction.ledger_adjustment,
+                    "ledger_adjustment_remarks": transaction.ledger_adjustment_remarks,
                     "discount_booking": transaction.discount_booking,
                     "total_discount_booking": transaction.total_discount_booking,
                     "price_offered_booking": transaction.price_offered_booking,
@@ -887,6 +900,8 @@ class TransactionService:
             "total_receivable",
             "total_received",
             "balance",
+            "ledger_adjustment",
+            "ledger_adjustment_remarks",
             "price_offered_booking",
             "discount_booking",
             "total_discount_booking",
@@ -935,8 +950,8 @@ class TransactionService:
                 session, transaction, payload["accessory_ids"]
             )
 
-        # RECONCILIATION
-        TransactionService.apply_funds_reconciliation(session, transaction, payload)
+        # # RECONCILIATION
+        # TransactionService.apply_funds_reconciliation(session, transaction, payload)
 
         # UPDATED TIMESTAMP
         transaction.updated_at = get_ist_now()

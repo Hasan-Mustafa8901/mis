@@ -301,6 +301,8 @@ class Transaction(SQLModel, table=True):
     total_receivable: float = 0.0
     total_received: float = 0.0
     balance: float = 0.0
+    ledger_adjustment: int = 0
+    ledger_adjustment_remarks: str = ""
 
     # Values at the time of booking
     price_offered_booking: float = 0.0  # Total price that the customer is being offered with all the components that they are buying.
