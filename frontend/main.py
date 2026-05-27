@@ -604,9 +604,10 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "total_discount_booking",
         "price_offered_booking",
         "excess_booking",
-        "net_receivable",
+        "total_receivable",
         "total_received",
         "balance_amount",
+        "payment_status",
         "total_actual_discount",
         "total_allowed_discount",
         "total_excess_discount",
@@ -9321,7 +9322,6 @@ async def hydrate_form(
 
 
 def hydrate_ledger_section(state: FormState, txn: dict):
-    print(json.dumps(txn, indent=4))
     if state.ledger_adjustment:
         state.ledger_adjustment.set_value(txn.get("ledger_adjustment", 0))
 

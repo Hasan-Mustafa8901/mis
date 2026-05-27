@@ -171,6 +171,16 @@ class TransactionService:
         return transaction
 
     @staticmethod
+    def get_payment_status(balance):
+        if balance == 0:
+            payment_status = "Settled"
+        elif balance > 0:
+            payment_status = "Excess"
+        else:
+            payment_status = "Short"
+        return payment_status
+
+    @staticmethod
     def create_or_update_customer(session: Session, cust_data: Dict[str, Any]):
 
         if not cust_data:
@@ -336,9 +346,11 @@ class TransactionService:
         }
 
         # Reconciliation
+        balance = payload.get("balance_amount", 0)
+        transaction.payment_status = TransactionService.get_payment_status(balance)
         transaction.total_receivable = payload.get("total_receivable", 0)
         transaction.total_received = payload.get("total_received", 0)
-        transaction.balance = payload.get("balance_amount", 0)
+        transaction.balance = balance
         transaction.ledger_adjustment = payload.get("ledger_adjustment", 0)
         transaction.ledger_adjustment_remarks = payload.get(
             "ledger_adjustment_remarks", ""
@@ -404,9 +416,11 @@ class TransactionService:
         }
 
         # STEP 6: Reconciliation (IMPORTANT)
+        balance = payload.get("balance_amount", 0)
+        transaction.payment_status = TransactionService.get_payment_status(balance)
         transaction.total_receivable = payload.get("total_receivable", 0)
         transaction.total_received = payload.get("total_received", 0)
-        transaction.balance = payload.get("balance_amount", 0)
+        transaction.balance = balance
         transaction.ledger_adjustment = payload.get("ledger_adjustment", 0)
         transaction.ledger_adjustment_remarks = payload.get(
             "ledger_adjustment_remarks", ""
@@ -774,6 +788,9 @@ class TransactionService:
             "total_actual_discount": tx.total_actual_discount,
             "total_allowed_discount": tx.total_allowed_discount,
             "total_excess_discount": tx.total_excess_discount,
+            "total_receivable": tx.total_receivable,
+            "balance_amount": tx.balance,
+            "total_received": tx.total_received,
             "payment_status": tx.payment_status,
             "audit_observations": tx.audit_info.get("observations", ""),
             "created_at": tx.created_at.isoformat() if tx.created_at else None,
