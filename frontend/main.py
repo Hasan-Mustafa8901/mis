@@ -6694,7 +6694,8 @@ def build_vehicle_section(state: FormState) -> None:
             state.exec_select = (
                 ui.select(
                     options=exec_opts,
-                    label="Sales Executive *",
+                    with_input=True,
+                    label="Team Leader *",
                 )
                 .classes("w-full")
                 .props("outlined dense")
