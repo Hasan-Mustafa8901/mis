@@ -1,6 +1,6 @@
 # Review This
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
-from sqlmodel import Session, SQLModel, select
+from sqlmodel import Session, SQLModel, select, func
 from sqlalchemy.orm import joinedload
 from typing import List, Dict, Any
 from datetime import date
@@ -395,54 +395,6 @@ def api_recalculate_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-# @app.get("/transactions-pages")
-# def get_all_transactions_pages(
-#     outlet_id: int | None = None,
-#     dealership_id: int | None = None,
-#     stage: str | None = None,
-#     limit: int = 25,
-#     offset: int = 0,
-#     session: Session = Depends(get_session),
-#     current_user: User = Depends(get_current_user),
-# ):
-
-#     stmt = select(Transaction)
-
-#     # APPLY SECURITY SCOPE
-#     stmt = apply_outlet_scope(
-#         stmt,
-#         Transaction,
-#         current_user,
-#     )
-
-#     # OPTIONAL FRONTEND FILTERS
-#     if outlet_id:
-#         validate_outlet_access(
-#             current_user,
-#             outlet_id,
-#         )
-
-#         stmt = stmt.where(Transaction.outlet_id == outlet_id)
-
-#     elif dealership_id:
-#         stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
-
-#     if stage:
-#         stmt = stmt.where(Transaction.stage == stage)
-
-#     stmt = stmt.order_by(Transaction.id.asc()).offset(offset).limit(limit)
-
-#     txs = session.exec(stmt).all()
-
-
-#     return [
-#         TransactionService.get_transaction_reconstruction(
-#             session,
-#             tx.id,
-#         )
-#         for tx in txs
-#         if tx.id
-#     ]
 @app.get("/transactions-pages")
 def get_all_transactions_pages(
     outlet_id: int | None = None,
@@ -462,26 +414,22 @@ def get_all_transactions_pages(
         joinedload(Transaction.user),
     )
 
-    stmt = apply_outlet_scope(
-        stmt,
-        Transaction,
-        current_user,
-    )
+    stmt = apply_outlet_scope(stmt, Transaction, current_user)
 
     # FILTERS
     if outlet_id:
-        validate_outlet_access(
-            current_user,
-            outlet_id,
-        )
-
+        validate_outlet_access(current_user, outlet_id)
         stmt = stmt.where(Transaction.outlet_id == outlet_id)
 
     elif dealership_id:
         stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
 
-    # if stage == "delivery":
-    #     stmt = stmt.where(Transaction.stage == stage)
+    if stage == "delivery":
+        stmt = stmt.where(Transaction.stage == stage)
+
+    # TOTAL COUNT
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_count = session.exec(count_stmt).one()
 
     # PAGINATION
     stmt = stmt.order_by(Transaction.id.desc()).offset(offset).limit(limit)
@@ -490,7 +438,7 @@ def get_all_transactions_pages(
 
     return {
         "rows": [TransactionService.serialize_transaction_row(tx) for tx in txs],
-        "total": len(txs),
+        "total": total_count,
     }
 
 
@@ -506,19 +454,11 @@ def get_all_transactions(
     stmt = select(Transaction)
 
     # APPLY SECURITY SCOPE
-    stmt = apply_outlet_scope(
-        stmt,
-        Transaction,
-        current_user,
-    )
+    stmt = apply_outlet_scope(stmt, Transaction, current_user)
 
     # OPTIONAL UI FILTERS
     if outlet_id:
-        validate_outlet_access(
-            current_user,
-            outlet_id,
-        )
-
+        validate_outlet_access(current_user, outlet_id)
         stmt = stmt.where(Transaction.outlet_id == outlet_id)
 
     elif dealership_id:
@@ -530,10 +470,7 @@ def get_all_transactions(
     txs = session.exec(stmt).all()
 
     return [
-        TransactionService.get_transaction_reconstruction(
-            session,
-            tx.id,
-        )
+        TransactionService.get_transaction_reconstruction(session, tx.id)
         for tx in txs
         if tx.id
     ]

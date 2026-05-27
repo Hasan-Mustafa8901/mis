@@ -232,9 +232,7 @@ async def api_request(
 ):
 
     headers = kwargs.pop("headers", {})
-
     auth_headers = get_auth_headers()
-
     headers.update(auth_headers)
 
     # REMOVE NONE QUERY PARAMS
@@ -254,159 +252,22 @@ async def api_request(
         # TOKEN EXPIRED / INVALID
         if response.status_code == 401:
             await logout_user()
-
-            ui.notify(
-                "Session expired. Please login again.",
-                type="warning",
-            )
-
+            ui.notify("Session expired. Please login again.", type="warning")
             ui.navigate.to("/login")
-
             return None
 
         response.raise_for_status()
-
         return response.json()
 
     except httpx.HTTPStatusError as exc:
-        ui.notify(
-            f"HTTP Error: {exc.response.status_code}",
-            type="negative",
-        )
-
+        ui.notify(f"HTTP Error: {exc.response.status_code}", type="negative")
         raise
 
     except httpx.ConnectError:
-        ui.notify(
-            "Unable to connect to server",
-            type="negative",
-        )
-
+        ui.notify("Unable to connect to server", type="negative")
         raise
 
 
-# async def api_get(path: str, params=None):
-#     return await api_request("GET", path, params=params)
-
-
-# async def api_post(path: str, payload: dict):
-#     return await api_request("POST", path, json=payload)
-
-
-# async def api_delete(path: str, payload=None):
-#     return await api_request("DELETE", path, json=payload)
-
-
-# async def api_put(path: str, payload: dict):
-#     return await api_request("PUT", path, json=payload)
-
-
-# DO NOT CHANGE, DO NOT FIX SOMETHING THAT IS NOT BROKEN
-# THE CODE LOOKS UGLY???
-# BUT F*CKING WORKS, F OFF
-# THIS NOT ANY OTHER DEV THIS WARNING IS FOR ME...
-# async def api_post_file(path: str, file, data: dict):
-#     token = app.storage.user.get("token")
-#     headers = {}
-#     if token:
-#         headers["Authorization"] = f"Bearer {token}"
-#     name = file.file.name
-#     content = await file.file.read()
-
-#     async with httpx.AsyncClient() as client:
-#         r = await client.post(
-#             f"{BASE_URL}{path}",
-#             files={
-#                 "file": (name, content)  # no await
-#             },
-#             data=data,
-#             headers=headers,
-#             timeout=20,
-#         )
-#         r.raise_for_status()
-#         return r.json()
-
-
-# SHARED BOOTSTRAP FETCH
-# async def fetch_reference_data() -> dict:
-
-#     tasks = {
-#         "cars": api_get("/cars"),
-#         "variants": api_get("/variants"),
-#         "outlets": api_get("/outlets"),
-#         "executives": api_get("/sales-executives"),
-#         "accessories": api_get("/accessories"),
-#         "dealerships": api_get("/complaints/dealerships"),
-#         "components": api_get("/components"),
-#     }
-
-#     results = await asyncio.gather(
-#         *tasks.values(),
-#         return_exceptions=True,
-#     )
-
-#     final = {}
-
-#     for key, result in zip(tasks.keys(), results):
-#         if isinstance(result, Exception):
-#             print(
-#                 f"REFERENCE DATA ERROR [{key}]:",
-#                 result,
-#             )
-
-#             final[key] = []
-
-#         else:
-#             final[key] = result or []
-
-#     return final
-
-
-# Cached version of the fetch references date:
-# REFERENCE_CACHE: dict = {}
-
-
-# async def fetch_reference_data(
-#     force_refresh: bool = False,
-# ) -> dict:
-
-#     global REFERENCE_CACHE
-
-#     if REFERENCE_CACHE and not force_refresh:
-#         return REFERENCE_CACHE
-
-#     tasks = {
-#         "cars": api_get("/cars"),
-#         "variants": api_get("/variants"),
-#         "outlets": api_get("/outlets"),
-#         "executives": api_get("/sales-executives"),
-#         "accessories": api_get("/accessories"),
-#         "dealerships": api_get("/complaints/dealerships"),
-#         "components": api_get("/components"),
-#     }
-
-#     results = await asyncio.gather(
-#         *tasks.values(),
-#         return_exceptions=True,
-#     )
-
-#     final = {}
-
-#     for key, result in zip(tasks.keys(), results):
-#         if isinstance(result, Exception):
-#             print(
-#                 f"REFERENCE DATA ERROR [{key}]:",
-#                 result,
-#             )
-
-#             final[key] = []
-
-#         else:
-#             final[key] = result or []
-
-#     REFERENCE_CACHE = final
-
-#     return final
 REFERENCE_CACHE: dict = {}
 
 
@@ -690,6 +551,7 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "booking_date",
         # add booking status
         "audit_observations",
+        "outlet_name",
         "sales_executive_name",
         "customer_name",
         "mobile_number",
@@ -1024,6 +886,8 @@ def render_table(transactions, state, stage: str = "booking"):
         await state.load_data()
 
     async def go_next():
+        print("OFFSET, LIMIT", state.offset, state.limit)
+        print("Total Rows: ", state.total_rows)
         next_offset = state.offset + state.limit
         # OPTIONAL GUARD
         if next_offset >= state.total_rows:
@@ -7812,9 +7676,10 @@ def build_action_bar(state: FormState) -> None:
     state.error_banner.set_visibility(False)
 
     with ui.row().classes("w-full items-center justify-between py-4"):
-        ui.button("← Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes(
-            "text-gray-500 text-[13px] hover:text-gray-800"
-        ).props("flat no-caps")
+        ui.button(
+            "← Back to MIS",
+            on_click=lambda: ui.navigate.to(f"/{state.stage}-mis"),
+        ).classes("text-gray-500 text-[13px] hover:text-gray-800").props("flat no-caps")
 
         submit_text = "Save Booking"
 

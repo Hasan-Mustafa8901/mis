@@ -1,15 +1,12 @@
 from fastapi import HTTPException
-
 from db.models import User, UserRole
 
 
 def is_admin(user: User) -> bool:
-
     return user.role == UserRole.ADMIN
 
 
 def get_allowed_outlets(user: User):
-
     # ADMIN = unrestricted
     if is_admin(user):
         return None
@@ -17,14 +14,8 @@ def get_allowed_outlets(user: User):
     return user.allowed_outlet_ids or []
 
 
-def apply_outlet_scope(
-    stmt,
-    model,
-    user: User,
-):
-
+def apply_outlet_scope(stmt, model, user: User):
     allowed = get_allowed_outlets(user)
-
     # ADMIN
     if allowed is None:
         return stmt
@@ -36,11 +27,7 @@ def apply_outlet_scope(
     return stmt.where(model.outlet_id.in_(allowed))
 
 
-def validate_outlet_access(
-    user: User,
-    outlet_id: int,
-):
-
+def validate_outlet_access(user: User, outlet_id: int):
     allowed = get_allowed_outlets(user)
 
     # ADMIN
