@@ -2394,7 +2394,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
         @ui.refreshable
         def render_header_meta():
-            print("render_header_meta called")
             with ui.column().classes("gap-1"):
                 title = (
                     f"{label}"
@@ -8617,11 +8616,12 @@ def _fs_update_live(state) -> None:
 
     balance_amount = total_receivable - total_received
 
-    if state.adjustment_type.value == "positive" and state.ledger_adjustment:
-        balance_amount += int(parsed_val(getattr(state, "ledger_adjustment", None)))
+    if state.adjustment_type:
+        if state.adjustment_type.value == "positive" and state.ledger_adjustment:
+            balance_amount += int(parsed_val(getattr(state, "ledger_adjustment", None)))
 
-    elif state.adjustment_type.value == "negative" and state.ledger_adjustment:
-        balance_amount -= int(parsed_val(getattr(state, "ledger_adjustment", None)))
+        elif state.adjustment_type.value == "negative" and state.ledger_adjustment:
+            balance_amount -= int(parsed_val(getattr(state, "ledger_adjustment", None)))
 
     # 5. UPDATE LABELS
     if getattr(state, "total_receivable", None):
