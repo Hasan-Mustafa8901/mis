@@ -11,17 +11,16 @@ import json
 import asyncio
 import re
 
-# from utils_old import build_component_map_from_booking
 import httpx
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
-from utils_old import get_ist_today, disp_date  # , date_for_input
+from utils import get_ist_today, disp_date  # , date_for_input
 from dotenv import load_dotenv
 
 import os
-from auth_old import (
+from auth import (
     get_token,
     logout_user,
     protected_page,
@@ -30,7 +29,7 @@ from auth_old import (
     token_is_valid,
     clear_user,
 )
-from api_old import (
+from api import (
     api_get,
     api_post,
     api_delete,
@@ -207,6 +206,34 @@ ui.add_head_html(
     shared=True,
 )
 
+# For payment section toggles
+ui.add_head_html(
+    """
+<style>
+
+.payment-toggle .q-btn {
+    background: rgba(var(--q-primary-rgb), 0.08);
+    color: var(--q-primary);
+    border-radius: 8px;
+    min-height: 42px;
+    padding: 0 14px;
+    font-size: 13px;
+}
+
+.payment-toggle .q-btn--active {
+    background: rgba(var(--q-primary-rgb), 0.18);
+    color: var(--q-primary);
+    font-weight: 600;
+}
+.payment-toggle .q-btn-group {
+    box-shadow: none !important;
+}
+
+</style>
+""",
+    shared=True,
+)
+
 
 # API HELPERS
 def get_auth_headers():
@@ -348,20 +375,25 @@ def parsed_val(ui_input_element) -> int:
 
 
 def accounting_input(
-    label_text: str, placeholder: str = "", container_classes: str = "w-full"
+    label_text: str,
+    placeholder: str = "",
+    container_classes: str = "w-full",
+    compact: bool = False,
 ) -> ui.input:
     """Text input with inline math evaluation and blur-collapse."""
     with ui.column().classes(f"gap-0 {container_classes} mb-1"):
         inp = (
             ui.input(label=label_text, placeholder=placeholder)
             .props(
-                "outlined dense input-class='text-right' input-style='text-align: right;"
+                "outlined dense input-class='text-right' text-[14px] font-medium input-style='text-align: right;"
             )
             .classes("w-full")
         )
-        hint = ui.label("").classes(
-            "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2 text-right"
-        )
+        inp.style("min-height:50px")
+        if not compact:
+            hint = ui.label("").classes(
+                "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2 text-right"
+            )
 
     def handle_eval(e):
         val = e.value
@@ -608,6 +640,8 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "total_received",
         "balance_amount",
         "payment_status",
+        "booking_file_incomplete",
+        "delivery_file_incomplete",
         "total_actual_discount",
         "total_allowed_discount",
         "total_excess_discount",
@@ -5837,6 +5871,8 @@ class FormController:
 
         self.build_form()
 
+        add_payment_row(self.state)
+
         if self.state.transaction_data:
             self.hydrate_form()
 
@@ -6016,6 +6052,10 @@ class FormState:
         self.ledger_adjustment_remarks: ui.input | None = None
         self.adjustment_type: ui.select | str = ""
 
+        # Payments Sections state vars
+        self.payments_container: ui.column | None = None
+        self.add_payment_btn: ui.button | None = None
+
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
         self.delivery_cbs: dict[str, ui.checkbox] = {}
@@ -6057,6 +6097,7 @@ class FormState:
         self.lbl_excess_discount: ui.label | None = None
 
         # Live calc labels
+        self.lbl_total_of_discount: ui.label | None = None
         self.lbl_allowed_lv: ui.label | None = None
         self.lbl_discount_lv: ui.label | None = None
         self.lbl_excess_lv: ui.label | None = None
@@ -6571,18 +6612,14 @@ async def resolve_form_mode(
         # SAVE TRANSACTION DATA
         if txn_data:
             state.transaction_data = txn_data
-
             state.booking_data = txn_data
-
             state.txn_id = transaction_id
 
         return txn_data
 
     except UnauthorizedError:
         await logout_user()
-
         ui.notify("Session expired. Please login again.", type="warning")
-
         ui.navigate.to("/login")
 
     except ConnectionFailedError:
@@ -6590,12 +6627,10 @@ async def resolve_form_mode(
 
     except APIError as e:
         print("RESOLVE FORM MODE API ERROR:", e)
-
         ui.notify("Failed to load transaction", type="negative")
 
     except Exception as e:
         print("RESOLVE FORM MODE ERROR:", e)
-
         ui.notify("Something went wrong", type="negative")
 
     return None
@@ -7025,9 +7060,7 @@ def build_prices_section(state: FormState) -> None:
     with ui.card().classes("w-full rounded-xl shadow-sm mb-4"):
         with ui.column().classes("w-full gap-0 p-5"):
             # CARD HEADER
-            with ui.row().classes(
-                "w-full items-center gap-2 pb-3 border-b border-gray-100 flex-nowrap"
-            ):
+            with ui.row().classes("w-full items-center gap-2 flex-nowrap"):
                 # Header
                 _section_header(
                     emoji="💲",
@@ -7051,7 +7084,7 @@ def build_prices_section(state: FormState) -> None:
 
             # SECTION 1 — PRICE CHARGED AS PER BOOKS
             ui.label("Price charged as per books of accounts").classes(
-                "text-[14px] font-semibold tracking-[0.9px] uppercase text-black mt-4 mb-1"
+                "text-[14px] font-semibold tracking-[0.9px] uppercase text-black mb-1"
             )
 
             if not price_comps:
@@ -7150,114 +7183,6 @@ def build_prices_section(state: FormState) -> None:
             ui.label("Discounts offered as per books of accounts").classes(
                 "text-[14px] font-bold tracking-[0.9px] uppercase text-black mt-6 mb-1"
             )
-
-            #  [A] Non-direct delivery: show booking-time discounts read-only
-            # Auditors need to see what was agreed at booking without being able
-            # to accidentally edit it during the delivery audit.
-            if is_delivery or is_direct:
-                booking_disc_map: dict = {}
-                if booking_data:
-                    # Pull Discount actuals from booking data.
-                    for raw_k, raw_v in booking_data.items():
-                        if raw_v is None:
-                            continue
-                        clean = raw_k.replace("_actual", "").strip()
-                        # only keep keys that match a discount component name
-                        for dc in discount_comps:
-                            if dc["name"].lower() == clean.lower() or re.sub(
-                                r"[^a-z0-9]", "", dc["name"].lower()
-                            ) == re.sub(r"[^a-z0-9]", "", clean.lower()):
-                                booking_disc_map[dc["name"]] = raw_v
-                                break
-
-                state.booking_discounts_actuals = booking_disc_map
-
-                with ui.element("div").classes(
-                    "w-full rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 mb-3"
-                ):
-                    ui.label("Discounts at time of booking").classes(
-                        "text-[10px] font-bold uppercase tracking-wide text-blue-500 mb-2"
-                    )
-                    #  Price component differences (actual - allowed)
-                    price_component_diff_total = 0
-
-                    for comp in price_comps:
-                        comp_name = comp["name"]
-
-                        actual_val = float(booking_data.get(f"{comp_name}_actual") or 0)
-
-                        allowed_val = float(
-                            booking_data.get(f"{comp_name}_allowed") or 0
-                        )
-                        diff = allowed_val - actual_val
-
-                        # only count excess charged amount
-                        if diff > 0:
-                            price_component_diff_total += diff
-
-                    # merge discount_booking into map (without mutating original)
-                    booking_disc_map_ui = dict(booking_disc_map or {})
-                    # Other Discount
-                    discount_booking_val = int(
-                        booking_data.get("discount_booking") or 0
-                    )
-
-                    if discount_booking_val:
-                        booking_disc_map_ui["Other Discount"] = discount_booking_val
-                    # Differences
-                    if price_component_diff_total > 0:
-                        booking_disc_map_ui["Price Difference"] = (
-                            price_component_diff_total
-                        )
-                    # Adjustment
-                    adjustment_booking_val = int(
-                        booking_data.get("adjustment_booking") or 0
-                    )
-
-                    if adjustment_booking_val:
-                        booking_disc_map_ui["Adjustment"] = -adjustment_booking_val
-
-                    if booking_disc_map_ui:
-                        for disc_name, disc_val in booking_disc_map_ui.items():
-                            cond_key = _condition_badge(disc_name, conditions)
-                            with ui.row().classes(
-                                "w-full items-center py-1 border-b border-blue-100"
-                            ):
-                                with ui.row().classes(
-                                    "flex-1 items-center gap-2 min-w-0"
-                                ):
-                                    ui.label(disc_name).classes(
-                                        "text-[13px] text-blue-800 truncate"
-                                    )
-                                    if cond_key:
-                                        ui.badge(
-                                            cond_key.replace("_", "").title()
-                                        ).props("outline").classes(
-                                            "text-[9px] shrink-0 text-blue-600"
-                                        )
-                                    with ui.element("div").classes(
-                                        "flex-1 flex justify-end"
-                                    ):
-                                        ui.label(f"₹{int(disc_val):,}").classes(
-                                            "text-[13px] font-mono font-semibold text-blue-700 w-24 text-right"
-                                        )
-
-                        # total INCLUDING booking file discount
-                        booking_disc_total = sum(
-                            int(v or 0) for v in booking_disc_map_ui.values()
-                        )
-                        with ui.row().classes("w-full items-center pt-2 mt-1"):
-                            ui.label("Total booking discount").classes(
-                                "flex-1 text-[12px] font-bold text-blue-700 uppercase tracking-wide"
-                            )
-                            ui.label(f"₹{booking_disc_total:,}").classes(
-                                "text-[14px] font-mono font-bold text-blue-700 w-28 text-right"
-                            )
-                    else:
-                        ui.label("No discount data from booking.").classes(
-                            "text-[12px] text-blue-400 italic"
-                        )
-
             with ui.row().classes(
                 "w-full items-center gap-2 py-1 border-b border-gray-200 mt-2"
             ):
@@ -7307,7 +7232,7 @@ def build_prices_section(state: FormState) -> None:
 
                     # Difference
                     diff_lbl = ui.label("—").classes(
-                        "text-[11px] font-mono w-24 text-right text-gray-400"
+                        "text-[11px] font-mono w-24 text-center text-gray-400"
                     )
                     state.discount_diff_labels[name] = diff_lbl
 
@@ -7338,7 +7263,22 @@ def build_prices_section(state: FormState) -> None:
 
                 ui.element("div").classes("w-25")
 
-            # [D] Adjustment Row
+            # [E] Total Discount
+            with ui.row().classes(
+                "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
+            ):
+                ui.label("Total of Discount").classes(f"{_LABEL} flex-1 font-medium")
+
+                # spacer to align with table
+                ui.label("—").classes(f"{_MONO} w-28")
+                ui.element("div").classes("w-20")
+
+                state.lbl_total_of_discount = ui.label("₹0").classes(
+                    "text-[16px] w-36 font-bold justify-right text-right"
+                )
+                ui.element("div").classes("w-25")
+
+            # [F] Adjustment Row
             with ui.row().classes(
                 "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
             ):
@@ -7735,33 +7675,24 @@ def _ledger_value(text: str, value: str = "₹ 0") -> ui.column:
 
 
 def build_payment_section(state: FormState) -> None:
+
     with ui.card().classes(
         "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
     ):
-        # Header
-        with ui.row().classes(
-            "w-full items-center justify-between mb-5 pb-3 border-b border-gray-100"
-        ):
-            with ui.row().classes("items-center gap-3"):
-                with ui.element("div").classes(
-                    "w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center"
-                ):
-                    ui.label("💳").classes("text-[18px]")
+        _section_header(
+            emoji="💳",
+            title="Payment Received",
+            subtitle="Capture all payment sources",
+            icon_bg="bg-green-50",
+        )
+        state.payments_container = ui.column().classes("w-full gap-3")
 
-                with ui.column().classes("gap-0"):
-                    ui.label("Payment Received").classes(
-                        "text-[16px] font-bold text-gray-900"
-                    )
-                    ui.label("Capture all payment sources").classes(
-                        "text-[12px] text-gray-500"
-                    )
+        state.payment_entries = []
 
-        # Inputs
-        with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-4"):
-            state.payment_cash = accounting_input("Cash Payment")
-            state.payment_bank = accounting_input("Bank Payment")
-            state.payment_finance = accounting_input("Finance")
-            state.payment_exchange = accounting_input("Exchange")
+        with ui.row().classes("w-full justify-center pt-3"):
+            ui.button("Add Payment", icon="add").props("outline").classes(
+                "rounded-lg px-5"
+            )
 
 
 def build_ledger_section(state: FormState) -> None:
@@ -7774,7 +7705,7 @@ def build_ledger_section(state: FormState) -> None:
             emoji="📒",
             title="Ledger Summary",
             subtitle="Real-time payment overview",
-            icon_bg="bg-blue-50",
+            icon_bg="bg-yellow-50",
         )
 
         # Summary Cards
@@ -8053,6 +7984,108 @@ def handle_discount_toggle(
     _fs_update_live(state)
 
 
+def add_payment_row(state: FormState, payment_data: dict | None = None):
+
+    payment = {}
+    with state.payments_container:
+        with ui.card().classes(
+            """
+            w-full
+            shadow-none
+            border
+            border-gray-100
+            bg-gray-50
+            rounded-xl
+            px-4
+            py-3
+            """
+        ) as payment_card:
+            with ui.row().classes(
+                """
+                w-full
+                items-center
+                gap-4
+                flex-nowrap
+                """
+            ):
+                # Source
+                with ui.column().classes("gap-1 shrink-0"):
+                    payment["source"] = (
+                        ui.toggle(
+                            {
+                                "Cash": "💵 Cash",
+                                "Bank": "🏦 Bank",
+                                "Finance": "📄 Finance",
+                                "Exchange": "🔄 Exchange",
+                            },
+                            value="Cash",
+                        )
+                        .props("elevated dense")
+                        .classes("payment-toggle normal-case")
+                    )
+
+                # Receipt
+                with ui.column().classes("gap-1 flex-grow items-center"):
+                    payment["receipt"] = (
+                        ui.input(
+                            label="Receipt Number",
+                            placeholder="Enter receipt number",
+                        )
+                        .props("outlined dense")
+                        .classes("w-full mt-2")
+                    )
+
+                    payment["receipt"].style("min-height:50px")
+
+                # Amount
+                payment["amount"] = accounting_input(
+                    label_text="Amount",
+                    placeholder="₹0",
+                    container_classes="w-56 shrink-0 gap-1 mt-2",
+                    compact=True,
+                )
+                payment["amount"].style("min-height:50px")
+
+                # Delete
+                with ui.column().classes("gap-1 shrink-0 items-center"):
+
+                    def remove_payment():
+                        payment_card.delete()
+                        if payment in state.payment_entries:
+                            state.payment_entries.remove(payment)
+
+                        _fs_update_live(state)
+
+                    ui.button(
+                        icon="delete",
+                        color="negative",
+                        on_click=remove_payment,
+                    ).classes("mt-0").props("flat round")
+
+            if payment_data:
+                payment["source"].set_value(payment_data.get("source", "Cash"))
+                payment["receipt"].set_value(payment_data.get("receipt", ""))
+                payment["amount"].set_value(payment_data.get("amount", ""))
+
+            state.payment_entries.append(payment)
+
+            return payment
+
+
+def attach_payment_handlers(state):
+    print("payment handler called.")
+
+    if getattr(state, "add_payment_btn", None):
+        state.add_payment_btn.on_click(lambda: add_payment_row(state))
+
+    for payment in state.payment_entries:
+        payment["source"].on_value_change(lambda e: _fs_update_live(state))
+
+        payment["receipt"].on_value_change(lambda e: _fs_update_live(state))
+
+        payment["amount"].on_value_change(lambda e: _fs_update_live(state))
+
+
 def attach_form_handlers(state: FormState):
 
     if getattr(state, "handlers_attached", False):
@@ -8183,33 +8216,21 @@ def attach_form_handlers(state: FormState):
         state.adjustment_input.on_value_change(live_update)
 
     # PRICE TOGGLES
-    for name, toggle in getattr(
-        state,
-        "price_match_toggles",
-        {},
-    ).items():
+    for name, toggle in getattr(state, "price_match_toggles", {}).items():
         toggle.on(
             "update:model-value",
-            lambda e, n=name: handle_price_toggle(
-                state,
-                n,
-            ),
+            lambda e, n=name: handle_price_toggle(state, n),
         )
 
     # DISCOUNT TOGGLES
-    for name, toggle in getattr(
-        state,
-        "discount_match_toggles",
-        {},
-    ).items():
+    for name, toggle in getattr(state, "discount_match_toggles", {}).items():
         toggle.on(
             "update:model-value",
-            lambda e, n=name: handle_discount_toggle(
-                state,
-                n,
-            ),
+            lambda e, n=name: handle_discount_toggle(state, n),
         )
+    # Attaching
     attach_invoice_handlers(state)
+    attach_payment_handlers(state)
 
     # Payment Section
     if getattr(state, "payment_cash", None):
@@ -8456,11 +8477,7 @@ def _fs_update_live(state) -> None:
     total_diff = 0
 
     for name, inp in state.price_inputs.items():
-        is_visible = state.visible_price_rows.get(
-            name,
-            True,
-        )
-
+        is_visible = state.visible_price_rows.get(name, True)
         listed_val = int(state.listed_prices.get(name) or 0)
         charged_val = int(parsed_val(inp))
 
@@ -8468,6 +8485,9 @@ def _fs_update_live(state) -> None:
         if is_visible:
             total_listed += listed_val
             total_charged += charged_val
+
+        if name.lower() == "registration":
+            continue
 
         # UX interaction state
         toggle = state.price_match_toggles.get(name)
@@ -8495,6 +8515,8 @@ def _fs_update_live(state) -> None:
 
         # active visible row
         diff = listed_val - charged_val
+        diff = diff if diff > 0 else 0
+
         if is_visible and is_active:
             total_diff += diff
 
@@ -8592,7 +8614,14 @@ def _fs_update_live(state) -> None:
             dl.set_text("₹0")
             dl.style("color:#9CA3AF")
 
-    # 4. EXCESS CALCULATION
+    # TOTAL OF DISCOUNT
+    total_of_discounts = (
+        int(parsed_val(getattr(state, "total_discount_booking", None)))
+        + int(parsed_val(getattr(state, "other_discount_delivery", None)))
+        + total_given_discount
+    )
+
+    # EXCESS CALCULATION
     adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
     total_discount_given = int(
         total_diff
@@ -8606,7 +8635,7 @@ def _fs_update_live(state) -> None:
     excess = int(max(0, total_discount_given - total_allowed_discount))
 
     # CUSTOMER LEDGER CALC
-    total_receivable = total_charged - total_discount_given
+    total_receivable = total_charged - total_of_discounts
     total_received = (
         int(parsed_val(getattr(state, "payment_cash", None)))
         + int(parsed_val(getattr(state, "payment_bank", None)))
@@ -8624,6 +8653,9 @@ def _fs_update_live(state) -> None:
             balance_amount -= int(parsed_val(getattr(state, "ledger_adjustment", None)))
 
     # 5. UPDATE LABELS
+    if getattr(state, "lbl_total_of_discount", None):
+        state.lbl_total_of_discount.set_text(f"₹{total_of_discounts:,}")
+
     if getattr(state, "total_receivable", None):
         state.total_receivable.set_text(f"₹{total_receivable:,}")
 
@@ -8779,6 +8811,20 @@ async def _fs_handle_submit(
         print("FORM SUBMIT ERROR:", e)
         state.error_msg_label.set_text(str(e))
         state.error_banner.set_visibility(True)
+
+
+def serialize_payments(state):
+    payments = []
+    for payment in state.payment_entries:
+        payments.append(
+            {
+                "source": payment["source"].value,
+                "receipt": payment["receipt"].value,
+                "amount": payment["amount"].value,
+            }
+        )
+
+    return payments
 
 
 def build_payload(state: FormState) -> dict:
@@ -9175,11 +9221,7 @@ def build_form(state: FormState):
     build_action_bar(state)
 
 
-async def hydrate_form(
-    state: FormState,
-    txn: dict,
-):
-
+async def hydrate_form(state: FormState, txn: dict):
     if not txn:
         return
 
@@ -9203,8 +9245,7 @@ async def hydrate_form(
 
         if variant_id:
             variant_obj = next(
-                (v for v in state.variants if v["id"] == variant_id),
-                None,
+                (v for v in state.variants if v["id"] == variant_id), None
             )
 
             if variant_obj:
@@ -9254,10 +9295,7 @@ async def hydrate_form(
         }
 
         for widget, value in customer_map.items():
-            if widget and value not in [
-                None,
-                "",
-            ]:
+            if widget and value not in [None, ""]:
                 widget.set_value(value)
 
         # CONDITIONS
@@ -9289,7 +9327,7 @@ async def hydrate_form(
         await hydrate_vehicle_section(state, txn)
 
         hydrate_invoice_section(state, txn)
-        hydrate_payment_section(state, txn)
+        hydrate_payment_section(state)
         hydrate_audit_section(state, txn)
         hydrate_accessories_section(state, txn)
         hydrate_file_status_section(state, txn)
@@ -9312,9 +9350,7 @@ async def hydrate_form(
 
         # UI REFRESH
         refresh_visibility(state)
-
         _fs_update_live(state)
-
         _fs_revalidate(state)
 
     finally:
@@ -9331,11 +9367,7 @@ def hydrate_ledger_section(state: FormState, txn: dict):
         )
 
 
-def hydrate_invoice_section(
-    state: FormState,
-    txn: dict,
-):
-
+def hydrate_invoice_section(state: FormState, txn: dict):
     mapping = {
         "invoice_number": state.invoice_number,
         "invoice_date": state.invoice_date,
@@ -9352,11 +9384,7 @@ def hydrate_invoice_section(
     for key, widget in mapping.items():
         if not widget:
             continue
-
-        value = txn.get(
-            key,
-            "",
-        )
+        value = txn.get(key, "")
 
         if value is None:
             value = ""
@@ -9364,10 +9392,7 @@ def hydrate_invoice_section(
         widget.set_value(value)
 
 
-def hydrate_file_status_section(
-    state: FormState,
-    txn: dict,
-):
+def hydrate_file_status_section(state: FormState, txn: dict):
     try:
         if state.stage == "booking":
             if state.booking_file_incomplete:
@@ -9391,67 +9416,34 @@ def hydrate_file_status_section(
         print("ERROR: WHILE FILE HYDRATE", e)
 
 
-def hydrate_payment_section(
-    state: FormState,
-    txn: dict,
-):
+def hydrate_payment_section(state):
+    payments = state.transaction_data.get("payments") or []
 
-    payment = {k: v for k, v in txn.items() if k.startswith("payment_")}
+    if not payments:
+        return
 
-    mapping = {
-        "payment_cash": state.payment_cash,
-        "payment_bank": state.payment_bank,
-        "payment_finance": state.payment_finance,
-        "payment_exchange": state.payment_exchange,
-    }
+    state.payment_entries.clear()
+    state.payments_container.clear()
 
-    for key, widget in mapping.items():
-        if widget:
-            widget.set_value(
-                payment.get(
-                    key,
-                    0,
-                )
-            )
+    for payment in payments:
+        add_payment_row(state, payment_data=payment)
 
 
-def hydrate_audit_section(
-    state: FormState,
-    txn: dict,
-):
-
+def hydrate_audit_section(state: FormState, txn: dict):
     if state.audit_obs:
-        state.audit_obs.set_value(
-            txn.get(
-                "audit_observations",
-                "",
-            )
-        )
+        state.audit_obs.set_value(txn.get("audit_observations", ""))
 
     if state.audit_action:
-        state.audit_action.set_value(
-            txn.get(
-                "audit_actions",
-                "",
-            )
-        )
+        state.audit_action.set_value(txn.get("audit_actions", ""))
 
 
-def hydrate_accessories_section(
-    state: FormState,
-    txn: dict,
-):
-
-    accessories = txn.get(
-        "accessories",
-        [],
-    )
+def hydrate_accessories_section(state: FormState, txn: dict):
+    accessories = txn.get("accessories", [])
 
     if not accessories:
         return
 
     selected_ids = []
-
     total = 0
 
     for acc in accessories:
@@ -9459,11 +9451,7 @@ def hydrate_accessories_section(
 
         if acc_id:
             selected_ids.append(acc_id)
-
-            total += acc.get(
-                "listed_price",
-                0,
-            )
+            total += acc.get("listed_price", 0)
 
     if state.acc_select:
         state.acc_select.set_value(selected_ids)
@@ -9471,13 +9459,7 @@ def hydrate_accessories_section(
     if state.acc_total_label:
         state.acc_total_label.set_text(f"Total: ₹{total:,}")
 
-    charged = (
-        txn.get(
-            "Accessories_actual",
-            0,
-        )
-        or total
-    )
+    charged = txn.get("Accessories_actual", 0) or total
 
     if state.acc_charged:
         state.acc_charged.set_value(charged)
