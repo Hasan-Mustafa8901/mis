@@ -792,6 +792,8 @@ class TransactionService:
             "balance_amount": tx.balance,
             "total_received": tx.total_received,
             "payment_status": tx.payment_status,
+            "booking_file_incomplete": tx.booking_file_incomplete,
+            "delivery_file_incomplete": tx.delivery_file_incomplete,
             "audit_observations": tx.audit_info.get("observations", ""),
             "created_at": tx.created_at.isoformat() if tx.created_at else None,
             "created_by": user.name if user else None,

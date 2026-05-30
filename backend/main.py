@@ -495,8 +495,8 @@ def get_transactions_meta(
     elif dealership_id:
         stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
 
-    if stage:
-        stmt = stmt.where(Transaction.stage == stage)
+    # if stage:
+    #     stmt = stmt.where(Transaction.stage == stage)
 
     txs = session.exec(stmt).all()
 
