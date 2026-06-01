@@ -5892,7 +5892,9 @@ class FormController:
         build_full_form(self.state)
 
     def hydrate_form(self):
-        hydrate_form(self.state)
+        hydrate_form(
+            self.state,
+        )
 
     def refresh_visibility(self):
         refresh_visibility(self.state)
@@ -9175,11 +9177,7 @@ def build_form(state: FormState):
     build_action_bar(state)
 
 
-async def hydrate_form(
-    state: FormState,
-    txn: dict,
-):
-
+async def hydrate_form(state: FormState, txn: dict):
     if not txn:
         return
 
@@ -9254,10 +9252,7 @@ async def hydrate_form(
         }
 
         for widget, value in customer_map.items():
-            if widget and value not in [
-                None,
-                "",
-            ]:
+            if widget and value not in [None, ""]:
                 widget.set_value(value)
 
         # CONDITIONS
@@ -9285,6 +9280,7 @@ async def hydrate_form(
 
         if state.adjustment_input:
             state.adjustment_input.set_value(txn.get("adjustment_booking", 0))
+            state.adjustment_input.set_value(txn.get("adjustment_delivery", 0))
 
         await hydrate_vehicle_section(state, txn)
 
