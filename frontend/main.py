@@ -212,12 +212,12 @@ ui.add_head_html(
 <style>
 
 .payment-toggle .q-btn {
-    background: rgba(var(--q-primary-rgb), 0.08);
-    color: var(--q-primary);
-    border-radius: 8px;
-    min-height: 42px;
-    padding: 0 14px;
-    font-size: 13px;
+    background: rgba(var(--q-primary-rgb), 0.07);
+    border-radius: 4px;
+    min-height: 35px;
+    padding: 0 10px;
+    text-transform: capitalize;
+    font-size: 14px;
 }
 
 .payment-toggle .q-btn--active {
@@ -6053,8 +6053,9 @@ class FormState:
         self.adjustment_type: ui.select | str = ""
 
         # Payments Sections state vars
-        self.payments_container: ui.column | None = None
+        self.payments_container: ui.element | None = None
         self.add_payment_btn: ui.button | None = None
+        self.payment_entries: list = []
 
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
@@ -7675,7 +7676,6 @@ def _ledger_value(text: str, value: str = "₹ 0") -> ui.column:
 
 
 def build_payment_section(state: FormState) -> None:
-
     with ui.card().classes(
         "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
     ):
@@ -7685,13 +7685,15 @@ def build_payment_section(state: FormState) -> None:
             subtitle="Capture all payment sources",
             icon_bg="bg-green-50",
         )
-        state.payments_container = ui.column().classes("w-full gap-3")
+        state.payments_container = ui.element("div").classes("w-full")
 
         state.payment_entries = []
 
         with ui.row().classes("w-full justify-center pt-3"):
-            ui.button("Add Payment", icon="add").props("outline").classes(
-                "rounded-lg px-5"
+            state.add_payment_btn = (
+                ui.button("Add Payment", icon="add")
+                .props("outline")
+                .classes("rounded-lg px-5")
             )
 
 
@@ -7985,29 +7987,17 @@ def handle_discount_toggle(
 
 
 def add_payment_row(state: FormState, payment_data: dict | None = None):
-
     payment = {}
     with state.payments_container:
-        with ui.card().classes(
-            """
-            w-full
-            shadow-none
-            border
-            border-gray-100
-            bg-gray-50
-            rounded-xl
-            px-4
-            py-3
-            """
-        ) as payment_card:
-            with ui.row().classes(
-                """
-                w-full
-                items-center
-                gap-4
-                flex-nowrap
-                """
-            ):
+        with ui.element("div").classes("w-full shadow-none rounded-xl") as payment_card:
+            with ui.row().classes("w-full items-center flex-nowrap"):
+                # Date
+                with ui.column():
+                    payment["date"] = (
+                        ui.input("Date")
+                        .classes("dense outlined rounded-lg")
+                        .props("type='date' outlined dense")
+                    )
                 # Source
                 with ui.column().classes("gap-1 shrink-0"):
                     payment["source"] = (
@@ -8028,8 +8018,8 @@ def add_payment_row(state: FormState, payment_data: dict | None = None):
                 with ui.column().classes("gap-1 flex-grow items-center"):
                     payment["receipt"] = (
                         ui.input(
-                            label="Receipt Number",
-                            placeholder="Enter receipt number",
+                            label="Instrument Number",
+                            placeholder="Enter instrument number",
                         )
                         .props("outlined dense")
                         .classes("w-full mt-2")
@@ -8073,16 +8063,19 @@ def add_payment_row(state: FormState, payment_data: dict | None = None):
 
 
 def attach_payment_handlers(state):
-    print("payment handler called.")
+
+    def handle_add_payment():
+        try:
+            add_payment_row(state)
+        except Exception as e:
+            print("PAYMENT ERROR: ", str(e))
 
     if getattr(state, "add_payment_btn", None):
-        state.add_payment_btn.on_click(lambda: add_payment_row(state))
+        state.add_payment_btn.on_click(handle_add_payment)
 
     for payment in state.payment_entries:
         payment["source"].on_value_change(lambda e: _fs_update_live(state))
-
         payment["receipt"].on_value_change(lambda e: _fs_update_live(state))
-
         payment["amount"].on_value_change(lambda e: _fs_update_live(state))
 
 
