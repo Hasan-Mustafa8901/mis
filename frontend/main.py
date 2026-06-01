@@ -47,7 +47,6 @@ from api_old import (
 
 # CONFIG & SHARED CONSTANTS
 load_dotenv()
-
 SECRET_KEY_FRONTEND = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
@@ -887,8 +886,6 @@ def render_table(transactions, state, stage: str = "booking"):
         await state.load_data()
 
     async def go_next():
-        print("OFFSET, LIMIT", state.offset, state.limit)
-        print("Total Rows: ", state.total_rows)
         next_offset = state.offset + state.limit
         # OPTIONAL GUARD
         if next_offset >= state.total_rows:
@@ -5838,7 +5835,7 @@ class FormController:
         self.build_form()
 
         if self.state.transaction_data:
-            self.hydrate_form()
+            await self.hydrate_form()
 
         self.refresh_visibility()
         self.refresh_live_calculations()
@@ -5891,10 +5888,12 @@ class FormController:
     def build_form(self):
         build_full_form(self.state)
 
-    def hydrate_form(self):
-        hydrate_form(
-            self.state,
-        )
+    async def hydrate_form(self):
+        if self.state.transaction_data:
+            await hydrate_form(
+                self.state,
+                self.state.transaction_data,
+            )
 
     def refresh_visibility(self):
         refresh_visibility(self.state)
@@ -6153,7 +6152,6 @@ class FormState:
         return True, ""
 
     def is_valid(self) -> tuple[bool, str]:
-
         if getattr(self, "is_hydrating", False):
             return True, ""
 
@@ -6169,20 +6167,12 @@ class FormState:
         if self.variant_id in [None, "", 0]:
             return False, "Please select a Car and Variant."
 
-        outlet_val = getattr(
-            self.outlet_select,
-            "value",
-            None,
-        )
+        outlet_val = getattr(self.outlet_select, "value", None)
 
         if outlet_val in [None, "", 0]:
             return False, "Please select Showroom."
 
-        exec_val = getattr(
-            self.exec_select,
-            "value",
-            None,
-        )
+        exec_val = getattr(self.exec_select, "value", None)
 
         if exec_val in [None, "", 0]:
             return False, "Please select Sale Executive."
@@ -6521,26 +6511,19 @@ def populate_from_delivery(state: FormState, delivery: dict):
 
 
 async def resolve_form_mode(
-    state: FormState,
-    stage: str,
-    transaction_id: int | None,
-    mode: str | None,
+    state: FormState, stage: str, transaction_id: int | None, mode: str | None
 ):
-
     txn_data = None
-
     try:
         # LOAD TRANSACTION IF AVAILABLE
         if transaction_id:
             txn_data = await api_get(f"/transactions/{transaction_id}")
-
             state.edit_mode = True
 
         # BOOKING
         if stage == "booking":
             if transaction_id:
                 state.form_mode = "booking_edit"
-
             else:
                 state.form_mode = "booking_create"
 
@@ -6550,7 +6533,6 @@ async def resolve_form_mode(
             if mode == "direct":
                 if transaction_id:
                     state.form_mode = "delivery_edit"
-
                 else:
                     state.form_mode = "delivery_direct_create"
 
@@ -6558,33 +6540,25 @@ async def resolve_form_mode(
             else:
                 if transaction_id and txn_data:
                     txn_stage = txn_data.get("stage")
-
                     # EXISTING DELIVERY
                     if txn_stage == "delivery":
                         state.form_mode = "delivery_edit"
-
                     # BOOKING → DELIVERY
                     else:
                         state.form_mode = "delivery_from_booking"
-
                 else:
                     state.form_mode = "delivery_direct_create"
 
         # SAVE TRANSACTION DATA
         if txn_data:
             state.transaction_data = txn_data
-
             state.booking_data = txn_data
-
             state.txn_id = transaction_id
-
         return txn_data
 
     except UnauthorizedError:
         await logout_user()
-
         ui.notify("Session expired. Please login again.", type="warning")
-
         ui.navigate.to("/login")
 
     except ConnectionFailedError:
@@ -6597,7 +6571,6 @@ async def resolve_form_mode(
 
     except Exception as e:
         print("RESOLVE FORM MODE ERROR:", e)
-
         ui.notify("Something went wrong", type="negative")
 
     return None
@@ -8003,20 +7976,13 @@ def handle_price_toggle(
 ):
 
     toggle = state.price_match_toggles.get(name)
-
     inp = state.price_inputs.get(name)
-
     if not toggle or not inp:
         return
 
     if toggle.value:
-        src_val = state.listed_prices.get(
-            name,
-            0,
-        )
-
+        src_val = state.listed_prices.get(name, 0)
         inp.set_value(format_num_inr(src_val))
-
         inp.set_enabled(False)
 
     else:
@@ -8032,20 +7998,13 @@ def handle_discount_toggle(
 ):
 
     toggle = state.discount_match_toggles.get(name)
-
     inp = state.discount_inputs.get(name)
-
     if not toggle or not inp:
         return
 
     if toggle.value:
-        src_val = state.listed_prices.get(
-            name,
-            0,
-        )
-
+        src_val = state.listed_prices.get(name, 0)
         inp.set_value(format_num_inr(src_val))
-
         inp.set_enabled(False)
 
     else:
@@ -8056,7 +8015,6 @@ def handle_discount_toggle(
 
 
 def attach_form_handlers(state: FormState):
-
     if getattr(state, "handlers_attached", False):
         return
 
@@ -8064,39 +8022,29 @@ def attach_form_handlers(state: FormState):
 
     # HELPERS
     def live_update(*_):
-
         if state.is_hydrating:
             return
-
         _fs_update_live(state)
 
     def revalidate(*_):
-
         if state.is_hydrating:
             return
-
         _fs_revalidate(state)
 
     # CUSTOMER
     if getattr(state, "cust_pan", None):
 
         def on_pan_change(e):
-
             if state.is_hydrating:
                 return
-
             if isinstance(e.args, str):
                 upper_val = e.args.upper()
-
                 if upper_val != state.cust_pan.value:
                     state.cust_pan.set_value(upper_val)
 
             revalidate(state)
 
-        state.cust_pan.on(
-            "update:model-value",
-            on_pan_change,
-        )
+        state.cust_pan.on("update:model-value", on_pan_change)
 
     if getattr(state, "cust_mobile", None):
         state.cust_mobile.on_value_change(revalidate)
@@ -8104,21 +8052,20 @@ def attach_form_handlers(state: FormState):
     if getattr(state, "cust_email", None):
         state.cust_email.on_value_change(revalidate)
 
+    if getattr(state, "vin_no", None):
+        state.vin_no.on_value_change(revalidate)
+
+    if getattr(state, "engine_no", None):
+        state.engine_no.on_value_change(revalidate)
+
     # CAR
     if getattr(state, "car_select", None):
 
         async def handle_car_change(e):
-
             if state.is_hydrating:
                 return
-
             car_id = state.car_select.value
-
-            await _fs_on_car_change(
-                car_id,
-                state,
-                preserve_variant=False,
-            )
+            await _fs_on_car_change(car_id, state, preserve_variant=False)
 
         state.car_select.on(
             "update:model-value",
@@ -8129,15 +8076,10 @@ def attach_form_handlers(state: FormState):
     if getattr(state, "variant_select", None):
 
         async def handle_variant_change(e):
-
             if state.is_hydrating:
                 return
-
             variant_id = state.variant_select.value
-            await _fs_on_variant_change(
-                variant_id,
-                state,
-            )
+            await _fs_on_variant_change(variant_id, state)
 
         state.variant_select.on(
             "update:model-value",
@@ -8185,31 +8127,13 @@ def attach_form_handlers(state: FormState):
         state.adjustment_input.on_value_change(live_update)
 
     # PRICE TOGGLES
-    for name, toggle in getattr(
-        state,
-        "price_match_toggles",
-        {},
-    ).items():
-        toggle.on(
-            "update:model-value",
-            lambda e, n=name: handle_price_toggle(
-                state,
-                n,
-            ),
-        )
+    for name, toggle in getattr(state, "price_match_toggles", {}).items():
+        toggle.on("update:model-value", lambda e, n=name: handle_price_toggle(state, n))
 
     # DISCOUNT TOGGLES
-    for name, toggle in getattr(
-        state,
-        "discount_match_toggles",
-        {},
-    ).items():
+    for name, toggle in getattr(state, "discount_match_toggles", {}).items():
         toggle.on(
-            "update:model-value",
-            lambda e, n=name: handle_discount_toggle(
-                state,
-                n,
-            ),
+            "update:model-value", lambda e, n=name: handle_discount_toggle(state, n)
         )
     attach_invoice_handlers(state)
 
@@ -8710,16 +8634,12 @@ async def _fs_handle_submit(
     # =====================================================
 
     valid, msg = state.is_valid()
-
     if not valid:
         state.error_msg_label.set_text(msg)
-
         state.error_banner.set_visibility(True)
-
         return
 
     payload = build_payload(state)
-
     try:
         # HIDE OLD ERROR
         state.error_banner.set_visibility(False)
