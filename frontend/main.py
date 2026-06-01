@@ -8,6 +8,7 @@ Backend: FastAPI at http://localhost:8000
 """
 
 import json
+import locale
 import asyncio
 import re
 
@@ -337,20 +338,46 @@ def get_reference_data() -> dict:
 
 
 # GLOBAL WIDGETS & INP HELPER
-def format_num_inr(num_val):
-    """Format float into standard accounting formatting, e.g. 1,000.00"""
-    return f"{int(num_val):,}"
+def format_num_inr(amount: float) -> str:
+    """Format a float into Indian standard accounting formatting.
+
+    Falls back to international formatting (1,000,000.00) if the en_IN locale
+    is not installed on the system.
+    """
+    target_locale = "en_IN.UTF-8"
+
+    # Round to the nearest whole number for accurate financial representation
+    rounded_amount = round(amount)
+
+    try:
+        # Attempt to set the Indian locale
+        locale.setlocale(locale.LC_ALL, target_locale)
+        formatted_amount = locale.format_string("%d", rounded_amount, grouping=True)
+    except locale.Error:
+        # Fallback: Reset to system default or default C locale for international formatting
+        locale.setlocale(locale.LC_ALL, "C")
+        # Standard international formatting (e.g., 1,234,567.89)
+        formatted_amount = f"{rounded_amount:,}"
+
+    return formatted_amount
 
 
 def get_eval_math(val_str):
-    import re
-
     val_clean = str(val_str).replace(",", "").strip()
     if not val_clean:
         return None
     if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", val_clean):
         return eval(val_clean)
     return None
+
+
+def parse_num(val: str | None) -> int:
+    if not val:
+        return 0
+    try:
+        return int(str(val).strip().replace(",", "").replace("₹", ""))
+    except (ValueError, TypeError):
+        return 0
 
 
 def parsed_val(ui_input_element) -> int:
@@ -1700,12 +1727,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{booking_analytics['total_actual_discount']:,}"
+                                f"₹{format_num_inr(booking_analytics['total_actual_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{booking_analytics['avg_actual_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(booking_analytics['avg_actual_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
@@ -1718,12 +1745,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{booking_analytics['total_discount']:,}"
+                                f"₹{format_num_inr(booking_analytics['total_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{booking_analytics['avg_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(booking_analytics['avg_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
@@ -1736,7 +1763,9 @@ async def dashboard_page() -> None:
                             ui.label("Total Excess Discount").classes(
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
-                            ui.label(f"₹{booking_analytics['total_excess']:,}").classes(
+                            ui.label(
+                                f"₹{format_num_inr(booking_analytics['total_excess'])}"
+                            ).classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
                             )
                             ui.label(
@@ -1802,12 +1831,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_actual_discount']:,}"
+                                f"₹{format_num_inr(delivery_analytics['total_actual_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{delivery_analytics['avg_actual_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(delivery_analytics['avg_actual_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
@@ -1820,12 +1849,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_discount']:,}"
+                                f"₹{format_num_inr(delivery_analytics['total_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{delivery_analytics['avg_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(delivery_analytics['avg_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
@@ -1839,7 +1868,7 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_excess']:,}"
+                                f"₹{format_num_inr(delivery_analytics['total_excess'])}"
                             ).classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
                             )
@@ -6044,6 +6073,19 @@ class FormState:
         self.discount_match_toggles = {}
         self.discount_given_labels = {}  # already used elsewhere
 
+        # Payments Sections state vars
+        # Receipt Payments
+        self.receipt_payments_container = None
+        self.receipt_payments = []
+        self.receipt_total_label = None
+        self.add_receipt_payment_btn = None
+
+        # Ledger Payments
+        self.ledger_payments_container = None
+        self.ledger_payments = []
+        self.ledger_total_label = None
+        self.add_ledger_payment_btn = None
+
         # Customer Ledger vars
         self.total_receivable: ui.label | None = None
         self.total_received: ui.label | None = None
@@ -6051,11 +6093,6 @@ class FormState:
         self.ledger_adjustment: ui.input | None = None
         self.ledger_adjustment_remarks: ui.input | None = None
         self.adjustment_type: ui.select | str = ""
-
-        # Payments Sections state vars
-        self.payments_container: ui.element | None = None
-        self.add_payment_btn: ui.button | None = None
-        self.payment_entries: list = []
 
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
@@ -6187,8 +6224,6 @@ class FormState:
             return False, "Customer PIN Code is required."
         if not self.variant_id:
             return False, "Please select a Car and Variant."
-        # if not self.complainant_remarks or not self.complainant_remarks.value:
-        #     return False, "Complainant's Remarks are required."
 
         return True, ""
 
@@ -7660,6 +7695,54 @@ def build_invoice_section(state: FormState) -> None:
                 state.invoice_cess = accounting_input(label_text="CESS")
 
 
+def build_payment_subsection(state, title, container_attr, total_attr, add_btn_attr):
+    with ui.column().classes("w-full gap-2"):
+        ui.label(title).classes("text-[14px] font-semibold text-gray-700")
+
+        container = ui.element("div").classes("w-full")
+        setattr(state, container_attr, container)
+        total = ui.label("Total: ₹ 0").classes(
+            "text-sm font-semibold text-primary text-right w-full"
+        )
+        setattr(state, total_attr, total)
+        btn = (
+            ui.button("Add Payment", icon="add")
+            .props("outline")
+            .classes("rounded-lg px-5")
+        )
+        setattr(state, add_btn_attr, btn)
+
+
+def build_payment_section(state):
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        _section_header(
+            emoji="💳",
+            title="Payment Received",
+            subtitle="Capture all payment sources",
+            icon_bg="bg-green-50",
+        )
+
+        build_payment_subsection(
+            state,
+            "Payment as per Receipts",
+            "receipt_payments_container",
+            "receipt_total_label",
+            "add_receipt_payment_btn",
+        )
+
+        ui.separator().classes("my-4")
+
+        build_payment_subsection(
+            state,
+            "Payment as per Customer Ledger",
+            "ledger_payments_container",
+            "ledger_total_label",
+            "add_ledger_payment_btn",
+        )
+
+
 def _ledger_value(text: str, value: str = "₹ 0") -> ui.column:
     with (
         ui.column()
@@ -7673,28 +7756,6 @@ def _ledger_value(text: str, value: str = "₹ 0") -> ui.column:
 
     col.value_label = value_label
     return col
-
-
-def build_payment_section(state: FormState) -> None:
-    with ui.card().classes(
-        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
-    ):
-        _section_header(
-            emoji="💳",
-            title="Payment Received",
-            subtitle="Capture all payment sources",
-            icon_bg="bg-green-50",
-        )
-        state.payments_container = ui.element("div").classes("w-full")
-
-        state.payment_entries = []
-
-        with ui.row().classes("w-full justify-center pt-3"):
-            state.add_payment_btn = (
-                ui.button("Add Payment", icon="add")
-                .props("outline")
-                .classes("rounded-lg px-5")
-            )
 
 
 def build_ledger_section(state: FormState) -> None:
@@ -7986,97 +8047,149 @@ def handle_discount_toggle(
     _fs_update_live(state)
 
 
-def add_payment_row(state: FormState, payment_data: dict | None = None):
+def _update_payment_total(payment_entries: list, total_label):
+    total = 0
+    for payment in payment_entries:
+        try:
+            total += parse_num(payment["amount"].value or "0")
+        except Exception:
+            pass
+    total_label.set_text(f"Total: ₹ {format_num_inr(total)}")
+
+
+def add_payment_row(
+    state: FormState,
+    container,
+    payment_entries: list,
+    total_label,
+    payment_data: dict | None = None,
+):
+
     payment = {}
-    with state.payments_container:
-        with ui.element("div").classes("w-full shadow-none rounded-xl") as payment_card:
-            with ui.row().classes("w-full items-center flex-nowrap"):
+
+    with container:
+        with ui.element("div").classes("w-full rounded-xl") as payment_card:
+            with ui.row().classes("w-full items-center flex-nowrap gap-3"):
                 # Date
-                with ui.column():
-                    payment["date"] = (
-                        ui.input("Date")
-                        .classes("dense outlined rounded-lg")
-                        .props("type='date' outlined dense")
-                    )
+                payment["date"] = (
+                    ui.input("Date").props("type=date outlined dense").classes("w-44")
+                )
+
                 # Source
-                with ui.column().classes("gap-1 shrink-0"):
-                    payment["source"] = (
-                        ui.toggle(
-                            {
-                                "Cash": "💵 Cash",
-                                "Bank": "🏦 Bank",
-                                "Finance": "📄 Finance",
-                                "Exchange": "🔄 Exchange",
-                            },
-                            value="Cash",
-                        )
-                        .props("elevated dense")
-                        .classes("payment-toggle normal-case")
+                payment["source"] = (
+                    ui.toggle(
+                        {
+                            "Cash": "💵 Cash",
+                            "Bank": "🏦 Bank",
+                            "Finance": "📄 Finance",
+                            "Exchange": "🔄 Exchange",
+                        },
+                        value="Cash",
                     )
+                    .props("elevated dense")
+                    .classes("payment-toggle normal-case shrink-0")
+                )
 
-                # Receipt
-                with ui.column().classes("gap-1 flex-grow items-center"):
-                    payment["receipt"] = (
-                        ui.input(
-                            label="Instrument Number",
-                            placeholder="Enter instrument number",
-                        )
-                        .props("outlined dense")
-                        .classes("w-full mt-2")
+                # Instrument
+                payment["receipt"] = (
+                    ui.input(
+                        label="Instrument Number",
+                        placeholder="Enter instrument number",
                     )
+                    .props("outlined dense")
+                    .classes("flex-grow")
+                )
 
-                    payment["receipt"].style("min-height:50px")
+                payment["receipt"].style("min-height:50px")
 
                 # Amount
                 payment["amount"] = accounting_input(
                     label_text="Amount",
                     placeholder="₹0",
-                    container_classes="w-56 shrink-0 gap-1 mt-2",
+                    container_classes="w-56 shrink-0",
                     compact=True,
                 )
+
                 payment["amount"].style("min-height:50px")
 
                 # Delete
-                with ui.column().classes("gap-1 shrink-0 items-center"):
+                def remove_payment():
+                    payment_card.delete()
+                    if payment in payment_entries:
+                        payment_entries.remove(payment)
 
-                    def remove_payment():
-                        payment_card.delete()
-                        if payment in state.payment_entries:
-                            state.payment_entries.remove(payment)
+                    _update_payment_total(payment_entries, total_label)
+                    _fs_update_live(state)
 
-                        _fs_update_live(state)
+                ui.button(
+                    icon="delete", color="negative", on_click=remove_payment
+                ).props("flat round")
 
-                    ui.button(
-                        icon="delete",
-                        color="negative",
-                        on_click=remove_payment,
-                    ).classes("mt-0").props("flat round")
+    if payment_data:
+        payment["date"].set_value(payment_data.get("date", ""))
+        payment["source"].set_value(payment_data.get("source", "Cash"))
+        payment["receipt"].set_value(payment_data.get("receipt", ""))
+        payment["amount"].set_value(payment_data.get("amount", ""))
 
-            if payment_data:
-                payment["source"].set_value(payment_data.get("source", "Cash"))
-                payment["receipt"].set_value(payment_data.get("receipt", ""))
-                payment["amount"].set_value(payment_data.get("amount", ""))
+    payment_entries.append(payment)
 
-            state.payment_entries.append(payment)
+    # Live total updates
+    payment["amount"].on_value_change(
+        lambda e: _update_payment_total(payment_entries, total_label)
+    )
+    _update_payment_total(payment_entries, total_label)
 
-            return payment
+    return payment
+
+
+def attach_payment_row_handlers(
+    state,
+    payment,
+    payment_entries,
+    total_label,
+):
+
+    def handle_change(*_):
+        if state.is_hydrating:
+            return
+        _update_payment_total(payment_entries, total_label)
+        _fs_update_live(state)
+
+    payment["date"].on_value_change(handle_change)
+    payment["source"].on_value_change(handle_change)
+    payment["receipt"].on_value_change(handle_change)
+    payment["amount"].on_value_change(handle_change)
 
 
 def attach_payment_handlers(state):
+    if getattr(state, "add_receipt_payment_btn", None):
+        state.add_receipt_payment_btn.on_click(
+            lambda: add_payment_row(
+                state,
+                state.receipt_payments_container,
+                state.receipt_payments,
+                state.receipt_total_label,
+            )
+        )
+    if getattr(state, "add_ledger_payment_btn", None):
+        state.add_ledger_payment_btn.on_click(
+            lambda: add_payment_row(
+                state,
+                state.ledger_payments_container,
+                state.ledger_payments,
+                state.ledger_total_label,
+            )
+        )
 
-    def handle_add_payment():
-        try:
-            add_payment_row(state)
-        except Exception as e:
-            print("PAYMENT ERROR: ", str(e))
-
-    if getattr(state, "add_payment_btn", None):
-        state.add_payment_btn.on_click(handle_add_payment)
-
-    for payment in state.payment_entries:
-        payment["source"].on_value_change(lambda e: _fs_update_live(state))
-        payment["receipt"].on_value_change(lambda e: _fs_update_live(state))
-        payment["amount"].on_value_change(lambda e: _fs_update_live(state))
+    # attach handlers for existing rows
+    for payment in state.receipt_payments:
+        attach_payment_row_handlers(
+            state, payment, state.receipt_payments, state.receipt_total_label
+        )
+    for payment in state.ledger_payments:
+        attach_payment_row_handlers(
+            state, payment, state.ledger_payments, state.ledger_total_label
+        )
 
 
 def attach_form_handlers(state: FormState):
@@ -10125,7 +10238,7 @@ async def complaint_form_page(
 
 
 if __name__ in {"__main__", "__mp_main__"}:
-    app.colors(primary="#e8402a")
+    app.colors(primary="#e8402a")  # e8402a
     ui.run(
         title="AutoAudit",
         favicon="🚗",
