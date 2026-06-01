@@ -408,11 +408,14 @@ def accounting_input(
     compact: bool = False,
 ) -> ui.input:
     """Text input with inline math evaluation and blur-collapse."""
+    hint = None
     with ui.column().classes(f"gap-0 {container_classes} mb-1"):
         inp = (
             ui.input(label=label_text, placeholder=placeholder)
             .props(
-                "outlined dense input-class='text-right' text-[14px] font-medium input-style='text-align: right;"
+                "outlined dense "
+                "input-class='text-right' "
+                "input-style='text-align:right;'"
             )
             .classes("w-full")
         )
@@ -423,33 +426,50 @@ def accounting_input(
             )
 
     def handle_eval(e):
-        val = e.value
-        if not val:
-            hint.set_text("")
+        if compact:
             return
+
+        val = e.value
+
+        if not val:
+            if hint:
+                hint.set_text("")
+            return
+
         try:
             res = get_eval_math(val)
             if res is not None:
                 val_clean = str(val).replace(",", "").strip()
+
                 if val_clean != str(res) and not val_clean.replace(".", "").isdigit():
-                    hint.set_text(f"= {format_num_inr(res)}")
-                    hint.classes(replace="text-red-500", add="text-green-600")
+                    if hint:
+                        hint.set_text(f"= {format_num_inr(res)}")
+                        hint.classes(replace="text-red-500", add="text-green-600")
                     return
-                hint.set_text("")
+
+                if hint:
+                    hint.set_text("")
                 return
+
         except Exception:
             pass
-        hint.set_text("Invalid math")
-        hint.classes(replace="text-green-600", add="text-red-500")
+
+        if hint:
+            hint.set_text("Invalid math")
+            hint.classes(replace="text-green-600", add="text-red-500")
 
     def handle_blur(e=None):
         if not inp.value:
             return
+
         try:
             res = get_eval_math(inp.value)
             if res is not None:
                 inp.set_value(format_num_inr(res))
-                hint.set_text("")
+
+                if hint:
+                    hint.set_text("")
+
         except Exception:
             pass
 
@@ -6691,18 +6711,12 @@ async def hydrate_vehicle_section(
         # CAR
         if car_id:
             state.car_select.set_value(car_id)
-
             # IMPORTANT
-            await _fs_on_car_change(
-                car_id,
-                state,
-                preserve_variant=True,
-            )
+            await _fs_on_car_change(car_id, state, preserve_variant=True)
 
         # VARIANT
         if variant_id:
             state.variant_select.set_value(variant_id)
-
             state.variant_id = variant_id
 
         # OUTLET
@@ -7701,15 +7715,21 @@ def build_payment_subsection(state, title, container_attr, total_attr, add_btn_a
 
         container = ui.element("div").classes("w-full")
         setattr(state, container_attr, container)
-        total = ui.label("Total: ₹ 0").classes(
-            "text-sm font-semibold text-primary text-right w-full"
-        )
+
+        # Total aligned under Amount column
+        with ui.row().classes("w-full justify-end"):
+            total = ui.label("Total: ₹ 0").classes(
+                "w-56 text-right text-base font-bold"
+            )
+            # reserve space for delete button column
+            ui.element("div").classes("w-10")
         setattr(state, total_attr, total)
-        btn = (
-            ui.button("Add Payment", icon="add")
-            .props("outline")
-            .classes("rounded-lg px-5")
-        )
+        with ui.row().classes("w-full justify-center"):
+            btn = (
+                ui.button("Add Payment", icon="add")
+                .props("outline")
+                .classes("rounded-lg px-5")
+            )
         setattr(state, add_btn_attr, btn)
 
 
@@ -7763,7 +7783,6 @@ def build_ledger_section(state: FormState) -> None:
     with ui.card().classes(
         "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
     ):
-        # Header
         _section_header(
             emoji="📒",
             title="Ledger Summary",
@@ -7772,71 +7791,47 @@ def build_ledger_section(state: FormState) -> None:
         )
 
         # Summary Cards
-        with ui.grid(columns=3).classes("w-full gap-4 mb-5"):
+        with ui.grid(columns=4).classes("w-full gap-4 mb-5"):
             total_receivable_card = _ledger_value("Total Receivable")
             total_received_card = _ledger_value("Total Received")
-            balance_card = _ledger_value("Balance Amount")
+            balance_card = _ledger_value("Balance as per Customer Ledger")
+            variation_card = _ledger_value("Variation")
 
             state.total_receivable = total_receivable_card.value_label
             state.total_received = total_received_card.value_label
             state.balance_amount = balance_card.value_label
-
-        # Adjustment Section
-        with ui.column().classes(
-            "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-4"
+            state.ledger_variation = variation_card.value_label
+        # Reconciliation Section
+        with ui.card().classes(
+            """
+            shadow-none
+            border
+            border-gray-100
+            bg-gray-50
+            rounded-xl
+            p-4
+            """
         ):
-            with ui.row().classes("items-center justify-between w-full"):
-                with ui.column().classes("gap-0"):
-                    ui.label("Ledger Adjustment").classes(
-                        "text-[13px] font-semibold text-gray-700"
-                    )
+            ui.label("Balance").classes("text-base font-bold text-gray-700 mb-3")
 
-                    ui.label("Apply manual debit or credit adjustments").classes(
-                        "text-[12px] text-gray-500"
-                    )
-
-            with ui.grid(columns=3).classes("w-full gap-4 items-start"):
-                # Positive / Negative
-                with ui.column().classes("gap-1"):
-                    ui.label("Adjustment Type").classes(
-                        "text-[12px] font-semibold text-gray-700 ml-1"
-                    )
-
-                    state.adjustment_type = (
-                        ui.select(
-                            {
-                                "positive": "➕ Positive",
-                                "negative": "➖ Negative",
-                            },
-                            value="negative",
-                        )
-                        .props("outlined")
-                        .classes("w-full")
-                    )
-
-                # Amount
-                with ui.column().classes("gap-1"):
-                    ui.label("Adjustment Amount").classes(
-                        "text-[12px] font-semibold text-gray-700 ml-1"
-                    )
-                    state.ledger_adjustment = accounting_input(
-                        "Adjustment Amount",
-                        placeholder="Enter adjustment amount",
-                        container_classes="w-full",
-                    )
-                    state.ledger_adjustment.props("style='min-height:46px'")
-
-                # Remarks
-                with ui.column().classes("gap-1 w-full"):
-                    ui.label("Remarks / Reason").classes(
-                        "text-[12px] font-semibold text-gray-700 ml-1"
-                    )
-
-                    state.ledger_adjustment_remarks = (
-                        ui.textarea(placeholder=("Explain reason for adjustment..."))
-                        .classes("w-full")
-                        .props("outlined rows=2")
-                    )
+            with ui.grid(columns=2).classes("w-full gap-4 items-start"):
+                state.ledger_variation = accounting_input(
+                    label_text="", placeholder="₹ 0", compact=True
+                ).classes(
+                    """
+                        text-[20px]
+                        font-bold
+                        text-primary
+                        min-h-[50px]
+                        flex
+                        items-center
+                        p-3
+                        border
+                        border-gray-200
+                        rounded-lg
+                        bg-white
+                        """
+                )
 
 
 # Internal CSS helpers
@@ -9291,11 +9286,11 @@ def build_form(state: FormState):
         build_conditions_section(state)
         build_accessories_section(state)
         build_prices_section(state)
-        build_delivery_checklist_section(state)
-        build_file_status_section(state)
-        build_invoice_section(state)
         build_payment_section(state)
         build_ledger_section(state)
+        build_invoice_section(state)
+        build_delivery_checklist_section(state)
+        build_file_status_section(state)
         build_audit_section(state)
 
     elif state.form_mode in [
@@ -9316,11 +9311,11 @@ def build_form(state: FormState):
         build_conditions_section(state)
         build_accessories_section(state)
         build_prices_section(state)
-        build_delivery_checklist_section(state)
-        build_file_status_section(state)
-        build_invoice_section(state)
         build_payment_section(state)
         build_ledger_section(state)
+        build_invoice_section(state)
+        build_delivery_checklist_section(state)
+        build_file_status_section(state)
         build_audit_section(state)
 
     build_live_bar(state)
@@ -10238,7 +10233,7 @@ async def complaint_form_page(
 
 
 if __name__ in {"__main__", "__mp_main__"}:
-    app.colors(primary="#e8402a")  # e8402a
+    app.colors(primary="#e8402a")
     ui.run(
         title="AutoAudit",
         favicon="🚗",
