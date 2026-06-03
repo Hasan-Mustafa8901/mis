@@ -273,11 +273,13 @@ REFERENCE_CACHE: dict = {}
 async def fetch_reference_data(
     force_refresh: bool = False,
 ) -> dict:
-
+    print("FETCH_REFERENCE_DATA_CALLED")
     global REFERENCE_CACHE
 
     if REFERENCE_CACHE and not force_refresh:
         return REFERENCE_CACHE
+
+    print("CACHE MISS")
 
     tasks = {
         "cars": api_get("/cars"),
