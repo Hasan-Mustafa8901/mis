@@ -3,6 +3,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from sqlmodel import Session, select
+from datetime import datetime, timezone
 
 from db.session import get_session
 from db.models import User
@@ -20,13 +21,24 @@ def get_current_user(
     try:
         payload = jwt.decode(token, SECRET_KEY_TOKEN, algorithms=[ALGORITHM])
 
+        print("=" * 50)
+        print("TOKEN OK")
+        print("SUB:", payload.get("sub"))
+        print("EXP:", payload.get("exp"))
+        print("UTC NOW:", datetime.now(timezone.utc))
+        print("=" * 50)
+
         # IMPORTANT: your token uses "sub"
         user_id = payload.get("sub")
 
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token payload")
 
-    except JWTError:
+    except JWTError as e:
+        print("=" * 50)
+        print("JWT ERROR:", str(e))
+        print("=" * 50)
+
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     user = session.exec(select(User).where(User.id == int(user_id))).first()
