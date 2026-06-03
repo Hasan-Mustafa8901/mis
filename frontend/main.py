@@ -1193,7 +1193,7 @@ async def dashboard_page() -> None:
 
     dealerships: list[dict] = []
     try:
-        dealerships = await api_get("/complaints/dealerships") or []
+        # dealerships = await api_get("/complaints/dealerships") or []
         print("FROM DASHBOARD")
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
@@ -1202,7 +1202,7 @@ async def dashboard_page() -> None:
     outlets: list[dict] = []
     try:
         print("FROM DASHBOARD")
-        outlets = await api_get("/outlets") or []
+        # outlets = await api_get("/outlets") or []
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
         print("ERROR While loading outlets on Dashboard: ", str(e))
