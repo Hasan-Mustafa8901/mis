@@ -395,6 +395,51 @@ def api_recalculate_transaction(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/dashboard-data")
+def get_dashboard_data(
+    outlet_id: int | None = None,
+    dealership_id: int | None = None,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+
+    stmt = select(Transaction).options(
+        joinedload(Transaction.customer),
+        joinedload(Transaction.variant).joinedload(Variant.car),
+        joinedload(Transaction.outlet),
+        joinedload(Transaction.sales_executive),
+        joinedload(Transaction.user),
+    )
+
+    stmt = apply_outlet_scope(
+        stmt,
+        Transaction,
+        current_user,
+    )
+
+    if outlet_id:
+        validate_outlet_access(
+            current_user,
+            outlet_id,
+        )
+
+        stmt = stmt.where(Transaction.outlet_id == outlet_id)
+
+    elif dealership_id:
+        stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
+
+    txs = session.exec(stmt).all()
+
+    return [
+        {
+            **TransactionService.serialize_transaction_row(tx),
+            "conditions": tx.conditions or {},
+            "excess_booking": tx.excess_booking or 0,
+        }
+        for tx in txs
+    ]
+
+
 @app.get("/transactions-pages")
 def get_all_transactions_pages(
     outlet_id: int | None = None,
