@@ -2212,76 +2212,76 @@ async def dashboard_page() -> None:
 #             month_select.on_value_change(on_month_change)
 
 
-# class MISState:
-#     def __init__(self) -> None:
-#         self.selected_dealer: int | None
-#         self.selected_outlet: int | None
-#         self.dealer_select: ui.select | None
-#         self.outlet_select: ui.select | None
-#         self.dealerships: list = []
-#         self.outlets: list = []
-#         self._load_tasks = None
-#         self._debounce = None
+class MISState:
+    def __init__(self) -> None:
+        self.selected_dealer: int | None
+        self.selected_outlet: int | None
+        self.dealer_select: ui.select | None
+        self.outlet_select: ui.select | None
+        self.dealerships: list = []
+        self.outlets: list = []
+        self._load_tasks = None
+        self._debounce = None
 
-#         self.stage: str = "booking"
-#         self.month: str | None = None
-#         self.grid = None
-#         self.load_data = []
-#         self.selected_ids: list[int] = []
-#         self.limit: int = 0
-#         self.offset: int = 0
-#         self.total_rows: int = 0
-#         self.total_entries = 0
-#         self.total_excess = 0
-#         self.sorted_months = {}
-#         self.month_map = {}
+        self.stage: str = "booking"
+        self.month: str | None = None
+        self.grid = None
+        self.load_data = []
+        self.selected_ids: list[int] = []
+        self.limit: int = 0
+        self.offset: int = 0
+        self.total_rows: int = 0
+        self.total_entries = 0
+        self.total_excess = 0
+        self.sorted_months = {}
+        self.month_map = {}
 
 
-# async def load_master_data(state):
-#     try:
-#         state.dealerships = await api_get("/dealerships")
-#         state.outlets = await api_get("/outlets")
+async def load_master_data(state):
+    try:
+        state.dealerships = await api_get("/dealerships")
+        state.outlets = await api_get("/outlets")
 
-#     except UnauthorizedError:
-#         await logout_user()
+    except UnauthorizedError:
+        await logout_user()
 
-#         ui.notify(
-#             "Session expired. Please login again.",
-#             type="warning",
-#         )
+        ui.notify(
+            "Session expired. Please login again.",
+            type="warning",
+        )
 
-#         ui.navigate.to("/login")
+        ui.navigate.to("/login")
 
-#     except ConnectionFailedError:
-#         ui.notify(
-#             "Unable to connect to server",
-#             type="negative",
-#         )
+    except ConnectionFailedError:
+        ui.notify(
+            "Unable to connect to server",
+            type="negative",
+        )
 
-#         state.dealerships = []
-#         state.outlets = []
+        state.dealerships = []
+        state.outlets = []
 
-#     except APIError as e:
-#         print("MASTER DATA ERROR:", e)
+    except APIError as e:
+        print("MASTER DATA ERROR:", e)
 
-#         ui.notify(
-#             "Unable to load master data",
-#             type="negative",
-#         )
+        ui.notify(
+            "Unable to load master data",
+            type="negative",
+        )
 
-#         state.dealerships = []
-#         state.outlets = []
+        state.dealerships = []
+        state.outlets = []
 
-#     except Exception as e:
-#         print("UNEXPECTED MASTER DATA ERROR:", e)
+    except Exception as e:
+        print("UNEXPECTED MASTER DATA ERROR:", e)
 
-#         ui.notify(
-#             "Something went wrong",
-#             type="negative",
-#         )
+        ui.notify(
+            "Something went wrong",
+            type="negative",
+        )
 
-#         state.dealerships = []
-#         state.outlets = []
+        state.dealerships = []
+        state.outlets = []
 
 
 # PAGE: MIS TABLES (Booking & Delivery)
