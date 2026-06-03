@@ -50,7 +50,7 @@ load_dotenv()
 SECRET_KEY_FRONTEND = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
-
+print("AAAA")
 CONDITION_KEYS = {
     "Price Component": [
         ("self_insurance", "Self Insurance"),
