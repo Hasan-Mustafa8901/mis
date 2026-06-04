@@ -11,14 +11,10 @@ from db.models import (
     User,
     UserRole,
     Customer,
-    # Transaction,
-    # DailyBooking,
-    # DailyDelivery,
     ComplaintStatus,
     ComplaintFlag,
     Remark,
     Variant,
-    # Car,
 )
 from services.utils import get_ist_today, get_ist_now
 
@@ -259,9 +255,7 @@ def get_complaints_per_status(session: Session):
 
 
 def update_complaint_status(
-    session: Session,
-    complaint_code: str,
-    status: ComplaintStatus,
+    session: Session, complaint_code: str, status: ComplaintStatus
 ):
     complaint = session.exec(
         select(Complaint).where(Complaint.complaint_code == complaint_code)
@@ -278,11 +272,7 @@ def update_complaint_status(
     return complaint
 
 
-def update_complaint_flag(
-    session: Session,
-    complaint_code: str,
-    flag: ComplaintFlag,
-):
+def update_complaint_flag(session: Session, complaint_code: str, flag: ComplaintFlag):
     complaint = session.exec(
         select(Complaint).where(Complaint.complaint_code == complaint_code)
     ).first()
@@ -322,7 +312,7 @@ def submit_remarks(
 
     if submitted_by == UserRole.ADMIN:
         complaint.remark_admin = remark
-    elif submitted_by == UserRole.AUDITOR:
+    elif submitted_by == UserRole.AUDIT_ASST:
         new_entry = f"{user.name} ({now}): {remark}" if user.name else remark
         if complaint.remark_complainee_aa is None:
             complaint.remark_complainee_aa = new_entry
@@ -343,53 +333,39 @@ def get_dealership_id_by_name(session: Session, name: str):
     return dealer.id if dealer else None
 
 
-def get_dealership_by_outlet(
-    session: Session,
-    name_or_id: str | int,
-) -> dict:
-
+def get_dealership_by_outlet(session: Session, name_or_id: str | int) -> dict:
     if isinstance(name_or_id, int):
-        outlet = session.get(
-            Outlet,
-            name_or_id,
-        )
+        outlet = session.get(Outlet, name_or_id)
     else:
         outlet = session.exec(
             select(Outlet).where(Outlet.name == str(name_or_id).strip())
         ).first()
+
     if not outlet:
         return None
+
     # FIND DEALERSHIP
-    dealership = session.get(
-        Dealership,
-        outlet.dealership_id,
-    )
+    dealership = session.get(Dealership, outlet.dealership_id)
     if not dealership:
         return None
-    return {
-        "id": dealership.id,
-        "name": dealership.name,
-    }
+
+    return {"id": dealership.id, "name": dealership.name}
 
 
-def normalize_outlet_name(
-    value: str,
-) -> str:
-
-    return str(value).strip().lower().replace("–", "-").replace("—", "-")
+def normalize_outlet_name(value: str) -> str:
+    return (
+        str(value).strip().lower().replace("–", "-").replace("—", "-").replace(" ", "")
+    )
 
 
 def get_outlet_id_by_name(
-    session: Session,
-    name: str,
-    dealership_id: int | None = None,
+    session: Session, name: str, dealership_id: int | None = None
 ):
 
     if not name:
         return None
 
     cleaned = normalize_outlet_name(name)
-
     outlets = session.exec(select(Outlet)).all()
 
     for outlet in outlets:

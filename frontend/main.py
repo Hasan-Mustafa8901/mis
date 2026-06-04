@@ -7,21 +7,22 @@ Two-page architecture:
 Backend: FastAPI at http://localhost:8000
 """
 
+import logging
 import json
+import locale
 import asyncio
 import re
 
-# from utils_old import build_component_map_from_booking
 import httpx
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
-from utils_old import get_ist_today, disp_date  # , date_for_input
+from utils import get_ist_today, disp_date  # , date_for_input
 from dotenv import load_dotenv
 
 import os
-from auth_old import (
+from auth import (
     get_token,
     logout_user,
     protected_page,
@@ -30,7 +31,7 @@ from auth_old import (
     token_is_valid,
     clear_user,
 )
-from api_old import (
+from api import (
     api_get,
     api_post,
     api_delete,
@@ -47,6 +48,13 @@ from api_old import (
 
 # CONFIG & SHARED CONSTANTS
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+)
+logger = logging.getLogger("frontend")
+
 SECRET_KEY_FRONTEND = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
@@ -206,6 +214,34 @@ ui.add_head_html(
     shared=True,
 )
 
+# For payment section toggles
+ui.add_head_html(
+    """
+<style>
+
+.payment-toggle .q-btn {
+    background: rgba(var(--q-primary-rgb), 0.07);
+    border-radius: 4px;
+    min-height: 35px;
+    padding: 0 10px;
+    text-transform: capitalize;
+    font-size: 14px;
+}
+
+.payment-toggle .q-btn--active {
+    background: rgba(var(--q-primary-rgb), 0.18);
+    color: var(--q-primary);
+    font-weight: 600;
+}
+.payment-toggle .q-btn-group {
+    box-shadow: none !important;
+}
+
+</style>
+""",
+    shared=True,
+)
+
 
 # API HELPERS
 def get_auth_headers():
@@ -296,7 +332,7 @@ async def fetch_reference_data(
 
     for key, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
-            print(f"REFERENCE DATA ERROR [{key}]:", result)
+            logger.error("REFERENCE DATA ERROR [%s]: %s", {key}, result)
             final[key] = []
         else:
             final[key] = result or []
@@ -311,20 +347,46 @@ def get_reference_data() -> dict:
 
 
 # GLOBAL WIDGETS & INP HELPER
-def format_num_inr(num_val):
-    """Format float into standard accounting formatting, e.g. 1,000.00"""
-    return f"{int(num_val):,}"
+def format_num_inr(amount: float) -> str:
+    """Format a float into Indian standard accounting formatting.
+
+    Falls back to international formatting (1,000,000.00) if the en_IN locale
+    is not installed on the system.
+    """
+    target_locale = "en_IN.UTF-8"
+
+    # Round to the nearest whole number for accurate financial representation
+    rounded_amount = round(amount)
+
+    try:
+        # Attempt to set the Indian locale
+        locale.setlocale(locale.LC_ALL, target_locale)
+        formatted_amount = locale.format_string("%d", rounded_amount, grouping=True)
+    except locale.Error:
+        # Fallback: Reset to system default or default C locale for international formatting
+        locale.setlocale(locale.LC_ALL, "C")
+        # Standard international formatting (e.g., 1,234,567.89)
+        formatted_amount = f"{rounded_amount:,}"
+
+    return formatted_amount
 
 
 def get_eval_math(val_str):
-    import re
-
     val_clean = str(val_str).replace(",", "").strip()
     if not val_clean:
         return None
     if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", val_clean):
         return eval(val_clean)
     return None
+
+
+def parse_num(val: str | None) -> int:
+    if not val:
+        return 0
+    try:
+        return int(str(val).strip().replace(",", "").replace("₹", ""))
+    except (ValueError, TypeError):
+        return 0
 
 
 def parsed_val(ui_input_element) -> int:
@@ -349,49 +411,74 @@ def parsed_val(ui_input_element) -> int:
 
 
 def accounting_input(
-    label_text: str, placeholder: str = "", container_classes: str = "w-full"
+    label_text: str,
+    placeholder: str = "",
+    container_classes: str = "w-full",
+    compact: bool = False,
 ) -> ui.input:
     """Text input with inline math evaluation and blur-collapse."""
+    hint = None
     with ui.column().classes(f"gap-0 {container_classes} mb-1"):
         inp = (
             ui.input(label=label_text, placeholder=placeholder)
             .props(
-                "outlined dense input-class='text-right' input-style='text-align: right;"
+                "outlined dense "
+                "input-class='text-right' "
+                "input-style='text-align:right;'"
             )
             .classes("w-full")
         )
-        hint = ui.label("").classes(
-            "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2 text-right"
-        )
+        inp.style("min-height:50px")
+        if not compact:
+            hint = ui.label("").classes(
+                "text-[11px] text-green-600 font-bold ml-1 h-3 -mt-2 text-right"
+            )
 
     def handle_eval(e):
-        val = e.value
-        if not val:
-            hint.set_text("")
+        if compact:
             return
+
+        val = e.value
+
+        if not val:
+            if hint:
+                hint.set_text("")
+            return
+
         try:
             res = get_eval_math(val)
             if res is not None:
                 val_clean = str(val).replace(",", "").strip()
+
                 if val_clean != str(res) and not val_clean.replace(".", "").isdigit():
-                    hint.set_text(f"= {format_num_inr(res)}")
-                    hint.classes(replace="text-red-500", add="text-green-600")
+                    if hint:
+                        hint.set_text(f"= {format_num_inr(res)}")
+                        hint.classes(replace="text-red-500", add="text-green-600")
                     return
-                hint.set_text("")
+
+                if hint:
+                    hint.set_text("")
                 return
+
         except Exception:
             pass
-        hint.set_text("Invalid math")
-        hint.classes(replace="text-green-600", add="text-red-500")
+
+        if hint:
+            hint.set_text("Invalid math")
+            hint.classes(replace="text-green-600", add="text-red-500")
 
     def handle_blur(e=None):
         if not inp.value:
             return
+
         try:
             res = get_eval_math(inp.value)
             if res is not None:
                 inp.set_value(format_num_inr(res))
-                hint.set_text("")
+
+                if hint:
+                    hint.set_text("")
+
         except Exception:
             pass
 
@@ -467,6 +554,7 @@ def render_topbar(page_label: str) -> None:
 # LOGIN PAGE
 @ui.page("/login")
 def login_page():
+    logger.info("Accessing /login page")
     if get_token():
         ui.navigate.to("/")
     render_topbar("Login Page")
@@ -482,21 +570,28 @@ def login_page():
             )
 
             async def handle_login():
-
+                logger.info("Login attempt for username: %s", username.value)
                 try:
                     data = await api_post(
                         "/auth/login",
-                        payload={
-                            "name": username.value,
-                            "password": password.value,
-                        },
+                        payload={"name": username.value, "password": password.value},
                     )
 
                     if not data:
+                        logger.warning(
+                            "Login failed for %s: Empty response from auth endpoint",
+                            username.value,
+                        )
                         ui.notify("Login failed", type="negative")
                         return
 
                     set_user(data)
+                    logger.info(
+                        "Login successful for user: %s (id: %s, role: %s)",
+                        data.get("name"),
+                        data.get("id"),
+                        data.get("role"),
+                    )
                     ui.notify("Login successful", type="positive")
                     ui.navigate.to("/")
 
@@ -507,21 +602,15 @@ def login_page():
                     ui.notify("Access denied", type="negative")
 
                 except ConnectionFailedError as e:
-                    ui.notify(
-                        str(e),
-                        type="negative",
-                    )
+                    ui.notify(str(e), type="negative")
 
                 except APIError as e:
                     ui.notify(str(e), type="negative")
 
                 except Exception as e:
-                    print("LOGIN ERROR:", e)
+                    logger.exception("LOGIN ERROR: %s", str(e))
 
-                    ui.notify(
-                        "Something went wrong",
-                        type="negative",
-                    )
+                    ui.notify("Something went wrong", type="negative")
 
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
@@ -586,8 +675,6 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         + pick("Green")
     )
 
-    # 4. Allowed + diff (keep near actual)
-
     # 6. Accessories / finance / exchange
     ordered += pick("accessories_")
     ordered += pick("finance_")
@@ -609,6 +696,8 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         "total_received",
         "balance_amount",
         "payment_status",
+        "booking_file_incomplete",
+        "delivery_file_incomplete",
         "total_actual_discount",
         "total_allowed_discount",
         "total_excess_discount",
@@ -888,6 +977,8 @@ def render_table(transactions, state, stage: str = "booking"):
         await state.load_data()
 
     async def go_next():
+        logger.info("OFFSET, LIMIT: %s, %s", state.offset, state.limit)
+        logger.info("Total Rows: %s", state.total_rows)
         next_offset = state.offset + state.limit
         # OPTIONAL GUARD
         if next_offset >= state.total_rows:
@@ -1183,7 +1274,11 @@ def open_new_entry_dialog():
 @ui.page("/")
 @require_roles("admin", "client", "audit_assistant")
 async def dashboard_page() -> None:
-
+    logger.info(
+        "Accessing dashboard page (/) for user: %s (role: %s)",
+        app.storage.user.get("name"),
+        app.storage.user.get("role"),
+    )
     render_topbar("Dashboard")
     print("DASHBOARD BUILT.")
 
@@ -1199,7 +1294,7 @@ async def dashboard_page() -> None:
         print("FROM DASHBOARD")
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
-        print("ERROR While loading dealerships on Dashboard: ", str(e))
+        logger.exception("ERROR While loading dealerships on Dashboard")
 
     outlets: list[dict] = []
     try:
@@ -1207,7 +1302,7 @@ async def dashboard_page() -> None:
         outlets = await api_get("/outlets") or []
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
-        print("ERROR While loading outlets on Dashboard: ", str(e))
+        logger.exception("ERROR While loading outlets on Dashboard")
 
     # ADMIN => unrestricted
     if user_role != "admin":
@@ -1649,12 +1744,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{booking_analytics['total_actual_discount']:,}"
+                                f"₹{format_num_inr(booking_analytics['total_actual_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{booking_analytics['avg_actual_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(booking_analytics['avg_actual_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
@@ -1667,12 +1762,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{booking_analytics['total_discount']:,}"
+                                f"₹{format_num_inr(booking_analytics['total_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{booking_analytics['avg_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(booking_analytics['avg_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
@@ -1685,7 +1780,9 @@ async def dashboard_page() -> None:
                             ui.label("Total Excess Discount").classes(
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
-                            ui.label(f"₹{booking_analytics['total_excess']:,}").classes(
+                            ui.label(
+                                f"₹{format_num_inr(booking_analytics['total_excess'])}"
+                            ).classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
                             )
                             ui.label(
@@ -1751,12 +1848,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_actual_discount']:,}"
+                                f"₹{format_num_inr(delivery_analytics['total_actual_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{delivery_analytics['avg_actual_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(delivery_analytics['avg_actual_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
                         # KPI Card: Total Allowed Discount
                         with ui.card().classes(
@@ -1769,12 +1866,12 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_discount']:,}"
+                                f"₹{format_num_inr(delivery_analytics['total_discount'])}"
                             ).classes(
                                 "text-[24px] font-bold text-[#10B981] leading-none mb-1.5 mono"
                             )
                             ui.label(
-                                f"Avg ₹{delivery_analytics['avg_discount']:,} / transaction"
+                                f"Avg ₹{format_num_inr(delivery_analytics['avg_discount'])} / transaction"
                             ).classes("text-[14px] text-gray-600")
 
                         # KPI Card: Total Excess Discount
@@ -1788,7 +1885,7 @@ async def dashboard_page() -> None:
                                 "text-[11px] font-bold tracking-[0.9px] uppercase text-gray-400 mb-2.5"
                             )
                             ui.label(
-                                f"₹{delivery_analytics['total_excess']:,}"
+                                f"₹{format_num_inr(delivery_analytics['total_excess'])}"
                             ).classes(
                                 f"text-[24px] font-bold leading-none mb-1.5 mono text-[{excess_color}]"
                             )
@@ -2241,7 +2338,7 @@ async def load_master_data(state):
         state.outlets = []
 
     except APIError as e:
-        print("MASTER DATA ERROR:", e)
+        logger.error("MASTER DATA ERROR: %s", e, exc_info=True)
 
         ui.notify(
             "Unable to load master data",
@@ -2252,7 +2349,7 @@ async def load_master_data(state):
         state.outlets = []
 
     except Exception as e:
-        print("UNEXPECTED MASTER DATA ERROR:", e)
+        logger.exception("UNEXPECTED MASTER DATA ERROR", str(e))
 
         ui.notify(
             "Something went wrong",
@@ -2314,7 +2411,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.notify("You are not allowed to delete.")
 
         except Exception as e:
-            print("ERROR: error occured while deletion", e)
+            logger.exception("ERROR: error occurred while deletion")
             ui.notify("Error Occured", type="negative")
 
     def reset_filters():
@@ -2425,12 +2522,12 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ui.notify("Unable to load metadata", type="negative")
 
             except APIError as e:
-                print("LOAD META API ERROR:", e)
+                logger.error("LOAD META API ERROR: %s", e, exc_info=True)
 
                 ui.notify("Failed to load metadata", type="negative")
 
             except Exception as e:
-                print("LOAD META ERROR:", e)
+                logger.exception("LOAD META ERROR")
 
                 ui.notify("Something went wrong", type="negative")
 
@@ -2487,12 +2584,12 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ui.notify("Unable to load transactions", type="negative")
 
             except APIError as e:
-                print("LOAD DATA API ERROR:", e)
+                logger.error("LOAD DATA API ERROR: %s", e, exc_info=True)
 
                 ui.notify("Failed to load transactions", type="negative")
 
             except Exception as e:
-                print("LOAD DATA ERROR:", e)
+                logger.exception("LOAD DATA ERROR", e)
 
                 ui.notify("Something went wrong", type="negative")
 
@@ -2589,12 +2686,22 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 @ui.page("/booking-mis")
 @require_roles("admin", "audit_assistant")
 async def booking_mis_page(month: str | None = None) -> None:
+    logger.info(
+        "Accessing /booking-mis page (month: %s) for user: %s",
+        month,
+        app.storage.user.get("name"),
+    )
     await mis_table_page_base(stage="booking", month=month)
 
 
 @ui.page("/delivery-mis")
 @require_roles("admin", "audit_assistant")
 async def delivery_mis_page(month: str | None = None) -> None:
+    logger.info(
+        "Accessing /delivery-mis page (month: %s) for user: %s",
+        month,
+        app.storage.user.get("name"),
+    )
     await mis_table_page_base(stage="delivery", month=month)
 
 
@@ -2798,7 +2905,9 @@ def render_complaints_table(complaints):
 @ui.page("/complaints-ctrl")
 @require_roles("admin")
 async def complaints_ctrl_page():
-
+    logger.info(
+        "Accessing /complaints-ctrl page for user: %s", app.storage.user.get("name")
+    )
     render_topbar("Complaints Control Panel")
     complaints: list[dict] = []
     total_entries: int = 0
@@ -2816,7 +2925,7 @@ async def complaints_ctrl_page():
         complaints = []
         total_entries = 0
     except APIError as e:
-        print("ERROR ON DASHBOARD: ", str(e))
+        logger.exception("ERROR ON DASHBOARD", e)
         ui.notify("An Error Occured", type="negative")
         complaints = []
         total_entries = 0
@@ -2922,7 +3031,7 @@ async def complaints_ctrl_page():
                     ui.notify("Unable to connect to server", type="negative")
                     status_options_raw = []
                 except APIError as e:
-                    print("ERROR ON DASHBOARD: ", str(e))
+                    logger.exception("ERROR ON DASHBOARD", e)
                     ui.notify("An Error Occured", type="negative")
                     status_options_raw = []
 
@@ -2971,11 +3080,11 @@ async def complaints_ctrl_page():
                         ui.notify("Unable to update status", type="negative")
 
                     except APIError as e:
-                        print("UPDATE STATUS API ERROR:", e)
+                        logger.error("UPDATE STATUS API ERROR: %s", e, exc_info=True)
                         ui.notify("Failed to update status", type="negative")
 
                     except Exception as e:
-                        print("UPDATE STATUS ERROR:", e)
+                        logger.exception("UPDATE STATUS ERROR", e)
                         ui.notify("Something went wrong", type="negative")
 
                 ui.button("Update Status", on_click=update_status).classes(
@@ -3043,10 +3152,7 @@ async def complaints_ctrl_page():
                         )
 
                     except APIError as e:
-                        print(
-                            "SUBMIT REMARKS API ERROR:",
-                            e,
-                        )
+                        logger.error("SUBMIT REMARKS API ERROR: %s", e, exc_info=True)
 
                         ui.notify(
                             "Failed to submit remarks",
@@ -3054,10 +3160,7 @@ async def complaints_ctrl_page():
                         )
 
                     except Exception as e:
-                        print(
-                            "SUBMIT REMARKS ERROR:",
-                            e,
-                        )
+                        logger.exception("SUBMIT REMARKS ERROR:", e)
 
                         ui.notify(
                             "Something went wrong",
@@ -3082,11 +3185,11 @@ async def complaints_ctrl_page():
                     ui.notify("Unable to connect to server", type="negative")
                     flag_options_raw = []
                 except APIError as e:
-                    print("ERROR ON DASHBOARD: ", str(e))
+                    logger.exception("ERROR ON DASHBOARD", e)
                     ui.notify("An Error Occured", type="negative")
                     flag_options_raw = []
                 except Exception as exc:
-                    print("ERROR ON DASHBOARD: ", str(exc))
+                    logger.exception("ERROR ON DASHBOARD", exc)
                     ui.notify("An Error Occured", type="negative")
                     flag_options_raw = []
 
@@ -3110,20 +3213,14 @@ async def complaints_ctrl_page():
                         row = await get_selected_row()
 
                         if not row:
-                            ui.notify(
-                                "Select a complaint first",
-                                type="warning",
-                            )
+                            ui.notify("Select a complaint first", type="warning")
 
                             return
 
                         flag = flag_select.value
 
                         if not flag:
-                            ui.notify(
-                                "Select a flag",
-                                type="warning",
-                            )
+                            ui.notify("Select a flag", type="warning")
 
                             return
 
@@ -3135,43 +3232,24 @@ async def complaints_ctrl_page():
                             },
                         )
 
-                        ui.notify(
-                            "Flag updated",
-                            type="positive",
-                        )
+                        ui.notify("Flag updated", type="positive")
 
                     except UnauthorizedError:
                         await logout_user()
-
                         ui.notify(
-                            "Session expired. Please login again.",
-                            type="warning",
+                            "Session expired. Please login again.", type="warning"
                         )
-
                         ui.navigate.to("/login")
 
                     except ConnectionFailedError:
-                        ui.notify(
-                            "Unable to update flag",
-                            type="negative",
-                        )
+                        ui.notify("Unable to update flag", type="negative")
 
                     except APIError as e:
-                        print(
-                            "UPDATE FLAG API ERROR:",
-                            e,
-                        )
-
-                        ui.notify(
-                            "Failed to update flag",
-                            type="negative",
-                        )
+                        logger.error("UPDATE FLAG API ERROR: %s", e, exc_info=True)
+                        ui.notify("Failed to update flag", type="negative")
 
                     except Exception as e:
-                        print(
-                            "UPDATE FLAG ERROR:",
-                            e,
-                        )
+                        logger.exception("UPDATE FLAG ERROR:", e)
 
                         ui.notify(
                             "Something went wrong",
@@ -3200,7 +3278,9 @@ class ReportingState:
 @require_roles("admin", "client", "audit_assistant")
 @protected_page
 async def daily_reporting_page() -> None:
-
+    logger.info(
+        "Accessing /daily-reporting page for user: %s", app.storage.user.get("name")
+    )
     rstate = ReportingState()
     render_topbar("Daily Reporting")
 
@@ -3522,9 +3602,10 @@ async def daily_reporting_page() -> None:
                                                     )
 
                                                 except APIError as e:
-                                                    print(
-                                                        "TOGGLE RECEIVED API ERROR:",
+                                                    logger.error(
+                                                        "TOGGLE RECEIVED API ERROR: %s",
                                                         e,
+                                                        exc_info=True,
                                                     )
 
                                                     ui.notify(
@@ -3533,9 +3614,8 @@ async def daily_reporting_page() -> None:
                                                     )
 
                                                 except Exception as e:
-                                                    print(
-                                                        "TOGGLE RECEIVED ERROR:",
-                                                        e,
+                                                    logger.exception(
+                                                        "TOGGLE RECEIVED ERROR:", e
                                                     )
 
                                                     ui.notify(
@@ -3544,10 +3624,7 @@ async def daily_reporting_page() -> None:
                                                     )
 
                                             ui.checkbox(
-                                                value=row.get(
-                                                    "received",
-                                                    False,
-                                                ),
+                                                value=row.get("received", False),
                                                 on_change=toggle_received,
                                             )
 
@@ -3606,9 +3683,10 @@ async def daily_reporting_page() -> None:
                                                     )
 
                                                 except APIError as e:
-                                                    print(
-                                                        "TOGGLE OOS API ERROR:",
+                                                    logger.error(
+                                                        "TOGGLE OOS API ERROR: %s",
                                                         e,
+                                                        exc_info=True,
                                                     )
 
                                                     ui.notify(
@@ -3617,9 +3695,8 @@ async def daily_reporting_page() -> None:
                                                     )
 
                                                 except Exception as e:
-                                                    print(
-                                                        "TOGGLE OOS ERROR:",
-                                                        e,
+                                                    logger.exception(
+                                                        "TOGGLE OOS ERROR:", e
                                                     )
 
                                                     ui.notify(
@@ -3680,18 +3757,18 @@ async def daily_reporting_page() -> None:
                                                         "Some Error Occured.",
                                                         type="negative",
                                                     )
-                                                    print(
-                                                        "ERROR OCCURED WHILE APPROVING: ",
-                                                        str(exc),
+                                                    logger.error(
+                                                        "ERROR OCCURRED WHILE APPROVING: %s",
+                                                        exc,
+                                                        exc_info=True,
                                                     )
                                                 except Exception as e:
                                                     ui.notify(
                                                         "Some Error Occured.",
                                                         type="negative",
                                                     )
-                                                    print(
-                                                        "ERROR OCCURED WHILE APPROVING: ",
-                                                        str(e),
+                                                    logger.exception(
+                                                        "ERROR OCCURRED WHILE APPROVING"
                                                     )
 
                                             ui.checkbox(
@@ -3710,8 +3787,7 @@ async def daily_reporting_page() -> None:
                                                 reason_input = (
                                                     ui.input(
                                                         value=row.get(
-                                                            "rejection_reason",
-                                                            "",
+                                                            "rejection_reason", ""
                                                         ),
                                                         placeholder="Reason",
                                                     )
@@ -3761,18 +3837,18 @@ async def daily_reporting_page() -> None:
                                                             "Some Error Occured.",
                                                             type="negative",
                                                         )
-                                                        print(
-                                                            "ERROR OCCURED WHILE APPROVING: ",
-                                                            str(exc),
+                                                        logger.error(
+                                                            "ERROR OCCURRED WHILE APPROVING: %s",
+                                                            exc,
+                                                            exc_info=True,
                                                         )
                                                     except Exception as e:
                                                         ui.notify(
                                                             "Some Error Occured.",
                                                             type="negative",
                                                         )
-                                                        print(
-                                                            "ERROR OCCURED WHILE APPROVING: ",
-                                                            str(e),
+                                                        logger.exception(
+                                                            "ERROR OCCURRED WHILE APPROVING"
                                                         )
 
                                                 ui.checkbox(
@@ -3839,18 +3915,18 @@ async def daily_reporting_page() -> None:
                                                         "Some Error Occured.",
                                                         type="negative",
                                                     )
-                                                    print(
-                                                        "ERROR OCCURED WHILE APPROVING: ",
-                                                        str(exc),
+                                                    logger.error(
+                                                        "ERROR OCCURRED WHILE APPROVING: %s",
+                                                        exc,
+                                                        exc_info=True,
                                                     )
                                                 except Exception as e:
                                                     ui.notify(
                                                         "Some Error Occured.",
                                                         type="negative",
                                                     )
-                                                    print(
-                                                        "ERROR OCCURED WHILE APPROVING: ",
-                                                        str(e),
+                                                    logger.exception(
+                                                        "ERROR OCCURRED WHILE APPROVING"
                                                     )
 
                                             ui.checkbox(
@@ -3938,19 +4014,15 @@ async def daily_reporting_page() -> None:
                             "Some Error Occured.",
                             type="negative",
                         )
-                        print(
-                            "ERROR OCCURED WHILE APPROVING: ",
-                            str(exc),
+                        logger.error(
+                            "ERROR OCCURRED WHILE APPROVING: %s", exc, exc_info=True
                         )
                     except Exception as e:
                         ui.notify(
                             "Some Error Occured.",
                             type="negative",
                         )
-                        print(
-                            "ERROR OCCURED WHILE APPROVING: ",
-                            str(e),
-                        )
+                        logger.exception("ERROR OCCURRED WHILE APPROVING", e)
 
                 ui.button(
                     "Delete Selected",
@@ -4206,12 +4278,12 @@ async def daily_reporting_page() -> None:
             rows = []
 
         except APIError as e:
-            print("MIS DETAILS API ERROR:", e)
+            logger.error("MIS DETAILS API ERROR: %s", e, exc_info=True)
             ui.notify("Failed to load report details", type="negative")
             rows = []
 
         except Exception as e:
-            print("ERROR: While Loading EBD data", e)
+            logger.exception("ERROR: While Loading EBD data")
             ui.notify("Something went wrong", type="negative")
             rows = []
 
@@ -4753,11 +4825,11 @@ async def daily_reporting_page() -> None:
             ui.notify("Unable to load report", type="negative")
 
         except APIError as e:
-            print("DAILY REPORT API ERROR:", e)
+            logger.error("DAILY REPORT API ERROR: %s", e, exc_info=True)
             ui.notify("Failed to load report", type="negative")
 
         except Exception as e:
-            print("LOAD DAILY REPORT ERROR:", e)
+            logger.exception("LOAD DAILY REPORT ERROR %s", str(e))
             ui.notify("Something went wrong", type="negative")
 
     async def reload_current_range():
@@ -4782,7 +4854,7 @@ async def daily_reporting_page() -> None:
 
             elif rstate.selected_dealer:
                 params["dealership_id"] = rstate.selected_dealer
-
+            print(json.dumps(params, indent=2))
             # DOWNLOAD REQUEST
             response = await http_client.get(
                 f"{BASE_URL}/reports/daily",
@@ -4829,58 +4901,12 @@ async def daily_reporting_page() -> None:
             ui.notify("Download timed out", type="negative")
 
         except httpx.HTTPStatusError as e:
-            print("DOWNLOAD REPORT HTTP ERROR:", e)
+            logger.error("DOWNLOAD REPORT HTTP ERROR: %s", e, exc_info=True)
             ui.notify(f"Download failed: {e.response.status_code}", type="negative")
 
         except Exception as e:
-            print("DOWNLOAD REPORT ERROR:", e)
+            logger.exception("DOWNLOAD REPORT ERROR %s", str(e))
             ui.notify("Download failed", type="negative")
-
-    # async def download_report():
-    #     try:
-    #         if not rstate.selected_dealer and not rstate.selected_outlet:
-    #             ui.notify("Select atleast a dealership or a showroom.", type="info")
-    #             return
-
-    #         params = {
-    #             "start_date": rstate.report_from,
-    #             "end_date": rstate.report_to,
-    #         }
-    #         if rstate.selected_outlet:
-    #             params["outlet_id"] = rstate.selected_outlet
-
-    #         elif rstate.selected_dealer:
-    #             params["dealership_id"] = rstate.selected_dealer
-
-    #         async with httpx.AsyncClient() as client:
-    #             response = await client.get(
-    #                 f"{BASE_URL}/reports/daily",
-    #                 headers=get_auth_headers(),
-    #                 params=params,
-    #                 timeout=60,
-    #             )
-    #             response.raise_for_status()
-    #             filename = "daily-report.xlsx"
-    #             content_disposition = response.headers.get("Content-Disposition")
-    #             if content_disposition and "filename=" in content_disposition:
-    #                 filename = (
-    #                     content_disposition.split("filename=")[-1]
-    #                     .replace('"', "")
-    #                     .strip()
-    #                 )
-    #             ui.download(
-    #                 src=response.content,
-    #                 filename=filename,
-    #             )
-    #             ui.notify(
-    #                 "Report downloaded successfully",
-    #                 type="positive",
-    #             )
-    #     except Exception as e:
-    #         ui.notify(
-    #             f"Download failed: {str(e)}",
-    #             type="negative",
-    #         )
 
     # Page layout
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -5041,10 +5067,7 @@ async def daily_reporting_page() -> None:
                         )
 
                         to_inp = (
-                            ui.input(
-                                label="",
-                                value=today_str,
-                            )
+                            ui.input(label="", value=today_str)
                             .props('type="date" outlined dense')
                             .classes("w-36")
                         )
@@ -5110,19 +5133,10 @@ async def daily_reporting_page() -> None:
                     try:
                         status_label.text = "Uploading..."
                         status_label.classes("text-blue-500")
-                        payload = {
-                            "outlet_id": rstate.outlet_select.value,  # temporarily make it 1 change it later
-                        }
-                        response = await api_post_file(
-                            "/mis/upload-ebd",
-                            e,
-                            payload,
-                        )
+                        payload = {"outlet_id": rstate.outlet_select.value}
+                        response = await api_post_file("/mis/upload-ebd", e, payload)
 
-                        created = response.get(
-                            "records_created",
-                            0,
-                        )
+                        created = response.get("records_created", 0)
 
                         status_label.text = f"✅ Upload successful ({created} records)"
                         status_label.classes("text-green-600")
@@ -5132,7 +5146,7 @@ async def daily_reporting_page() -> None:
                         ui.navigate.to("/login")
 
                     except APIError as ex:
-                        print("Error While EBD UPLOADING: ", str(ex))
+                        logger.error("Error While EBD UPLOADING: %s", ex, exc_info=True)
                         if "500" in str(ex).strip():
                             status_label.text = "❌ Server Side Error Contact Admin"
                         elif "422" in str(ex).strip():
@@ -5232,6 +5246,7 @@ class SettingsState:
 @ui.page("/settings")
 @require_roles("admin")
 async def settings_page():
+    logger.info("Accessing /settings page for user: %s", app.storage.user.get("name"))
     sstate = SettingsState()
 
     def get_id_by_name(items: list[dict], name: str) -> int | None:
@@ -5394,11 +5409,13 @@ async def settings_page():
                                 ui.notify("Server unreachable", type="negative")
 
                             except APIError as e:
-                                print("USER REGISTRATION API ERROR:", e)
+                                logger.error(
+                                    "USER REGISTRATION API ERROR: %s", e, exc_info=True
+                                )
                                 ui.notify(str(e), type="negative")
 
                             except Exception as e:
-                                print("USER REGISTRATION ERROR:", e)
+                                logger.exception("USER REGISTRATION ERROR %s", str(e))
                                 ui.notify("Something went wrong", type="negative")
 
                         ui.button("Create User", on_click=handle_register).classes(
@@ -5449,12 +5466,12 @@ async def settings_page():
             ui.notify("Unable to connect to the server", type="negative")
             users = []
         except APIError as exc:
-            print("ERROR FETCHING USERS:", exc)
+            logger.error("ERROR FETCHING USERS: %s", exc, exc_info=True)
             ui.notify(str(exc), type="negative")
             users = []
 
         except Exception as e:
-            print("ERROR FETCHING USERS:", e)
+            logger.exception("ERROR FETCHING USERS")
             ui.notify(str(e), type="negative")
             users = []
 
@@ -5620,7 +5637,7 @@ async def settings_page():
                         )
 
                     except APIError as e:
-                        print("LOAD TRANSACTION API ERROR:", e)
+                        logger.error("LOAD TRANSACTION API ERROR: %s", e, exc_info=True)
                         ui.notify("Failed to load transaction", type="negative")
                     except Exception as ex:
                         status_label.text = f"❌ {str(ex)}"
@@ -5675,11 +5692,11 @@ async def settings_page():
                     ui.notify("Unable to load transaction", type="negative")
 
                 except APIError as e:
-                    print("LOAD TRANSACTION API ERROR:", e)
+                    logger.error("LOAD TRANSACTION API ERROR: %s", e, exc_info=True)
                     ui.notify("Failed to load transaction", type="negative")
 
                 except Exception as e:
-                    print("LOAD TRANSACTION ERROR:", e)
+                    logger.exception("LOAD TRANSACTION ERROR %s", str(e))
                     ui.notify("Something went wrong", type="negative")
 
             ui.button("Create Dealership", on_click=create_dealership).classes(
@@ -5734,11 +5751,11 @@ async def settings_page():
                     ui.notify("Unable to load transaction", type="negative")
 
                 except APIError as e:
-                    print("LOAD TRANSACTION API ERROR:", e)
+                    logger.error("LOAD TRANSACTION API ERROR: %s", e, exc_info=True)
                     ui.notify("Failed to load transaction", type="negative")
 
                 except Exception as e:
-                    print("LOAD TRANSACTION ERROR:", e)
+                    logger.exception("LOAD TRANSACTION ERROR %s", str(e))
                     ui.notify("Something went wrong", type="negative")
 
             ui.button("Create Outlet", on_click=create_outlet).classes(
@@ -5797,11 +5814,11 @@ async def settings_page():
                     ui.notify("Unable to load transaction", type="negative")
 
                 except APIError as e:
-                    print("LOAD TRANSACTION API ERROR:", e)
+                    logger.error("LOAD TRANSACTION API ERROR: %s", e, exc_info=True)
                     ui.notify("Failed to load transaction", type="negative")
 
                 except Exception as e:
-                    print("LOAD TRANSACTION ERROR:", e)
+                    logger.exception("LOAD TRANSACTION ERROR %s", str(e))
                     ui.notify("Something went wrong", type="negative")
 
             ui.button("Create Employee", on_click=create_employee).classes(
@@ -5819,6 +5836,8 @@ class FormController:
         await self.load_transaction_if_needed()
 
         self.build_form()
+
+        add_payment_row(self.state)
 
         if self.state.transaction_data:
             await self.hydrate_form()
@@ -5864,11 +5883,11 @@ class FormController:
             ui.notify("Unable to load transaction", type="negative")
 
         except APIError as e:
-            print("LOAD TRANSACTION API ERROR:", e)
+            logger.error("LOAD TRANSACTION API ERROR: %s", e, exc_info=True)
             ui.notify("Failed to load transaction", type="negative")
 
         except Exception as e:
-            print("LOAD TRANSACTION ERROR:", e)
+            logger.exception("LOAD TRANSACTION ERROR %s", str(e))
             ui.notify("Something went wrong", type="negative")
 
     def build_form(self):
@@ -5995,13 +6014,23 @@ class FormState:
         self.discount_match_toggles = {}
         self.discount_given_labels = {}  # already used elsewhere
 
+        # Payments Sections state vars
+        # Receipt Payments
+        self.receipt_payments_container = None
+        self.receipt_payments = []
+        self.receipt_total_label = None
+        self.add_receipt_payment_btn = None
+
+        # Ledger Payments
+        self.ledger_payments_container = None
+        self.ledger_payments = []
+        self.ledger_total_label = None
+        self.add_ledger_payment_btn = None
+
         # Customer Ledger vars
         self.total_receivable: ui.label | None = None
         self.total_received: ui.label | None = None
         self.balance_amount: ui.label | None = None
-        self.ledger_adjustment: ui.input | None = None
-        self.ledger_adjustment_remarks: ui.input | None = None
-        self.adjustment_type: ui.select | str = ""
 
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
@@ -6025,7 +6054,7 @@ class FormState:
         self.invoice_cess: ui.input | None = None
         self.invoice_total: ui.input | None = None
 
-        # Payment Section
+        # Payment Section (KEEP THS FOR BACKWARDS COMPATIBILITY)
         self.payment_cash: ui.input | None = None
         self.payment_bank: ui.input | None = None
         self.payment_finance: ui.input | None = None
@@ -6041,20 +6070,38 @@ class FormState:
         self.price_match_toggles: dict[str, ui.switch] = {}
         self.price_diff_labels: dict[str, ui.label] = {}
         self.discount_match_toggles: dict[str, ui.switch] = {}  # Not required now
-        self.lbl_excess_discount: ui.label | None = None
 
         # Live calc labels
-        self.lbl_allowed_lv: ui.label | None = None
-        self.lbl_discount_lv: ui.label | None = None
-        self.lbl_excess_lv: ui.label | None = None
-        self.total_given: ui.label | None = None
-        self.total_allowed: ui.label | None = None
+        self.lbl_total_booking_price: ui.label | None = None
         self.lbl_total_listed_price: ui.label | None = None  # a
         self.lbl_total_offered_price: ui.label | None = None  # b
         self.lbl_total_diff_price: ui.label | None = None  # = a-b
-        self.lbl_total_listed_discount: ui.label | None = None
 
+        ## Total of Discount Row
+        self.lbl_total_allowed_discount: ui.label | None = None
+        self.lbl_total_booking_discount: ui.label | None = None
+        self.lbl_total_of_discount: ui.label | None = None
+        self.lbl_total_diff_discount: ui.label | None = None
+
+        ## Net Price Row
+        self.lbl_net_price_allowed: ui.label | None = None
+        self.lbl_net_price_booking: ui.label | None = None
+        self.lbl_net_price_charged: ui.label | None = None
+        self.lbl_net_price_diff: ui.label | None = None
+
+        ## Discount Summary Row
+        self.total_given: ui.label | None = None
+        self.total_allowed: ui.label | None = None
+
+        ## Excess Discount Row
+        self.lbl_excess_discount: ui.label | None = None
+
+        ## Live bar labels
+        self.lbl_allowed_lv: ui.label | None = None
+        self.lbl_discount_lv: ui.label | None = None
+        self.lbl_excess_lv: ui.label | None = None
         # new one
+
         self.discount_given_labels: ui.label | dict = {}
         self.discount_diff_labels: ui.label | dict = {}
         self.adjustment_input: ui.input | None = None
@@ -6132,8 +6179,6 @@ class FormState:
             return False, "Customer PIN Code is required."
         if not self.variant_id:
             return False, "Please select a Car and Variant."
-        # if not self.complainant_remarks or not self.complainant_remarks.value:
-        #     return False, "Complainant's Remarks are required."
 
         return True, ""
 
@@ -6551,12 +6596,11 @@ async def resolve_form_mode(
         ui.notify("Unable to load transaction", type="negative")
 
     except APIError as e:
-        print("RESOLVE FORM MODE API ERROR:", e)
-
+        logger.error("RESOLVE FORM MODE API ERROR: %s", e, exc_info=True)
         ui.notify("Failed to load transaction", type="negative")
 
     except Exception as e:
-        print("RESOLVE FORM MODE ERROR:", e)
+        logger.exception("RESOLVE FORM MODE ERROR %s", str(e))
         ui.notify("Something went wrong", type="negative")
 
     return None
@@ -6581,18 +6625,12 @@ async def hydrate_vehicle_section(
         # CAR
         if car_id:
             state.car_select.set_value(car_id)
-
             # IMPORTANT
-            await _fs_on_car_change(
-                car_id,
-                state,
-                preserve_variant=True,
-            )
+            await _fs_on_car_change(car_id, state, preserve_variant=True)
 
         # VARIANT
         if variant_id:
             state.variant_select.set_value(variant_id)
-
             state.variant_id = variant_id
 
         # OUTLET
@@ -6986,9 +7024,7 @@ def build_prices_section(state: FormState) -> None:
     with ui.card().classes("w-full rounded-xl shadow-sm mb-4"):
         with ui.column().classes("w-full gap-0 p-5"):
             # CARD HEADER
-            with ui.row().classes(
-                "w-full items-center gap-2 pb-3 border-b border-gray-100 flex-nowrap"
-            ):
+            with ui.row().classes("w-full items-center gap-2 flex-nowrap"):
                 # Header
                 _section_header(
                     emoji="💲",
@@ -7012,7 +7048,7 @@ def build_prices_section(state: FormState) -> None:
 
             # SECTION 1 — PRICE CHARGED AS PER BOOKS
             ui.label("Price charged as per books of accounts").classes(
-                "text-[14px] font-semibold tracking-[0.9px] uppercase text-black mt-4 mb-1"
+                "text-[14px] font-semibold tracking-[0.9px] uppercase text-black mb-1"
             )
 
             if not price_comps:
@@ -7078,25 +7114,26 @@ def build_prices_section(state: FormState) -> None:
                         state.price_diff_labels[name] = diff_lbl
 
             with ui.row().classes(
-                "w-full items-center gap-3 mt-3 pt-3 border-t-2 border-gray-200"
+                "w-full items-center gap-3 pt-2 border-t-2 border-gray-200"
             ):
-                ui.label("Total on-road price").classes(
+                ui.label("On-road price").classes(
                     "text-[14px] font-bold uppercase tracking-wide text-gray-700 flex-1"
                 )
                 with ui.row().classes("items-baseline gap-1"):
-                    ui.label("Listed").classes("text-[13px] text-black text-left")
                     state.lbl_total_listed_price = ui.label("₹—").classes(
                         "text-[15px] font-mono text-black-500 w-28 text-right"
                     )
-                ui.element("div").classes("w-20")
+                if is_delivery and not is_direct:
+                    with ui.row().classes("items-baseline gap-1"):
+                        state.lbl_total_booking_price = ui.label("₹—").classes(
+                            "text-[15px] font-mono text-blue-500 w-28 text-right"
+                        )
+                ui.element("div").classes("w-30")
                 with ui.row().classes("items-baseline gap-1"):
-                    ui.label("Charged").classes("text-[13px] text-black text-left")
                     state.lbl_total_charged_price = ui.label("₹—").classes(
                         "text-[15px] font-mono font-semibold text-black w-28 text-right"
                     )
-                # ui.element("div").classes("w-20")
                 with ui.row().classes("items-baseline gap-1"):
-                    ui.label("Diff").classes("text-[10px] text-black text-left")
                     state.lbl_total_diff_price = ui.label("₹—").classes(
                         "text-[15px] font-mono w-20 text-right text-black"
                     )
@@ -7111,119 +7148,13 @@ def build_prices_section(state: FormState) -> None:
             ui.label("Discounts offered as per books of accounts").classes(
                 "text-[14px] font-bold tracking-[0.9px] uppercase text-black mt-6 mb-1"
             )
-
-            #  [A] Non-direct delivery: show booking-time discounts read-only
-            # Auditors need to see what was agreed at booking without being able
-            # to accidentally edit it during the delivery audit.
-            if is_delivery or is_direct:
-                booking_disc_map: dict = {}
-                if booking_data:
-                    # Pull Discount actuals from booking data.
-                    for raw_k, raw_v in booking_data.items():
-                        if raw_v is None:
-                            continue
-                        clean = raw_k.replace("_actual", "").strip()
-                        # only keep keys that match a discount component name
-                        for dc in discount_comps:
-                            if dc["name"].lower() == clean.lower() or re.sub(
-                                r"[^a-z0-9]", "", dc["name"].lower()
-                            ) == re.sub(r"[^a-z0-9]", "", clean.lower()):
-                                booking_disc_map[dc["name"]] = raw_v
-                                break
-
-                state.booking_discounts_actuals = booking_disc_map
-
-                with ui.element("div").classes(
-                    "w-full rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 mb-3"
-                ):
-                    ui.label("Discounts at time of booking").classes(
-                        "text-[10px] font-bold uppercase tracking-wide text-blue-500 mb-2"
-                    )
-                    #  Price component differences (actual - allowed)
-                    price_component_diff_total = 0
-
-                    for comp in price_comps:
-                        comp_name = comp["name"]
-
-                        actual_val = float(booking_data.get(f"{comp_name}_actual") or 0)
-
-                        allowed_val = float(
-                            booking_data.get(f"{comp_name}_allowed") or 0
-                        )
-                        diff = allowed_val - actual_val
-
-                        # only count excess charged amount
-                        if diff > 0:
-                            price_component_diff_total += diff
-
-                    # merge discount_booking into map (without mutating original)
-                    booking_disc_map_ui = dict(booking_disc_map or {})
-                    # Other Discount
-                    discount_booking_val = int(
-                        booking_data.get("discount_booking") or 0
-                    )
-
-                    if discount_booking_val:
-                        booking_disc_map_ui["Other Discount"] = discount_booking_val
-                    # Differences
-                    if price_component_diff_total > 0:
-                        booking_disc_map_ui["Price Difference"] = (
-                            price_component_diff_total
-                        )
-                    # Adjustment
-                    adjustment_booking_val = int(
-                        booking_data.get("adjustment_booking") or 0
-                    )
-
-                    if adjustment_booking_val:
-                        booking_disc_map_ui["Adjustment"] = -adjustment_booking_val
-
-                    if booking_disc_map_ui:
-                        for disc_name, disc_val in booking_disc_map_ui.items():
-                            cond_key = _condition_badge(disc_name, conditions)
-                            with ui.row().classes(
-                                "w-full items-center py-1 border-b border-blue-100"
-                            ):
-                                with ui.row().classes(
-                                    "flex-1 items-center gap-2 min-w-0"
-                                ):
-                                    ui.label(disc_name).classes(
-                                        "text-[13px] text-blue-800 truncate"
-                                    )
-                                    if cond_key:
-                                        ui.badge(
-                                            cond_key.replace("_", "").title()
-                                        ).props("outline").classes(
-                                            "text-[9px] shrink-0 text-blue-600"
-                                        )
-                                    with ui.element("div").classes(
-                                        "flex-1 flex justify-end"
-                                    ):
-                                        ui.label(f"₹{int(disc_val):,}").classes(
-                                            "text-[13px] font-mono font-semibold text-blue-700 w-24 text-right"
-                                        )
-
-                        # total INCLUDING booking file discount
-                        booking_disc_total = sum(
-                            int(v or 0) for v in booking_disc_map_ui.values()
-                        )
-                        with ui.row().classes("w-full items-center pt-2 mt-1"):
-                            ui.label("Total booking discount").classes(
-                                "flex-1 text-[12px] font-bold text-blue-700 uppercase tracking-wide"
-                            )
-                            ui.label(f"₹{booking_disc_total:,}").classes(
-                                "text-[14px] font-mono font-bold text-blue-700 w-28 text-right"
-                            )
-                    else:
-                        ui.label("No discount data from booking.").classes(
-                            "text-[12px] text-blue-400 italic"
-                        )
-
             with ui.row().classes(
                 "w-full items-center gap-2 py-1 border-b border-gray-200 mt-2"
             ):
                 ui.label("Particular").classes(f"{_HDR} flex-1 text-left")
                 ui.label("Allowed").classes(f"{_HDR} w-28")
+                if is_delivery and not is_direct:
+                    ui.label("Booking").classes(f"{_HDR} w-28")
                 ui.label("Match").classes(f"{_HDR} w-20 text-center")
                 ui.label("Given").classes(f"{_HDR} w-36")
                 ui.label("Difference").classes(f"{_HDR} w-24")
@@ -7255,12 +7186,18 @@ def build_prices_section(state: FormState) -> None:
                     allowed_lbl = ui.label("₹—").classes(f"{_MONO} w-28")
                     state.discount_listed_labels[name] = allowed_lbl
 
+                    # Booking Discount
+                    if is_delivery and not is_direct:
+                        bk_val = booking_actual_map.get(name)
+                        bk_txt = format_num_inr(bk_val) if bk_val is not None else "—"
+                        ui.label(f"₹{bk_txt}").classes(f"{_MONO} w-28 text-blue-400")
+
                     # Match toggle
                     with ui.element("div").classes("w-20 flex justify-center"):
                         toggle = ui.switch("").props("dense color=green").classes("m-0")
                         state.discount_match_toggles[name] = toggle
 
-                    # Given input
+                    # Given
                     inp = accounting_input(
                         "", placeholder="₹0", container_classes="w-36"
                     ).props("dense")
@@ -7268,7 +7205,7 @@ def build_prices_section(state: FormState) -> None:
 
                     # Difference
                     diff_lbl = ui.label("—").classes(
-                        "text-[11px] font-mono w-24 text-right text-gray-400"
+                        "text-[11px] font-mono w-24 text-center text-gray-400"
                     )
                     state.discount_diff_labels[name] = diff_lbl
 
@@ -7299,7 +7236,65 @@ def build_prices_section(state: FormState) -> None:
 
                 ui.element("div").classes("w-25")
 
-            # [D] Adjustment Row
+            # [E] Total Discount
+            with ui.row().classes(
+                "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
+            ):
+                ui.label("Total of Discount").classes(f"{_LABEL} flex-1 font-medium")
+
+                # Allowed Total
+                state.lbl_total_allowed_discount = ui.label("₹0").classes(
+                    "text-[16px] w-36 font-bold text-right"
+                )
+
+                # Booking Total
+                if is_delivery and not is_direct:
+                    state.lbl_total_booking_discount = ui.label("₹0").classes(
+                        "text-[16px] w-36 font-bold text-right"
+                    )
+
+                # Match column spacer
+                ui.element("div").classes("w-20")
+
+                # Given Total
+                state.lbl_total_of_discount = ui.label("₹0").classes(
+                    "text-[16px] w-36 font-bold text-right"
+                )
+
+                # Difference Total
+                state.lbl_total_diff_discount = ui.label("₹0").classes(
+                    "text-[16px] w-24 font-bold text-right text-gray-600"
+                )
+            with ui.row().classes(
+                "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
+            ):
+                ui.label("Net Price").classes(f"{_LABEL} flex-1 font-medium")
+
+                # Allowed Net Price
+                state.lbl_net_price_allowed = ui.label("₹0").classes(
+                    f"{_MONO} w-28 font-bold text-right"
+                )
+
+                # Booking Net Price
+                if is_delivery and not is_direct:
+                    state.lbl_net_price_booking = ui.label("₹0").classes(
+                        f"{_MONO} w-28 font-bold text-blue-500 text-right"
+                    )
+
+                # Match column spacer
+                ui.element("div").classes("w-20")
+
+                # Given Net Price
+                state.lbl_net_price_charged = ui.label("₹0").classes(
+                    "text-[16px] w-36 font-bold text-right"
+                )
+
+                # Difference
+                state.lbl_net_price_diff = ui.label("₹0").classes(
+                    "text-[16px] w-24 font-bold text-right text-gray-600"
+                )
+
+            # [F] Adjustment Row
             with ui.row().classes(
                 "w-full items-center gap-2 py-2.5 border-b border-dashed border-gray-200 mt-2"
             ):
@@ -7377,7 +7372,7 @@ def build_accessories_section(state: FormState) -> None:
                 state.accessory_map.get(int(i), {}).get("listed_price", 0)
                 for i in selected
             )
-            state.acc_total_label.set_text(f"Total: ₹{total:,}")
+            state.acc_total_label.set_text(f"Total: ₹{format_num_inr(total)}")
 
             # auto-fill charged if empty
             if not state.acc_charged.value:
@@ -7680,6 +7675,60 @@ def build_invoice_section(state: FormState) -> None:
                 state.invoice_cess = accounting_input(label_text="CESS")
 
 
+def build_payment_subsection(state, title, container_attr, total_attr, add_btn_attr):
+    with ui.column().classes("w-full gap-2"):
+        ui.label(title).classes("text-[14px] font-semibold text-gray-700")
+
+        container = ui.element("div").classes("w-full")
+        setattr(state, container_attr, container)
+
+        # Total aligned under Amount column
+        with ui.row().classes("w-full justify-end"):
+            total = ui.label("Total: ₹ 0").classes(
+                "w-56 text-right text-base font-bold"
+            )
+            # reserve space for delete button column
+            ui.element("div").classes("w-10")
+        setattr(state, total_attr, total)
+        with ui.row().classes("w-full justify-center"):
+            btn = (
+                ui.button("Add Payment", icon="add")
+                .props("outline")
+                .classes("rounded-lg px-5")
+            )
+        setattr(state, add_btn_attr, btn)
+
+
+def build_payment_section(state):
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        _section_header(
+            emoji="💳",
+            title="Payment Received",
+            subtitle="Capture all payment sources",
+            icon_bg="bg-green-50",
+        )
+
+        build_payment_subsection(
+            state,
+            "Payment as per Receipts",
+            "receipt_payments_container",
+            "receipt_total_label",
+            "add_receipt_payment_btn",
+        )
+
+        ui.separator().classes("my-4")
+
+        build_payment_subsection(
+            state,
+            "Payment as per Customer Ledger",
+            "ledger_payments_container",
+            "ledger_total_label",
+            "add_ledger_payment_btn",
+        )
+
+
 def _ledger_value(text: str, value: str = "₹ 0") -> ui.column:
     with (
         ui.column()
@@ -7695,115 +7744,60 @@ def _ledger_value(text: str, value: str = "₹ 0") -> ui.column:
     return col
 
 
-def build_payment_section(state: FormState) -> None:
-    with ui.card().classes(
-        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
-    ):
-        # Header
-        with ui.row().classes(
-            "w-full items-center justify-between mb-5 pb-3 border-b border-gray-100"
-        ):
-            with ui.row().classes("items-center gap-3"):
-                with ui.element("div").classes(
-                    "w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center"
-                ):
-                    ui.label("💳").classes("text-[18px]")
-
-                with ui.column().classes("gap-0"):
-                    ui.label("Payment Received").classes(
-                        "text-[16px] font-bold text-gray-900"
-                    )
-                    ui.label("Capture all payment sources").classes(
-                        "text-[12px] text-gray-500"
-                    )
-
-        # Inputs
-        with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-4"):
-            state.payment_cash = accounting_input("Cash Payment")
-            state.payment_bank = accounting_input("Bank Payment")
-            state.payment_finance = accounting_input("Finance")
-            state.payment_exchange = accounting_input("Exchange")
-
-
 def build_ledger_section(state: FormState) -> None:
 
     with ui.card().classes(
         "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
     ):
-        # Header
         _section_header(
             emoji="📒",
             title="Ledger Summary",
             subtitle="Real-time payment overview",
-            icon_bg="bg-blue-50",
+            icon_bg="bg-yellow-50",
         )
 
         # Summary Cards
-        with ui.grid(columns=3).classes("w-full gap-4 mb-5"):
+        with ui.grid(columns=4).classes("w-full gap-4 mb-5"):
             total_receivable_card = _ledger_value("Total Receivable")
             total_received_card = _ledger_value("Total Received")
-            balance_card = _ledger_value("Balance Amount")
+            balance_card = _ledger_value("Balance as per Customer Ledger")
+            variation_card = _ledger_value("Variation")
 
             state.total_receivable = total_receivable_card.value_label
             state.total_received = total_received_card.value_label
             state.balance_amount = balance_card.value_label
-
-        # Adjustment Section
-        with ui.column().classes(
-            "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-4"
+            state.ledger_variation = variation_card.value_label
+        # Reconciliation Section
+        with ui.card().classes(
+            """
+            shadow-none
+            border
+            border-gray-100
+            bg-gray-50
+            rounded-xl
+            p-4
+            """
         ):
-            with ui.row().classes("items-center justify-between w-full"):
-                with ui.column().classes("gap-0"):
-                    ui.label("Ledger Adjustment").classes(
-                        "text-[13px] font-semibold text-gray-700"
-                    )
+            ui.label("Balance").classes("text-base font-bold text-gray-700 mb-3")
 
-                    ui.label("Apply manual debit or credit adjustments").classes(
-                        "text-[12px] text-gray-500"
-                    )
-
-            with ui.grid(columns=3).classes("w-full gap-4 items-start"):
-                # Positive / Negative
-                with ui.column().classes("gap-1"):
-                    ui.label("Adjustment Type").classes(
-                        "text-[12px] font-semibold text-gray-700 ml-1"
-                    )
-
-                    state.adjustment_type = (
-                        ui.select(
-                            {
-                                "positive": "➕ Positive",
-                                "negative": "➖ Negative",
-                            },
-                            value="negative",
-                        )
-                        .props("outlined")
-                        .classes("w-full")
-                    )
-
-                # Amount
-                with ui.column().classes("gap-1"):
-                    ui.label("Adjustment Amount").classes(
-                        "text-[12px] font-semibold text-gray-700 ml-1"
-                    )
-                    state.ledger_adjustment = accounting_input(
-                        "Adjustment Amount",
-                        placeholder="Enter adjustment amount",
-                        container_classes="w-full",
-                    )
-                    state.ledger_adjustment.props("style='min-height:46px'")
-
-                # Remarks
-                with ui.column().classes("gap-1 w-full"):
-                    ui.label("Remarks / Reason").classes(
-                        "text-[12px] font-semibold text-gray-700 ml-1"
-                    )
-
-                    state.ledger_adjustment_remarks = (
-                        ui.textarea(placeholder=("Explain reason for adjustment..."))
-                        .classes("w-full")
-                        .props("outlined rows=2")
-                    )
+            with ui.grid(columns=2).classes("w-full gap-4 items-start"):
+                state.ledger_variation = accounting_input(
+                    label_text="", placeholder="₹ 0", compact=True
+                ).classes(
+                    """
+                        text-[20px]
+                        font-bold
+                        text-primary
+                        min-h-[50px]
+                        flex
+                        items-center
+                        p-3
+                        border
+                        border-gray-200
+                        rounded-lg
+                        bg-white
+                        """
+                )
 
 
 # Internal CSS helpers
@@ -7968,6 +7962,7 @@ def handle_price_toggle(
 
     if toggle.value:
         src_val = state.listed_prices.get(name, 0)
+
         inp.set_value(format_num_inr(src_val))
         inp.set_enabled(False)
 
@@ -7998,6 +7993,296 @@ def handle_discount_toggle(
         inp.set_value(None)
 
     _fs_update_live(state)
+
+
+def _update_payment_total(payment_entries: list, total_label):
+    total = 0
+    for payment in payment_entries:
+        try:
+            total += parse_num(payment["amount"].value or "0")
+        except Exception:
+            pass
+    total_label.set_text(f"Total: ₹ {format_num_inr(total)}")
+
+
+def add_payment_row(
+    state: FormState,
+    container,
+    payment_entries: list,
+    total_label,
+    payment_data: dict | None = None,
+):
+
+    payment = {}
+
+    with container:
+        with ui.element("div").classes("w-full rounded-xl") as payment_card:
+            with ui.row().classes("w-full items-center flex-nowrap gap-3"):
+                # Date
+                payment["date"] = (
+                    ui.input("Date").props("type=date outlined dense").classes("w-44")
+                )
+
+                # Source
+                payment["source"] = (
+                    ui.toggle(
+                        {
+                            "Cash": "💵 Cash",
+                            "Bank": "🏦 Bank",
+                            "Finance": "📄 Finance",
+                            "Exchange": "🔄 Exchange",
+                        },
+                        value="Cash",
+                    )
+                    .props("elevated dense")
+                    .classes("payment-toggle normal-case shrink-0")
+                )
+
+                # Instrument
+                payment["receipt"] = (
+                    ui.input(
+                        label="Instrument Number",
+                        placeholder="Enter instrument number",
+                    )
+                    .props("outlined dense")
+                    .classes("flex-grow")
+                )
+
+                payment["receipt"].style("min-height:50px")
+
+                # Amount
+                payment["amount"] = accounting_input(
+                    label_text="Amount",
+                    placeholder="₹0",
+                    container_classes="w-56 shrink-0",
+                    compact=True,
+                )
+
+                payment["amount"].style("min-height:50px")
+
+                # Delete
+                def remove_payment():
+                    payment_card.delete()
+                    if payment in payment_entries:
+                        payment_entries.remove(payment)
+
+                    _update_payment_total(payment_entries, total_label)
+                    _fs_update_live(state)
+
+                ui.button(
+                    icon="delete", color="negative", on_click=remove_payment
+                ).props("flat round")
+
+    if payment_data:
+        payment["date"].set_value(payment_data.get("date", ""))
+        payment["source"].set_value(payment_data.get("source", "Cash"))
+        payment["receipt"].set_value(payment_data.get("receipt", ""))
+        payment["amount"].set_value(payment_data.get("amount", ""))
+
+    payment_entries.append(payment)
+
+    # Live total updates
+    payment["amount"].on_value_change(
+        lambda e: _update_payment_total(payment_entries, total_label)
+    )
+    _update_payment_total(payment_entries, total_label)
+
+    return payment
+
+
+def attach_payment_row_handlers(
+    state,
+    payment,
+    payment_entries,
+    total_label,
+):
+
+    def handle_change(*_):
+        if state.is_hydrating:
+            return
+        _update_payment_total(payment_entries, total_label)
+        _fs_update_live(state)
+
+    payment["date"].on_value_change(handle_change)
+    payment["source"].on_value_change(handle_change)
+    payment["receipt"].on_value_change(handle_change)
+    payment["amount"].on_value_change(handle_change)
+
+
+def attach_payment_handlers(state):
+    if getattr(state, "add_receipt_payment_btn", None):
+        state.add_receipt_payment_btn.on_click(
+            lambda: add_payment_row(
+                state,
+                state.receipt_payments_container,
+                state.receipt_payments,
+                state.receipt_total_label,
+            )
+        )
+    if getattr(state, "add_ledger_payment_btn", None):
+        state.add_ledger_payment_btn.on_click(
+            lambda: add_payment_row(
+                state,
+                state.ledger_payments_container,
+                state.ledger_payments,
+                state.ledger_total_label,
+            )
+        )
+
+    # attach handlers for existing rows
+    for payment in state.receipt_payments:
+        attach_payment_row_handlers(
+            state, payment, state.receipt_payments, state.receipt_total_label
+        )
+    for payment in state.ledger_payments:
+        attach_payment_row_handlers(
+            state, payment, state.ledger_payments, state.ledger_total_label
+        )
+
+
+def _update_payment_total(payment_entries: list, total_label):
+    total = 0
+    for payment in payment_entries:
+        try:
+            total += parse_num(payment["amount"].value or "0")
+        except Exception:
+            pass
+    total_label.set_text(f"Total: ₹ {format_num_inr(total)}")
+
+
+def add_payment_row(
+    state: FormState,
+    container,
+    payment_entries: list,
+    total_label,
+    payment_data: dict | None = None,
+):
+
+    payment = {}
+
+    with container:
+        with ui.element("div").classes("w-full rounded-xl") as payment_card:
+            with ui.row().classes("w-full items-center flex-nowrap gap-3"):
+                # Date
+                payment["date"] = (
+                    ui.input("Date").props("type=date outlined dense").classes("w-44")
+                )
+
+                # Source
+                payment["source"] = (
+                    ui.toggle(
+                        {
+                            "Cash": "💵 Cash",
+                            "Bank": "🏦 Bank",
+                            "Finance": "📄 Finance",
+                            "Exchange": "🔄 Exchange",
+                        },
+                        value="Cash",
+                    )
+                    .props("elevated dense")
+                    .classes("payment-toggle normal-case shrink-0")
+                )
+
+                # Instrument
+                payment["receipt"] = (
+                    ui.input(
+                        label="Instrument Number",
+                        placeholder="Enter instrument number",
+                    )
+                    .props("outlined dense")
+                    .classes("flex-grow")
+                )
+
+                payment["receipt"].style("min-height:50px")
+
+                # Amount
+                payment["amount"] = accounting_input(
+                    label_text="Amount",
+                    placeholder="₹0",
+                    container_classes="w-56 shrink-0",
+                    compact=True,
+                )
+
+                payment["amount"].style("min-height:50px")
+
+                # Delete
+                def remove_payment():
+                    payment_card.delete()
+                    if payment in payment_entries:
+                        payment_entries.remove(payment)
+
+                    _update_payment_total(payment_entries, total_label)
+                    _fs_update_live(state)
+
+                ui.button(
+                    icon="delete", color="negative", on_click=remove_payment
+                ).props("flat round")
+
+    if payment_data:
+        payment["date"].set_value(payment_data.get("date", ""))
+        payment["source"].set_value(payment_data.get("source", "Cash"))
+        payment["receipt"].set_value(payment_data.get("receipt", ""))
+        payment["amount"].set_value(payment_data.get("amount", ""))
+
+    payment_entries.append(payment)
+
+    # Live total updates
+    payment["amount"].on_value_change(
+        lambda e: _update_payment_total(payment_entries, total_label)
+    )
+    _update_payment_total(payment_entries, total_label)
+
+    return payment
+
+
+def attach_payment_row_handlers(
+    state,
+    payment,
+    payment_entries,
+    total_label,
+):
+
+    def handle_change(*_):
+        if state.is_hydrating:
+            return
+        _update_payment_total(payment_entries, total_label)
+        _fs_update_live(state)
+
+    payment["date"].on_value_change(handle_change)
+    payment["source"].on_value_change(handle_change)
+    payment["receipt"].on_value_change(handle_change)
+    payment["amount"].on_value_change(handle_change)
+
+
+def attach_payment_handlers(state):
+    if getattr(state, "add_receipt_payment_btn", None):
+        state.add_receipt_payment_btn.on_click(
+            lambda: add_payment_row(
+                state,
+                state.receipt_payments_container,
+                state.receipt_payments,
+                state.receipt_total_label,
+            )
+        )
+    if getattr(state, "add_ledger_payment_btn", None):
+        state.add_ledger_payment_btn.on_click(
+            lambda: add_payment_row(
+                state,
+                state.ledger_payments_container,
+                state.ledger_payments,
+                state.ledger_total_label,
+            )
+        )
+
+    # attach handlers for existing rows
+    for payment in state.receipt_payments:
+        attach_payment_row_handlers(
+            state, payment, state.receipt_payments, state.receipt_total_label
+        )
+    for payment in state.ledger_payments:
+        attach_payment_row_handlers(
+            state, payment, state.ledger_payments, state.ledger_total_label
+        )
 
 
 def attach_form_handlers(state: FormState):
@@ -8118,10 +8403,13 @@ def attach_form_handlers(state: FormState):
 
     # DISCOUNT TOGGLES
     for name, toggle in getattr(state, "discount_match_toggles", {}).items():
+    for name, toggle in getattr(state, "discount_match_toggles", {}).items():
         toggle.on(
             "update:model-value", lambda e, n=name: handle_discount_toggle(state, n)
         )
+    # Attaching
     attach_invoice_handlers(state)
+    attach_payment_handlers(state)
 
     # Payment Section
     if getattr(state, "payment_cash", None):
@@ -8176,6 +8464,11 @@ def attach_invoice_handlers(
 
 
 async def _fs_on_car_change(car_id, state, *, preserve_variant=False):
+    logger.info(
+        "Car selection changed to ID: %s (preserve_variant: %s)",
+        car_id,
+        preserve_variant,
+    )
     state.car_id = car_id
 
     if state.variant_select is None:
@@ -8300,7 +8593,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
                 timeout=2500,
             )
     except Exception as e:
-        print("ERROR: in preloading the price list: ", e)
+        logger.exception("ERROR: in preloading the price list %s", str(e))
         ui.notify("Price List not fetched", type="negative")
         pass  # best-effort; silently skip if endpoint missing
 
@@ -8361,25 +8654,31 @@ def calculate_invoice_taxes(
     calculate_invoice_total(state)
 
 
-def _fs_update_live(state) -> None:
+def _fs_update_live(state: FormState) -> None:
+    booking_data = getattr(state, "booking_data", None) or {}
+
+    booking_actual_map = {
+        k.replace("_actual", "").strip(): v
+        for k, v in booking_data.items()
+        if k.endswith("_actual")
+    }
     # 1. PRICE TOTALS
     total_listed = 0
+    total_booking = 0
     total_charged = 0
     total_diff = 0
 
     for name, inp in state.price_inputs.items():
-        is_visible = state.visible_price_rows.get(
-            name,
-            True,
-        )
-
+        is_visible = state.visible_price_rows.get(name, True)
         listed_val = int(state.listed_prices.get(name) or 0)
+        booking_val = int(booking_actual_map.get(name) or 0)
         charged_val = int(parsed_val(inp))
 
         # visible rows participate in totals
         if is_visible:
             total_listed += listed_val
             total_charged += charged_val
+            total_booking += booking_val
 
         # UX interaction state
         toggle = state.price_match_toggles.get(name)
@@ -8407,21 +8706,28 @@ def _fs_update_live(state) -> None:
 
         # active visible row
         diff = listed_val - charged_val
+
         if is_visible and is_active:
             total_diff += diff
 
         if diff > 0:
-            dl.set_text(f"₹{diff:,}")
+            dl.set_text(f"₹{format_num_inr(diff)}")
             dl.style("color:#DC2626; font-weight:600")
+        elif diff < 0:
+            dl.set_text(f"₹{format_num_inr(diff)}")
+            dl.style("color:#23B315; font-weight:600")
         else:
             dl.set_text("₹0")
             dl.style("color:#9CA3AF")
     # PRICE LABELS
     if getattr(state, "lbl_total_listed_price", None):
-        state.lbl_total_listed_price.set_text(f"₹{total_listed:,}")
+        state.lbl_total_listed_price.set_text(f"₹{format_num_inr(total_listed)}")
+
+    if getattr(state, "lbl_total_booking_price", None):
+        state.lbl_total_booking_price.set_text(f"₹{format_num_inr(total_booking)}")
 
     if getattr(state, "lbl_total_charged_price", None):
-        state.lbl_total_charged_price.set_text(f"₹{total_charged:,}")
+        state.lbl_total_charged_price.set_text(f"₹{format_num_inr(total_charged)}")
 
     if getattr(state, "lbl_total_diff_price", None):
         if total_diff > 0:
@@ -8451,24 +8757,22 @@ def _fs_update_live(state) -> None:
     acc_diff = acc_listed - acc_charged
 
     # 3. DISCOUNT TOTALS
-
     total_allowed_discount = 0
+    total_booking_discount = 0
     total_given_discount = 0
+    total_diff_discount = 0
 
     for name, inp in state.discount_inputs.items():
-        is_visible = state.visible_discount_rows.get(
-            name,
-            True,
-        )
-
+        is_visible = state.visible_discount_rows.get(name, True)
         allowed_val = int(state.listed_prices.get(name) or 0)
-
+        booking_disc_val = int(booking_actual_map.get(name) or 0)
         given_val = int(parsed_val(inp))
 
         # visible rows participate in totals
         if is_visible:
             total_allowed_discount += allowed_val
             total_given_discount += given_val
+            total_booking_discount += booking_disc_val
 
         # UX interaction state
         toggle = state.discount_match_toggles.get(name)
@@ -8495,16 +8799,62 @@ def _fs_update_live(state) -> None:
             continue
 
         # active visible row
-        diff = given_val - allowed_val
+        diff = allowed_val - given_val
+        if is_active and is_visible:
+            total_diff_discount += diff
 
         if diff > 0:
-            dl.set_text(f"₹{diff:,}")
+            dl.set_text(f"₹{format_num_inr(diff)}")
+            dl.style("color:#23B315; font-weight:600")
+
+        elif diff < 0:
+            dl.set_text(f"₹{format_num_inr(diff)}")
             dl.style("color:#DC2626; font-weight:600")
+
         else:
             dl.set_text("₹0")
             dl.style("color:#9CA3AF")
 
-    # 4. EXCESS CALCULATION
+    # TOTAL OF DISCOUNT
+    total_of_discounts = (
+        int(parsed_val(getattr(state, "total_discount_booking", None)))
+        + int(parsed_val(getattr(state, "other_discount_delivery", None)))
+        + total_given_discount
+    )
+    # Update Discount labels
+
+    if getattr(state, "lbl_total_allowed_discount", None):
+        state.lbl_total_allowed_discount.set_text(
+            f"₹{format_num_inr(total_allowed_discount)}"
+        )
+    if getattr(state, "lbl_total_booking_discount", None):
+        state.lbl_total_booking_discount.set_text(
+            f"₹{format_num_inr(total_booking_discount)}"
+        )
+    if getattr(state, "lbl_total_of_discount", None):
+        state.lbl_total_of_discount.set_text(f"₹{format_num_inr(total_of_discounts)}")
+    if getattr(state, "lbl_total_diff_discount", None):
+        state.lbl_total_diff_discount.set_text(
+            f"₹{format_num_inr(total_diff_discount)}"
+        )
+
+    # Net Price Calculation
+    net_allowed = total_listed - total_allowed_discount
+    net_booking = total_booking - total_booking_discount
+    net_charged = total_charged - total_of_discounts
+    net_diff = total_diff - total_diff_discount
+
+    # Update the net price row labels
+    if getattr(state, "lbl_net_price_allowed", None):
+        state.lbl_net_price_allowed.set_text(f"₹{format_num_inr(net_allowed)}")
+    if getattr(state, "lbl_net_price_booking", None):
+        state.lbl_net_price_booking.set_text(f"₹{format_num_inr(net_booking)}")
+    if getattr(state, "lbl_net_price_charged", None):
+        state.lbl_net_price_charged.set_text(f"₹{format_num_inr(net_charged)}")
+    if getattr(state, "lbl_net_price_diff", None):
+        state.lbl_net_price_diff.set_text(f"₹{format_num_inr(net_diff)}")
+
+    # EXCESS CALCULATION
     adjustment = int(float(parsed_val(getattr(state, "adjustment_input", None))))
     total_discount_given = int(
         total_diff
@@ -8518,7 +8868,7 @@ def _fs_update_live(state) -> None:
     excess = int(max(0, total_discount_given - total_allowed_discount))
 
     # CUSTOMER LEDGER CALC
-    total_receivable = total_charged - total_discount_given
+    total_receivable = net_charged
     total_received = (
         int(parsed_val(getattr(state, "payment_cash", None)))
         + int(parsed_val(getattr(state, "payment_bank", None)))
@@ -8528,31 +8878,25 @@ def _fs_update_live(state) -> None:
 
     balance_amount = total_receivable - total_received
 
-    if state.adjustment_type:
-        if state.adjustment_type.value == "positive" and state.ledger_adjustment:
-            balance_amount += int(parsed_val(getattr(state, "ledger_adjustment", None)))
-
-        elif state.adjustment_type.value == "negative" and state.ledger_adjustment:
-            balance_amount -= int(parsed_val(getattr(state, "ledger_adjustment", None)))
-
     # 5. UPDATE LABELS
+
     if getattr(state, "total_receivable", None):
-        state.total_receivable.set_text(f"₹{total_receivable:,}")
+        state.total_receivable.set_text(f"₹{format_num_inr(total_receivable)}")
 
     if getattr(state, "total_received", None):
-        state.total_received.set_text(f"₹{total_received:,}")
+        state.total_received.set_text(f"₹{format_num_inr(total_received)}")
 
     if getattr(state, "balance_amount", None):
-        state.balance_amount.set_text(f"₹{balance_amount:,}")
+        state.balance_amount.set_text(f"₹{format_num_inr(balance_amount)}")
 
     if getattr(state, "total_allowed", None):
-        state.total_allowed.set_text(f"₹{total_allowed_discount:,}")
+        state.total_allowed.set_text(f"₹{format_num_inr(total_allowed_discount)}")
 
     if getattr(state, "total_given", None):
-        state.total_given.set_text(f"₹{total_discount_given:,}")
+        state.total_given.set_text(f"₹{format_num_inr(total_discount_given)}")
 
     if getattr(state, "lbl_allowed_lv", None):
-        state.lbl_allowed_lv.set_text(f"₹{total_allowed_discount:,}")
+        state.lbl_allowed_lv.set_text(f"₹{format_num_inr(total_allowed_discount)}")
 
     if getattr(state, "lbl_discount_lv", None):
         state.lbl_discount_lv.set_text(f"₹{total_discount_given:,}")
@@ -8611,6 +8955,12 @@ def _fs_clear_error(state: FormState) -> None:
 async def _fs_handle_submit(
     state: FormState,
 ) -> None:
+    logger.info(
+        "Form submission triggered (stage: %s, mode: %s, transaction_id: %s)",
+        state.stage,
+        state.form_mode,
+        state.txn_id,
+    )
 
     if not state.error_banner or not state.error_msg_label:
         return
@@ -8621,10 +8971,12 @@ async def _fs_handle_submit(
 
     valid, msg = state.is_valid()
     if not valid:
+        logger.warning("Form validation failed: %s", msg)
         state.error_msg_label.set_text(msg)
         state.error_banner.set_visibility(True)
         return
 
+    logger.info("Form validation passed. Building payload.")
     payload = build_payload(state)
     try:
         # HIDE OLD ERROR
@@ -8632,10 +8984,17 @@ async def _fs_handle_submit(
 
         # UPDATE FLOW
         if state.edit_mode and state.txn_id:
+            logger.info(
+                "Updating transaction ID: %s (stage: %s)", state.txn_id, state.stage
+            )
             await api_put(f"/transactions/{state.txn_id}", payload)
 
             if state.stage == "delivery":
                 if state.form_mode == "delivery_from_booking":
+                    logger.info(
+                        "Booking converted to Delivery successfully for ID: %s",
+                        state.txn_id,
+                    )
                     ui.notify(
                         "Booking converted to Delivery successfully",
                         color="green",
@@ -8643,25 +9002,32 @@ async def _fs_handle_submit(
                     )
 
                 else:
+                    logger.info(
+                        "Delivery updated successfully for ID: %s", state.txn_id
+                    )
                     ui.notify(
                         "Delivery updated successfully", color="green", type="positive"
                     )
 
             else:
+                logger.info("Booking updated successfully for ID: %s", state.txn_id)
                 ui.notify(
                     "Booking updated successfully", color="green", type="positive"
                 )
 
         # CREATE FLOW
         else:
+            logger.info("Creating a new transaction (stage: %s)", state.stage)
             await api_post("/transactions", payload)
 
             if state.stage == "delivery":
+                logger.info("Delivery created successfully")
                 ui.notify(
                     "Delivery created successfully", color="green", type="positive"
                 )
 
             else:
+                logger.info("Booking created successfully")
                 ui.notify(
                     "Booking created successfully", color="green", type="positive"
                 )
@@ -8679,14 +9045,37 @@ async def _fs_handle_submit(
         state.error_banner.set_visibility(True)
 
     except APIError as e:
-        print("FORM SUBMIT API ERROR:", e)
+        logger.error("FORM SUBMIT API ERROR: %s", e, exc_info=True)
         state.error_msg_label.set_text(str(e))
         state.error_banner.set_visibility(True)
 
     except Exception as e:
-        print("FORM SUBMIT ERROR:", e)
+        logger.exception("FORM SUBMIT ERROR")
         state.error_msg_label.set_text(str(e))
         state.error_banner.set_visibility(True)
+
+
+def serialize_payments(state):
+
+    def serialize_group(payments):
+        rows = []
+
+        for payment in payments:
+            rows.append(
+                {
+                    "date": payment["date"].value,
+                    "source": payment["source"].value,
+                    "receipt": payment["receipt"].value,
+                    "amount": payment["amount"].value,
+                }
+            )
+
+        return rows
+
+    return {
+        "receipt_payments": serialize_group(getattr(state, "receipt_payments", [])),
+        "ledger_payments": serialize_group(getattr(state, "ledger_payments", [])),
+    }
 
 
 def build_payload(state: FormState) -> dict:
@@ -8717,6 +9106,8 @@ def build_payload(state: FormState) -> dict:
     # COMPONENTS (CRITICAL)
     actual_amounts = {}
     allowed_amounts = {}
+    payments_details = serialize_payments(state)
+    logger.info("payment details: %s", json.dumps(payments_details))
 
     # Price components
     for name, inp in state.price_inputs.items():
@@ -8892,8 +9283,6 @@ def build_payload(state: FormState) -> dict:
         payload["total_receivable"] = lbl_val(state.total_receivable)
         payload["total_received"] = lbl_val(state.total_received)
         payload["balance_amount"] = lbl_val(state.balance_amount)
-        payload["ledger_adjustment"] = intval(state.ledger_adjustment)
-        payload["ledger_adjustment_remarks"] = val(state.ledger_adjustment_remarks)
         payload["total_actual_discount"] = lbl_val(state.total_given)
         payload["total_allowed_discount"] = lbl_val(state.total_allowed)
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
@@ -9015,7 +9404,7 @@ async def load_transaction(state: FormState):
     except ConnectionFailedError:
         ui.notify("Unable to connect to the server. Please Try again.")
     except Exception as e:
-        print("ERROR: in loading the transaction: ", str(e))
+        logger.exception("ERROR: in loading the transaction %s", str(e))
         ui.notify("Failed to load entry", type="negative")
 
 
@@ -9047,11 +9436,11 @@ def build_form(state: FormState):
         build_conditions_section(state)
         build_accessories_section(state)
         build_prices_section(state)
-        build_delivery_checklist_section(state)
-        build_file_status_section(state)
-        build_invoice_section(state)
         build_payment_section(state)
         build_ledger_section(state)
+        build_invoice_section(state)
+        build_delivery_checklist_section(state)
+        build_file_status_section(state)
         build_audit_section(state)
 
     elif state.form_mode in [
@@ -9072,11 +9461,11 @@ def build_form(state: FormState):
         build_conditions_section(state)
         build_accessories_section(state)
         build_prices_section(state)
-        build_delivery_checklist_section(state)
-        build_file_status_section(state)
-        build_invoice_section(state)
         build_payment_section(state)
         build_ledger_section(state)
+        build_invoice_section(state)
+        build_delivery_checklist_section(state)
+        build_file_status_section(state)
         build_audit_section(state)
 
     build_live_bar(state)
@@ -9107,8 +9496,7 @@ async def hydrate_form(state: FormState, txn: dict):
 
         if variant_id:
             variant_obj = next(
-                (v for v in state.variants if v["id"] == variant_id),
-                None,
+                (v for v in state.variants if v["id"] == variant_id), None
             )
 
             if variant_obj:
@@ -9176,13 +9564,19 @@ async def hydrate_form(state: FormState, txn: dict):
             cb.set_value(bool(txn.get(f"del_checks_{key}", False)))
 
         # SUMMARY FIELDS
-        if state.total_discount_booking:
+        if getattr(state, "total_discount_booking", None):
             state.total_discount_booking.set_value(txn.get("discount_booking", 0))
 
         if getattr(state, "other_discount_delivery", None):
-            state.other_discount_delivery.set_value(
-                txn.get("other_discount_delivery", 0)
-            )
+            delivery_discount = txn.get("other_discount_delivery")
+
+            if delivery_discount not in [None, ""]:
+                # Existing delivery MIS
+                state.other_discount_delivery.set_value(delivery_discount)
+
+            else:
+                # Fresh booking -> delivery MIS
+                state.other_discount_delivery.set_value(txn.get("discount_booking", 0))
 
         if state.adjustment_input:
             state.adjustment_input.set_value(txn.get("adjustment_booking", 0))
@@ -9191,7 +9585,7 @@ async def hydrate_form(state: FormState, txn: dict):
         await hydrate_vehicle_section(state, txn)
 
         hydrate_invoice_section(state, txn)
-        hydrate_payment_section(state, txn)
+        hydrate_payment_section(state)
         hydrate_audit_section(state, txn)
         hydrate_accessories_section(state, txn)
         hydrate_file_status_section(state, txn)
@@ -9214,30 +9608,18 @@ async def hydrate_form(state: FormState, txn: dict):
 
         # UI REFRESH
         refresh_visibility(state)
-
         _fs_update_live(state)
-
         _fs_revalidate(state)
 
     finally:
         state.is_hydrating = False
 
 
-def hydrate_ledger_section(state: FormState, txn: dict):
-    if state.ledger_adjustment:
-        state.ledger_adjustment.set_value(txn.get("ledger_adjustment", 0))
-
-    if state.ledger_adjustment_remarks:
-        state.ledger_adjustment_remarks.set_value(
-            txn.get("ledger_adjustment_remarks", "")
-        )
+## Hydration of the balance amount entered by user will be done by this method.
+def hydrate_ledger_section(state: FormState, txn: dict): ...
 
 
-def hydrate_invoice_section(
-    state: FormState,
-    txn: dict,
-):
-
+def hydrate_invoice_section(state: FormState, txn: dict):
     mapping = {
         "invoice_number": state.invoice_number,
         "invoice_date": state.invoice_date,
@@ -9254,11 +9636,7 @@ def hydrate_invoice_section(
     for key, widget in mapping.items():
         if not widget:
             continue
-
-        value = txn.get(
-            key,
-            "",
-        )
+        value = txn.get(key, "")
 
         if value is None:
             value = ""
@@ -9266,10 +9644,7 @@ def hydrate_invoice_section(
         widget.set_value(value)
 
 
-def hydrate_file_status_section(
-    state: FormState,
-    txn: dict,
-):
+def hydrate_file_status_section(state: FormState, txn: dict):
     try:
         if state.stage == "booking":
             if state.booking_file_incomplete:
@@ -9290,70 +9665,37 @@ def hydrate_file_status_section(
                     txn.get("delivery_file_incomplete_remarks", "")
                 )
     except Exception as e:
-        print("ERROR: WHILE FILE HYDRATE", e)
+        logger.exception("ERROR: WHILE FILE HYDRATE %s", str(e))
 
 
-def hydrate_payment_section(
-    state: FormState,
-    txn: dict,
-):
+def hydrate_payment_section(state):
+    payments = state.transaction_data.get("payments") or []
 
-    payment = {k: v for k, v in txn.items() if k.startswith("payment_")}
+    if not payments:
+        return
 
-    mapping = {
-        "payment_cash": state.payment_cash,
-        "payment_bank": state.payment_bank,
-        "payment_finance": state.payment_finance,
-        "payment_exchange": state.payment_exchange,
-    }
+    state.payment_entries.clear()
+    state.payments_container.clear()
 
-    for key, widget in mapping.items():
-        if widget:
-            widget.set_value(
-                payment.get(
-                    key,
-                    0,
-                )
-            )
+    for payment in payments:
+        add_payment_row(state, payment_data=payment)
 
 
-def hydrate_audit_section(
-    state: FormState,
-    txn: dict,
-):
-
+def hydrate_audit_section(state: FormState, txn: dict):
     if state.audit_obs:
-        state.audit_obs.set_value(
-            txn.get(
-                "audit_observations",
-                "",
-            )
-        )
+        state.audit_obs.set_value(txn.get("audit_observations", ""))
 
     if state.audit_action:
-        state.audit_action.set_value(
-            txn.get(
-                "audit_actions",
-                "",
-            )
-        )
+        state.audit_action.set_value(txn.get("audit_actions", ""))
 
 
-def hydrate_accessories_section(
-    state: FormState,
-    txn: dict,
-):
-
-    accessories = txn.get(
-        "accessories",
-        [],
-    )
+def hydrate_accessories_section(state: FormState, txn: dict):
+    accessories = txn.get("accessories", [])
 
     if not accessories:
         return
 
     selected_ids = []
-
     total = 0
 
     for acc in accessories:
@@ -9361,11 +9703,7 @@ def hydrate_accessories_section(
 
         if acc_id:
             selected_ids.append(acc_id)
-
-            total += acc.get(
-                "listed_price",
-                0,
-            )
+            total += acc.get("listed_price", 0)
 
     if state.acc_select:
         state.acc_select.set_value(selected_ids)
@@ -9373,13 +9711,7 @@ def hydrate_accessories_section(
     if state.acc_total_label:
         state.acc_total_label.set_text(f"Total: ₹{total:,}")
 
-    charged = (
-        txn.get(
-            "Accessories_actual",
-            0,
-        )
-        or total
-    )
+    charged = txn.get("Accessories_actual", 0) or total
 
     if state.acc_charged:
         state.acc_charged.set_value(charged)
@@ -9391,7 +9723,13 @@ def hydrate_accessories_section(
 async def form_page(
     stage: str = "booking", mode: str = "booking", transaction_id: int | None = None
 ) -> None:
-
+    logger.info(
+        "Accessing /form page (stage: %s, mode: %s, transaction_id: %s) for user: %s",
+        stage,
+        mode,
+        transaction_id,
+        app.storage.user.get("name"),
+    )
     state = FormState()
 
     state.stage = stage
@@ -9550,7 +9888,7 @@ def build_complaint_dealership_section(state: FormState) -> None:
                     ui.notify("Unable to connect to the server", type="warning")
 
                 except APIError as ex:
-                    print(f"Error fetching outlets: {ex}")
+                    logger.error("Error fetching outlets: %s", ex, exc_info=True)
 
             async def handle_complainee_change(dlr):
                 if dlr == "X":
@@ -9571,7 +9909,7 @@ def build_complaint_dealership_section(state: FormState) -> None:
                         state.complainee_showroom.update()
 
                 except APIError as ex:
-                    print(f"Error fetching outlets: {ex}")
+                    logger.error("Error fetching outlets: %s", ex, exc_info=True)
 
             # Handlers
             def on_complainant_dealership_change(e):
@@ -9776,12 +10114,12 @@ def build_complaint_action_bar(state: FormState) -> None:
                 state.error_banner.set_visibility(True)
 
             except APIError as e:
-                print("COMPLAINT SUBMIT API ERROR:", e)
+                logger.error("COMPLAINT SUBMIT API ERROR: %s", e, exc_info=True)
                 state.error_msg_label.set_text(str(e))
                 state.error_banner.set_visibility(True)
 
             except Exception as e:
-                print("COMPLAINT SUBMIT ERROR:", e)
+                logger.exception("COMPLAINT SUBMIT ERROR")
                 state.error_msg_label.set_text(str(e))
                 state.error_banner.set_visibility(True)
 
@@ -9997,6 +10335,12 @@ def build_complaint_payload(state: FormState) -> dict:
 async def complaint_form_page(
     transaction_id: int | None = None, complaint_code: str | None = None
 ) -> None:
+    logger.info(
+        "Accessing /complaint-form page (transaction_id: %s, complaint_code: %s) for user: %s",
+        transaction_id,
+        complaint_code,
+        app.storage.user.get("name"),
+    )
     state = FormState()
     state.form_mode = (
         "complaint_edit" if transaction_id or complaint_code else "complaint_create"

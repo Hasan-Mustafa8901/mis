@@ -1,7 +1,7 @@
 # backend/services/mis_upload.py
 import pandas as pd
 from datetime import datetime, date
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select
 from services.complaints.query import get_outlet_id_by_name
 
 from db.models import (
@@ -13,10 +13,7 @@ from db.models import (
     Transaction,
 )
 
-from services.ingestion.excel_parser import (
-    load_excel,
-    normalize_columns,
-)
+from services.ingestion.excel_parser import normalize_columns
 
 from services.utils import get_ist_now
 from rich import print
@@ -30,135 +27,110 @@ class MISUploadService:
         outlet_id: int,
         dealership_id: int,
     ):
-
-        excel_file = pd.ExcelFile(file_path)
         affected_outlets: set[int] = set()
         total_created = 0
+        try:
+            excel_file = pd.ExcelFile(file_path)
 
-        for sheet_name in excel_file.sheet_names:
-            # INFER RECORD TYPE
-            record_type = MISUploadService.infer_record_type(sheet_name)
-            # LOAD SHEET
-            df = pd.read_excel(
-                file_path,
-                sheet_name=sheet_name,
-            )
+            for sheet_name in excel_file.sheet_names:
+                # INFER RECORD TYPE
+                record_type = MISUploadService.infer_record_type(sheet_name)
+                # LOAD SHEET
+                df = pd.read_excel(file_path, sheet_name=sheet_name)
+                df.columns = df.columns.str.lower().str.strip()
+                df = normalize_columns(df)
 
-            df.columns = df.columns.str.lower().str.strip()
+                print(f"\nProcessing Sheet: {sheet_name}")
+                print("Normalized Columns:", df.columns)
 
-            df = normalize_columns(df)
+                # ITERATE ROWS
 
-            print(f"\nProcessing Sheet: {sheet_name}")
-            print("Normalized Columns:", df.columns)
+                for _, row in df.iterrows():
+                    customer_name = MISUploadService.clean_str(row.get("customer_name"))
 
-            # ITERATE ROWS
+                    if not customer_name:
+                        continue
 
-            for _, row in df.iterrows():
-                customer_name = MISUploadService.clean_str(row.get("customer_name"))
+                    record_date = MISUploadService.parse_date(row.get("date"))
 
-                if not customer_name:
-                    continue
-
-                record_date = MISUploadService.parse_date(row.get("date"))
-
-                if not record_date:
-                    continue
-                print(row.get("location"))
-                customer_mobile = MISUploadService.clean_mobile(row.get("mobile"))
-                car_model = MISUploadService.clean_str(row.get("car_model"))
-                team_leader = MISUploadService.clean_str(row.get("team_leader"))
-                resolved_outlet_id = get_outlet_id_by_name(
-                    session=session,
-                    name=row.get("location"),
-                )
-                if not outlet_id:
-                    print(f"{row.get('location')} not found.")
-                    continue
-                affected_outlets.add(resolved_outlet_id)
-
-                print(outlet_id)
-
-                # DUPLICATE CHECK
-
-                existing = session.exec(
-                    select(MISRecord).where(
-                        MISRecord.record_date == record_date,
-                        MISRecord.type == record_type,
-                        MISRecord.outlet_id == resolved_outlet_id,
-                        MISRecord.customer_name == customer_name,
-                        MISRecord.car_model == car_model,
-                        MISRecord.customer_mobile == customer_mobile,
+                    if not record_date:
+                        continue
+                    print(row.get("location"))
+                    customer_mobile = MISUploadService.clean_mobile(row.get("mobile"))
+                    car_model = MISUploadService.clean_str(row.get("car_model"))
+                    team_leader = MISUploadService.clean_str(row.get("team_leader"))
+                    resolved_outlet_id = get_outlet_id_by_name(
+                        session=session, name=row.get("location")
                     )
-                ).first()
+                    if not outlet_id:
+                        print(f"{row.get('location')} not found.")
+                        continue
+                    affected_outlets.add(resolved_outlet_id)
 
-                if existing:
-                    print(
-                        "Duplicate:",
-                        record_date,
-                        record_type,
-                        customer_name,
-                        car_model,
+                    # DUPLICATE CHECK
+                    existing = session.exec(
+                        select(MISRecord).where(
+                            MISRecord.record_date == record_date,
+                            MISRecord.type == record_type,
+                            MISRecord.outlet_id == resolved_outlet_id,
+                            MISRecord.customer_name == customer_name,
+                            MISRecord.car_model == car_model,
+                            MISRecord.customer_mobile == customer_mobile,
+                        )
+                    ).first()
+
+                    if existing:
+                        print(
+                            "Duplicate:",
+                            record_date,
+                            record_type,
+                            customer_name,
+                            car_model,
+                        )
+                        continue
+
+                    # CREATE RECORD
+
+                    record = MISRecord(
+                        record_date=record_date,
+                        type=record_type,
+                        outlet_id=resolved_outlet_id,
+                        dealership_id=dealership_id,
+                        customer_name=customer_name,
+                        customer_mobile=customer_mobile,
+                        car_model=car_model,
+                        team_leader=team_leader,
+                        matching_status=MISMatchingStatus.UNMATCHED,
+                        raw_data=MISUploadService.make_json_safe(row.to_dict()),
+                        created_at=get_ist_now(),
                     )
-                    continue
+                    session.add(record)
 
-                # CREATE RECORD
+                    total_created += 1
 
-                record = MISRecord(
-                    record_date=record_date,
-                    type=record_type,
-                    outlet_id=resolved_outlet_id,
-                    dealership_id=dealership_id,
-                    customer_name=customer_name,
-                    customer_mobile=customer_mobile,
-                    car_model=car_model,
-                    team_leader=team_leader,
-                    matching_status=MISMatchingStatus.UNMATCHED,
-                    raw_data=MISUploadService.make_json_safe(row.to_dict()),
-                    created_at=get_ist_now(),
-                )
-                session.add(record)
-
-                total_created += 1
-
-        # SAVE
-        session.commit()
-
+            # SAVE
+            session.commit()
+        except Exception as e:
+            print("File Uploaded ERROR: ", e)
         # SYNC DAILY SUMMARY
         for affected_outlet_id in affected_outlets:
             print("OUTLET ID: ", affected_outlet_id)
             MISUploadService.sync_daily_summary(
-                session=session,
-                outlet_id=affected_outlet_id,
+                session=session, outlet_id=affected_outlet_id
             )
-
-        return {
-            "status": "success",
-            "records_created": total_created,
-        }
+        return {"status": "success", "records_created": total_created}
 
     # DAILY SUMMARY SYNC
 
     @staticmethod
-    def sync_daily_summary(
-        session: Session,
-        outlet_id: int,
-    ):
-
+    def sync_daily_summary(session: Session, outlet_id: int):
         records = session.exec(
-            select(
-                MISRecord.record_date,
-                MISRecord.type,
-            )
-            .where(
-                MISRecord.outlet_id == outlet_id,
-            )
+            select(MISRecord.record_date, MISRecord.type)
+            .where(MISRecord.outlet_id == outlet_id)
             .distinct()
         ).all()
 
-        for (
-            record_date,
-            record_type,
-        ) in records:
+        for record_date, record_type in records:
             MISUploadService.sync_single_daily_summary(
                 session=session,
                 outlet_id=outlet_id,
@@ -169,14 +141,10 @@ class MISUploadService:
     ## Optimized Version
     @staticmethod
     def sync_single_daily_summary(
-        session: Session,
-        outlet_id: int,
-        record_date: date,
-        record_type: MISRecordType,
+        session: Session, outlet_id: int, record_date: date, record_type: MISRecordType
     ):
 
         # FETCH MIS RECORDS
-
         records = session.exec(
             select(MISRecord).where(
                 MISRecord.outlet_id == outlet_id,

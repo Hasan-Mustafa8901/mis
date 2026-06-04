@@ -420,7 +420,7 @@ def generate_daily_report(backend_data=None):
         booking_header_row + 1,
         [
             "S.No.",
-            "Date",
+            "Booking Date",
             "Customer Name",
             "Mobile No.",
             "TL",
@@ -453,7 +453,7 @@ def generate_daily_report(backend_data=None):
         booking_oos_header_row + 1,
         [
             "S.No.",
-            "Date",
+            "Booking Date",
             "Customer Name",
             "Mobile No.",
             "Reason",
@@ -485,7 +485,7 @@ def generate_daily_report(backend_data=None):
         booking_delay_header_row + 1,
         [
             "S.No.",
-            "Date",
+            "Booking Date",
             "Receiving Date",
             "Delay Days",
             "Customer Name",
@@ -518,7 +518,7 @@ def generate_daily_report(backend_data=None):
         delivery_header_row + 1,
         [
             "S.No.",
-            "Date",
+            "Delivery Date",
             "Customer Name",
             "Mobile No.",
             "TL",
@@ -551,7 +551,7 @@ def generate_daily_report(backend_data=None):
         delivery_oos_header_row + 1,
         [
             "S.No.",
-            "Date",
+            "Delivery Date",
             "Customer Name",
             "Mobile No.",
             "Reason",
@@ -584,7 +584,7 @@ def generate_daily_report(backend_data=None):
         delivery_delay_header_row + 1,
         [
             "S.No.",
-            "Date",
+            "Delivery Date",
             "Receiving Date",
             "Delay Days",
             "Customer Name",
@@ -616,7 +616,7 @@ def generate_daily_report(backend_data=None):
         rejected_delivery_header_row + 1,
         [
             "S.No.",
-            "Date",
+            "Delivery Date",
             "Customer Name",
             "Mobile No.",
             "Reason",
@@ -835,8 +835,6 @@ def generate_daily_report(backend_data=None):
                 )
 
         return start_row + num_rows
-
-    # ── Sheet 2 Layout ──────────────────────────────────────────────────────
 
     # Title — rows 1-2
     ws2_write_title(1)
