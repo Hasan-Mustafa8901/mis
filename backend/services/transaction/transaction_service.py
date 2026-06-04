@@ -689,9 +689,46 @@ class TransactionService:
             TransactionService._expand_json_field(
                 data, transaction.audit_info, prefix="audit_"
             )
-            TransactionService._expand_json_field(
-                data, transaction.payment_details, prefix="payment_"
-            )
+            payment_details = transaction.payment_details or {}
+
+            if isinstance(payment_details, dict) and (
+                "receipt_payments" in payment_details
+                or "ledger_payments" in payment_details
+            ):
+                data["payments_details"] = payment_details
+                data["receipt_payments"] = payment_details.get("receipt_payments", [])
+                data["ledger_payments"] = payment_details.get("ledger_payments", [])
+
+                data["payment_cash"] = 0
+                data["payment_bank"] = 0
+                data["payment_finance"] = 0
+                data["payment_exchange"] = 0
+
+                for payment in data["receipt_payments"]:
+                    try:
+                        source = payment.get("source", "").strip().lower()
+                        amount = int(
+                            str(payment.get("amount", 0))
+                            .replace(",", "")
+                            .replace(".", "")
+                            .strip()
+                        )
+
+                        if source == "cash":
+                            data["payment_cash"] += amount
+                        elif source == "bank":
+                            data["payment_bank"] += amount
+                        elif source == "finance":
+                            data["payment_finance"] += amount
+                        elif source == "exchange":
+                            data["payment_exchange"] += amount
+
+                    except Exception:
+                        pass
+            else:
+                TransactionService._expand_json_field(
+                    data, transaction.payment_details, prefix="payment_"
+                )
 
             # ACCESSORIES - already loaded via selectinload
             data["accessories"] = [

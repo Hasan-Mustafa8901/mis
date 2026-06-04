@@ -6031,6 +6031,8 @@ class FormState:
         self.total_receivable: ui.label | None = None
         self.total_received: ui.label | None = None
         self.balance_amount: ui.label | None = None
+        self.balance_amount_by_user: ui.input | None = None
+        self.variation: ui.label | None = None
 
         # Checkboxes
         self.condition_cbs: dict[str, ui.checkbox] = {}
@@ -7766,7 +7768,7 @@ def build_ledger_section(state: FormState) -> None:
             state.total_receivable = total_receivable_card.value_label
             state.total_received = total_received_card.value_label
             state.balance_amount = balance_card.value_label
-            state.ledger_variation = variation_card.value_label
+            state.variation = variation_card.value_label
         # Reconciliation Section
         with ui.card().classes(
             """
@@ -7781,7 +7783,7 @@ def build_ledger_section(state: FormState) -> None:
             ui.label("Balance").classes("text-base font-bold text-gray-700 mb-3")
 
             with ui.grid(columns=2).classes("w-full gap-4 items-start"):
-                state.ledger_variation = accounting_input(
+                state.balance_amount_by_user = accounting_input(
                     label_text="", placeholder="₹ 0", compact=True
                 ).classes(
                     """
@@ -8098,6 +8100,7 @@ def attach_payment_row_handlers(
 ):
 
     def handle_change(*_):
+        print("PAYMENT CHANGE DETECTED")
         if state.is_hydrating:
             return
         _update_payment_total(payment_entries, total_label)
@@ -8111,168 +8114,46 @@ def attach_payment_row_handlers(
 
 def attach_payment_handlers(state):
     if getattr(state, "add_receipt_payment_btn", None):
-        state.add_receipt_payment_btn.on_click(
-            lambda: add_payment_row(
+
+        def add_receipt_payment():
+            payment = add_payment_row(
                 state,
                 state.receipt_payments_container,
                 state.receipt_payments,
                 state.receipt_total_label,
             )
-        )
-    if getattr(state, "add_ledger_payment_btn", None):
-        state.add_ledger_payment_btn.on_click(
-            lambda: add_payment_row(
+
+            attach_payment_row_handlers(
                 state,
-                state.ledger_payments_container,
-                state.ledger_payments,
-                state.ledger_total_label,
-            )
-        )
-
-    # attach handlers for existing rows
-    for payment in state.receipt_payments:
-        attach_payment_row_handlers(
-            state, payment, state.receipt_payments, state.receipt_total_label
-        )
-    for payment in state.ledger_payments:
-        attach_payment_row_handlers(
-            state, payment, state.ledger_payments, state.ledger_total_label
-        )
-
-
-def _update_payment_total(payment_entries: list, total_label):
-    total = 0
-    for payment in payment_entries:
-        try:
-            total += parse_num(payment["amount"].value or "0")
-        except Exception:
-            pass
-    total_label.set_text(f"Total: ₹ {format_num_inr(total)}")
-
-
-def add_payment_row(
-    state: FormState,
-    container,
-    payment_entries: list,
-    total_label,
-    payment_data: dict | None = None,
-):
-
-    payment = {}
-
-    with container:
-        with ui.element("div").classes("w-full rounded-xl") as payment_card:
-            with ui.row().classes("w-full items-center flex-nowrap gap-3"):
-                # Date
-                payment["date"] = (
-                    ui.input("Date").props("type=date outlined dense").classes("w-44")
-                )
-
-                # Source
-                payment["source"] = (
-                    ui.toggle(
-                        {
-                            "Cash": "💵 Cash",
-                            "Bank": "🏦 Bank",
-                            "Finance": "📄 Finance",
-                            "Exchange": "🔄 Exchange",
-                        },
-                        value="Cash",
-                    )
-                    .props("elevated dense")
-                    .classes("payment-toggle normal-case shrink-0")
-                )
-
-                # Instrument
-                payment["receipt"] = (
-                    ui.input(
-                        label="Instrument Number",
-                        placeholder="Enter instrument number",
-                    )
-                    .props("outlined dense")
-                    .classes("flex-grow")
-                )
-
-                payment["receipt"].style("min-height:50px")
-
-                # Amount
-                payment["amount"] = accounting_input(
-                    label_text="Amount",
-                    placeholder="₹0",
-                    container_classes="w-56 shrink-0",
-                    compact=True,
-                )
-
-                payment["amount"].style("min-height:50px")
-
-                # Delete
-                def remove_payment():
-                    payment_card.delete()
-                    if payment in payment_entries:
-                        payment_entries.remove(payment)
-
-                    _update_payment_total(payment_entries, total_label)
-                    _fs_update_live(state)
-
-                ui.button(
-                    icon="delete", color="negative", on_click=remove_payment
-                ).props("flat round")
-
-    if payment_data:
-        payment["date"].set_value(payment_data.get("date", ""))
-        payment["source"].set_value(payment_data.get("source", "Cash"))
-        payment["receipt"].set_value(payment_data.get("receipt", ""))
-        payment["amount"].set_value(payment_data.get("amount", ""))
-
-    payment_entries.append(payment)
-
-    # Live total updates
-    payment["amount"].on_value_change(
-        lambda e: _update_payment_total(payment_entries, total_label)
-    )
-    _update_payment_total(payment_entries, total_label)
-
-    return payment
-
-
-def attach_payment_row_handlers(
-    state,
-    payment,
-    payment_entries,
-    total_label,
-):
-
-    def handle_change(*_):
-        if state.is_hydrating:
-            return
-        _update_payment_total(payment_entries, total_label)
-        _fs_update_live(state)
-
-    payment["date"].on_value_change(handle_change)
-    payment["source"].on_value_change(handle_change)
-    payment["receipt"].on_value_change(handle_change)
-    payment["amount"].on_value_change(handle_change)
-
-
-def attach_payment_handlers(state):
-    if getattr(state, "add_receipt_payment_btn", None):
-        state.add_receipt_payment_btn.on_click(
-            lambda: add_payment_row(
-                state,
-                state.receipt_payments_container,
+                payment,
                 state.receipt_payments,
                 state.receipt_total_label,
             )
-        )
+
+            _fs_update_live(state)
+
+        state.add_receipt_payment_btn.on_click(add_receipt_payment)
+
     if getattr(state, "add_ledger_payment_btn", None):
-        state.add_ledger_payment_btn.on_click(
-            lambda: add_payment_row(
+
+        def add_ledger_payment():
+            payment = add_payment_row(
                 state,
                 state.ledger_payments_container,
                 state.ledger_payments,
                 state.ledger_total_label,
             )
-        )
+
+            attach_payment_row_handlers(
+                state,
+                payment,
+                state.ledger_payments,
+                state.ledger_total_label,
+            )
+
+            _fs_update_live(state)
+
+        state.add_ledger_payment_btn.on_click(add_ledger_payment)
 
     # attach handlers for existing rows
     for payment in state.receipt_payments:
@@ -8293,6 +8174,7 @@ def attach_form_handlers(state: FormState):
 
     # HELPERS
     def live_update(*_):
+        print("LIVE UPDATE TRIGGERED")
         if state.is_hydrating:
             return
         _fs_update_live(state)
@@ -8397,12 +8279,15 @@ def attach_form_handlers(state: FormState):
     if getattr(state, "adjustment_input", None):
         state.adjustment_input.on_value_change(live_update)
 
+    # Balance entered by the user in ledger section
+    if getattr(state, "balance_amount_by_user", None):
+        state.balance_amount_by_user.on_value_change(live_update)
+
     # PRICE TOGGLES
     for name, toggle in getattr(state, "price_match_toggles", {}).items():
         toggle.on("update:model-value", lambda e, n=name: handle_price_toggle(state, n))
 
     # DISCOUNT TOGGLES
-    for name, toggle in getattr(state, "discount_match_toggles", {}).items():
     for name, toggle in getattr(state, "discount_match_toggles", {}).items():
         toggle.on(
             "update:model-value", lambda e, n=name: handle_discount_toggle(state, n)
@@ -8411,24 +8296,8 @@ def attach_form_handlers(state: FormState):
     attach_invoice_handlers(state)
     attach_payment_handlers(state)
 
-    # Payment Section
-    if getattr(state, "payment_cash", None):
-        state.payment_cash.on_value_change(live_update)
-    if getattr(state, "payment_bank", None):
-        state.payment_bank.on_value_change(live_update)
-    if getattr(state, "payment_finance", None):
-        state.payment_finance.on_value_change(live_update)
-    if getattr(state, "payment_exchange", None):
-        state.payment_exchange.on_value_change(live_update)
-    if getattr(state, "adjustment_type", None):
-        state.adjustment_type.on_value_change(live_update)
-    if getattr(state, "ledger_adjustment", None):
-        state.ledger_adjustment.on_value_change(live_update)
 
-
-def attach_invoice_handlers(
-    state: FormState,
-):
+def attach_invoice_handlers(state: FormState):
     # taxable = getattr(state, "invoice_taxable_value", None)
     invoice_igst = getattr(state, "invoice_igst", None)
     invoice_cess = getattr(state, "invoice_cess", None)
@@ -8493,8 +8362,7 @@ async def _fs_on_car_change(car_id, state, *, preserve_variant=False):
         options = {
             v["id"]: v["full_variant_name"]
             for v in sorted(
-                variants,
-                key=lambda x: (x.get("full_variant_name") or "").lower(),
+                variants, key=lambda x: (x.get("full_variant_name") or "").lower()
             )
         }
 
@@ -8552,7 +8420,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
             if value is None:
                 continue
 
-            formatted = f"₹{int(value):,}"
+            formatted = f"₹{format_num_inr(value)}"
 
             #  Update Listed Price Labels
             if name in state.price_listed_labels:
@@ -8745,9 +8613,7 @@ def _fs_update_live(state: FormState) -> None:
     if getattr(state, "acc_total_label", None):
         try:
             raw = state.acc_total_label.text
-
             acc_listed = int(float(raw.split("₹")[-1].replace(",", "")))
-
         except Exception:
             acc_listed = 0
 
@@ -8847,10 +8713,13 @@ def _fs_update_live(state: FormState) -> None:
     # Update the net price row labels
     if getattr(state, "lbl_net_price_allowed", None):
         state.lbl_net_price_allowed.set_text(f"₹{format_num_inr(net_allowed)}")
+
     if getattr(state, "lbl_net_price_booking", None):
         state.lbl_net_price_booking.set_text(f"₹{format_num_inr(net_booking)}")
+
     if getattr(state, "lbl_net_price_charged", None):
         state.lbl_net_price_charged.set_text(f"₹{format_num_inr(net_charged)}")
+
     if getattr(state, "lbl_net_price_diff", None):
         state.lbl_net_price_diff.set_text(f"₹{format_num_inr(net_diff)}")
 
@@ -8869,17 +8738,26 @@ def _fs_update_live(state: FormState) -> None:
 
     # CUSTOMER LEDGER CALC
     total_receivable = net_charged
-    total_received = (
-        int(parsed_val(getattr(state, "payment_cash", None)))
-        + int(parsed_val(getattr(state, "payment_bank", None)))
-        + int(parsed_val(getattr(state, "payment_exchange", None)))
-        + int(parsed_val(getattr(state, "payment_finance", None)))
-    )
+    total_received = 0
+
+    for payment in getattr(state, "ledger_payments", []):
+        try:
+            total_received += int(parsed_val(payment["amount"]))
+        except Exception:
+            pass
 
     balance_amount = total_receivable - total_received
 
-    # 5. UPDATE LABELS
+    user_balance = 0
 
+    try:
+        user_balance = int(parsed_val(state.balance_amount_by_user) or 0)
+    except Exception:
+        user_balance = 0
+
+    variation = balance_amount - user_balance
+
+    # 5. UPDATE LABELS
     if getattr(state, "total_receivable", None):
         state.total_receivable.set_text(f"₹{format_num_inr(total_receivable)}")
 
@@ -8888,6 +8766,9 @@ def _fs_update_live(state: FormState) -> None:
 
     if getattr(state, "balance_amount", None):
         state.balance_amount.set_text(f"₹{format_num_inr(balance_amount)}")
+
+    if getattr(state, "variation", None):
+        state.variation.set_text(f"₹{format_num_inr(variation)}")
 
     if getattr(state, "total_allowed", None):
         state.total_allowed.set_text(f"₹{format_num_inr(total_allowed_discount)}")
@@ -9193,12 +9074,7 @@ def build_payload(state: FormState) -> dict:
     }
 
     # PAYMENT
-    payment_details = {
-        "cash": intval(state.payment_cash),
-        "bank": intval(state.payment_bank),
-        "finance": intval(state.payment_finance),
-        "exchange": intval(state.payment_exchange),
-    }
+    payment_details = serialize_payments(state)
 
     # MAIN PAYLOAD
     payload = {
@@ -9559,6 +9435,18 @@ async def hydrate_form(state: FormState, txn: dict):
         for key, cb in state.booking_cbs.items():
             cb.set_value(bool(txn.get(f"bk_checks_{key}", False)))
 
+        # print("DELIVERY CBS", json.dumps(getattr(state, "delivery_cbs", {}), indent=2))
+        print(
+            "DELIVERY CHECKLIST DATA",
+            json.dumps(
+                {
+                    f"del_checks_{key}": txn.get(f"del_checks_{key}", False)
+                    for key in getattr(state, "delivery_cbs", {})
+                },
+                indent=2,
+            ),
+        )
+
         # DELIVERY CHECKLIST
         for key, cb in state.delivery_cbs.items():
             cb.set_value(bool(txn.get(f"del_checks_{key}", False)))
@@ -9669,16 +9557,67 @@ def hydrate_file_status_section(state: FormState, txn: dict):
 
 
 def hydrate_payment_section(state):
-    payments = state.transaction_data.get("payments") or []
 
-    if not payments:
+    txn = state.transaction_data or {}
+
+    # Clear existing rows
+    state.receipt_payments.clear()
+    state.ledger_payments.clear()
+
+    state.receipt_payments_container.clear()
+    state.ledger_payments_container.clear()
+
+    # -----------------------------------
+    # New Schema
+    # -----------------------------------
+    receipt_payments = txn.get("receipt_payments")
+    ledger_payments = txn.get("ledger_payments")
+
+    if receipt_payments is not None or ledger_payments is not None:
+        for payment in receipt_payments or []:
+            add_payment_row(
+                state=state,
+                container=state.receipt_payments_container,
+                payment_entries=state.receipt_payments,
+                total_label=state.receipt_total_label,
+                payment_data=payment,
+            )
+
+        for payment in ledger_payments or []:
+            add_payment_row(
+                state=state,
+                container=state.ledger_payments_container,
+                payment_entries=state.ledger_payments,
+                total_label=state.ledger_total_label,
+                payment_data=payment,
+            )
+
         return
 
-    state.payment_entries.clear()
-    state.payments_container.clear()
+    # -----------------------------------
+    # Legacy Schema
+    # -----------------------------------
+    legacy_payments = {
+        "Cash": txn.get("payment_cash", 0),
+        "Bank": txn.get("payment_bank", 0),
+        "Finance": txn.get("payment_finance", 0),
+        "Exchange": txn.get("payment_exchange", 0),
+    }
 
-    for payment in payments:
-        add_payment_row(state, payment_data=payment)
+    for source, amount in legacy_payments.items():
+        if not amount:
+            continue
+
+        add_payment_row(
+            state=state,
+            container=state.receipt_payments_container,
+            payment_entries=state.receipt_payments,
+            total_label=state.receipt_total_label,
+            payment_data={
+                "source": source,
+                "amount": amount,
+            },
+        )
 
 
 def hydrate_audit_section(state: FormState, txn: dict):
