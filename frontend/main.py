@@ -572,10 +572,7 @@ def login_page():
                 try:
                     data = await api_post(
                         "/auth/login",
-                        payload={
-                            "name": username.value,
-                            "password": password.value,
-                        },
+                        payload={"name": username.value, "password": password.value},
                     )
 
                     if not data:
@@ -603,10 +600,7 @@ def login_page():
                     ui.notify("Access denied", type="negative")
 
                 except ConnectionFailedError as e:
-                    ui.notify(
-                        str(e),
-                        type="negative",
-                    )
+                    ui.notify(str(e), type="negative")
 
                 except APIError as e:
                     ui.notify(str(e), type="negative")
@@ -614,10 +608,7 @@ def login_page():
                 except Exception as e:
                     logger.exception("LOGIN ERROR: %s", str(e))
 
-                    ui.notify(
-                        "Something went wrong",
-                        type="negative",
-                    )
+                    ui.notify("Something went wrong", type="negative")
 
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
@@ -681,8 +672,6 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         + pick("Alliance")
         + pick("Green")
     )
-
-    # 4. Allowed + diff (keep near actual)
 
     # 6. Accessories / finance / exchange
     ordered += pick("accessories_")
@@ -2615,7 +2604,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ui.notify("Failed to load transactions", type="negative")
 
             except Exception as e:
-                logger.exception("LOAD DATA ERROR")
+                logger.exception("LOAD DATA ERROR", e)
 
                 ui.notify("Something went wrong", type="negative")
 
@@ -2951,7 +2940,7 @@ async def complaints_ctrl_page():
         complaints = []
         total_entries = 0
     except APIError as e:
-        logger.exception("ERROR ON DASHBOARD")
+        logger.exception("ERROR ON DASHBOARD", e)
         ui.notify("An Error Occured", type="negative")
         complaints = []
         total_entries = 0
@@ -3057,7 +3046,7 @@ async def complaints_ctrl_page():
                     ui.notify("Unable to connect to server", type="negative")
                     status_options_raw = []
                 except APIError as e:
-                    logger.exception("ERROR ON DASHBOARD")
+                    logger.exception("ERROR ON DASHBOARD", e)
                     ui.notify("An Error Occured", type="negative")
                     status_options_raw = []
 
@@ -3110,7 +3099,7 @@ async def complaints_ctrl_page():
                         ui.notify("Failed to update status", type="negative")
 
                     except Exception as e:
-                        logger.exception("UPDATE STATUS ERROR")
+                        logger.exception("UPDATE STATUS ERROR", e)
                         ui.notify("Something went wrong", type="negative")
 
                 ui.button("Update Status", on_click=update_status).classes(
@@ -3186,7 +3175,7 @@ async def complaints_ctrl_page():
                         )
 
                     except Exception as e:
-                        logger.exception("SUBMIT REMARKS ERROR:")
+                        logger.exception("SUBMIT REMARKS ERROR:", e)
 
                         ui.notify(
                             "Something went wrong",
@@ -3211,11 +3200,11 @@ async def complaints_ctrl_page():
                     ui.notify("Unable to connect to server", type="negative")
                     flag_options_raw = []
                 except APIError as e:
-                    logger.exception("ERROR ON DASHBOARD")
+                    logger.exception("ERROR ON DASHBOARD", e)
                     ui.notify("An Error Occured", type="negative")
                     flag_options_raw = []
                 except Exception as exc:
-                    logger.exception("ERROR ON DASHBOARD")
+                    logger.exception("ERROR ON DASHBOARD", exc)
                     ui.notify("An Error Occured", type="negative")
                     flag_options_raw = []
 
@@ -3239,20 +3228,14 @@ async def complaints_ctrl_page():
                         row = await get_selected_row()
 
                         if not row:
-                            ui.notify(
-                                "Select a complaint first",
-                                type="warning",
-                            )
+                            ui.notify("Select a complaint first", type="warning")
 
                             return
 
                         flag = flag_select.value
 
                         if not flag:
-                            ui.notify(
-                                "Select a flag",
-                                type="warning",
-                            )
+                            ui.notify("Select a flag", type="warning")
 
                             return
 
@@ -3264,37 +3247,24 @@ async def complaints_ctrl_page():
                             },
                         )
 
-                        ui.notify(
-                            "Flag updated",
-                            type="positive",
-                        )
+                        ui.notify("Flag updated", type="positive")
 
                     except UnauthorizedError:
                         await logout_user()
-
                         ui.notify(
-                            "Session expired. Please login again.",
-                            type="warning",
+                            "Session expired. Please login again.", type="warning"
                         )
-
                         ui.navigate.to("/login")
 
                     except ConnectionFailedError:
-                        ui.notify(
-                            "Unable to update flag",
-                            type="negative",
-                        )
+                        ui.notify("Unable to update flag", type="negative")
 
                     except APIError as e:
                         logger.error("UPDATE FLAG API ERROR: %s", e, exc_info=True)
-
-                        ui.notify(
-                            "Failed to update flag",
-                            type="negative",
-                        )
+                        ui.notify("Failed to update flag", type="negative")
 
                     except Exception as e:
-                        logger.exception("UPDATE FLAG ERROR:")
+                        logger.exception("UPDATE FLAG ERROR:", e)
 
                         ui.notify(
                             "Something went wrong",
@@ -3660,7 +3630,7 @@ async def daily_reporting_page() -> None:
 
                                                 except Exception as e:
                                                     logger.exception(
-                                                        "TOGGLE RECEIVED ERROR:"
+                                                        "TOGGLE RECEIVED ERROR:", e
                                                     )
 
                                                     ui.notify(
@@ -3669,10 +3639,7 @@ async def daily_reporting_page() -> None:
                                                     )
 
                                             ui.checkbox(
-                                                value=row.get(
-                                                    "received",
-                                                    False,
-                                                ),
+                                                value=row.get("received", False),
                                                 on_change=toggle_received,
                                             )
 
@@ -3744,7 +3711,7 @@ async def daily_reporting_page() -> None:
 
                                                 except Exception as e:
                                                     logger.exception(
-                                                        "TOGGLE OOS ERROR:"
+                                                        "TOGGLE OOS ERROR:", e
                                                     )
 
                                                     ui.notify(
@@ -3835,8 +3802,7 @@ async def daily_reporting_page() -> None:
                                                 reason_input = (
                                                     ui.input(
                                                         value=row.get(
-                                                            "rejection_reason",
-                                                            "",
+                                                            "rejection_reason", ""
                                                         ),
                                                         placeholder="Reason",
                                                     )
@@ -4071,7 +4037,7 @@ async def daily_reporting_page() -> None:
                             "Some Error Occured.",
                             type="negative",
                         )
-                        logger.exception("ERROR OCCURRED WHILE APPROVING")
+                        logger.exception("ERROR OCCURRED WHILE APPROVING", e)
 
                 ui.button(
                     "Delete Selected",
@@ -4903,7 +4869,7 @@ async def daily_reporting_page() -> None:
 
             elif rstate.selected_dealer:
                 params["dealership_id"] = rstate.selected_dealer
-
+            print(json.dumps(params, indent=2))
             # DOWNLOAD REQUEST
             response = await http_client.get(
                 f"{BASE_URL}/reports/daily",
@@ -4956,52 +4922,6 @@ async def daily_reporting_page() -> None:
         except Exception as e:
             logger.exception("DOWNLOAD REPORT ERROR %s", str(e))
             ui.notify("Download failed", type="negative")
-
-    # async def download_report():
-    #     try:
-    #         if not rstate.selected_dealer and not rstate.selected_outlet:
-    #             ui.notify("Select atleast a dealership or a showroom.", type="info")
-    #             return
-
-    #         params = {
-    #             "start_date": rstate.report_from,
-    #             "end_date": rstate.report_to,
-    #         }
-    #         if rstate.selected_outlet:
-    #             params["outlet_id"] = rstate.selected_outlet
-
-    #         elif rstate.selected_dealer:
-    #             params["dealership_id"] = rstate.selected_dealer
-
-    #         async with httpx.AsyncClient() as client:
-    #             response = await client.get(
-    #                 f"{BASE_URL}/reports/daily",
-    #                 headers=get_auth_headers(),
-    #                 params=params,
-    #                 timeout=60,
-    #             )
-    #             response.raise_for_status()
-    #             filename = "daily-report.xlsx"
-    #             content_disposition = response.headers.get("Content-Disposition")
-    #             if content_disposition and "filename=" in content_disposition:
-    #                 filename = (
-    #                     content_disposition.split("filename=")[-1]
-    #                     .replace('"', "")
-    #                     .strip()
-    #                 )
-    #             ui.download(
-    #                 src=response.content,
-    #                 filename=filename,
-    #             )
-    #             ui.notify(
-    #                 "Report downloaded successfully",
-    #                 type="positive",
-    #             )
-    #     except Exception as e:
-    #         ui.notify(
-    #             f"Download failed: {str(e)}",
-    #             type="negative",
-    #         )
 
     # Page layout
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -5162,10 +5082,7 @@ async def daily_reporting_page() -> None:
                         )
 
                         to_inp = (
-                            ui.input(
-                                label="",
-                                value=today_str,
-                            )
+                            ui.input(label="", value=today_str)
                             .props('type="date" outlined dense')
                             .classes("w-36")
                         )
@@ -5231,19 +5148,10 @@ async def daily_reporting_page() -> None:
                     try:
                         status_label.text = "Uploading..."
                         status_label.classes("text-blue-500")
-                        payload = {
-                            "outlet_id": rstate.outlet_select.value,  # temporarily make it 1 change it later
-                        }
-                        response = await api_post_file(
-                            "/mis/upload-ebd",
-                            e,
-                            payload,
-                        )
+                        payload = {"outlet_id": rstate.outlet_select.value}
+                        response = await api_post_file("/mis/upload-ebd", e, payload)
 
-                        created = response.get(
-                            "records_created",
-                            0,
-                        )
+                        created = response.get("records_created", 0)
 
                         status_label.text = f"✅ Upload successful ({created} records)"
                         status_label.classes("text-green-600")
@@ -9069,17 +8977,26 @@ async def _fs_handle_submit(
 
 
 def serialize_payments(state):
-    payments = []
-    for payment in state.payment_entries:
-        payments.append(
-            {
-                "source": payment["source"].value,
-                "receipt": payment["receipt"].value,
-                "amount": payment["amount"].value,
-            }
-        )
 
-    return payments
+    def serialize_group(payments):
+        rows = []
+
+        for payment in payments:
+            rows.append(
+                {
+                    "date": payment["date"].value,
+                    "source": payment["source"].value,
+                    "receipt": payment["receipt"].value,
+                    "amount": payment["amount"].value,
+                }
+            )
+
+        return rows
+
+    return {
+        "receipt_payments": serialize_group(getattr(state, "receipt_payments", [])),
+        "ledger_payments": serialize_group(getattr(state, "ledger_payments", [])),
+    }
 
 
 def build_payload(state: FormState) -> dict:
@@ -9110,6 +9027,8 @@ def build_payload(state: FormState) -> dict:
     # COMPONENTS (CRITICAL)
     actual_amounts = {}
     allowed_amounts = {}
+    payments_details = serialize_payments(state)
+    logger.info("payment details: %s", json.dumps(payments_details))
 
     # Price components
     for name, inp in state.price_inputs.items():
@@ -9285,8 +9204,6 @@ def build_payload(state: FormState) -> dict:
         payload["total_receivable"] = lbl_val(state.total_receivable)
         payload["total_received"] = lbl_val(state.total_received)
         payload["balance_amount"] = lbl_val(state.balance_amount)
-        payload["ledger_adjustment"] = intval(state.ledger_adjustment)
-        payload["ledger_adjustment_remarks"] = val(state.ledger_adjustment_remarks)
         payload["total_actual_discount"] = lbl_val(state.total_given)
         payload["total_allowed_discount"] = lbl_val(state.total_allowed)
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
@@ -9568,13 +9485,19 @@ async def hydrate_form(state: FormState, txn: dict):
             cb.set_value(bool(txn.get(f"del_checks_{key}", False)))
 
         # SUMMARY FIELDS
-        if state.total_discount_booking:
+        if getattr(state, "total_discount_booking", None):
             state.total_discount_booking.set_value(txn.get("discount_booking", 0))
 
         if getattr(state, "other_discount_delivery", None):
-            state.other_discount_delivery.set_value(
-                txn.get("other_discount_delivery", 0)
-            )
+            delivery_discount = txn.get("other_discount_delivery")
+
+            if delivery_discount not in [None, ""]:
+                # Existing delivery MIS
+                state.other_discount_delivery.set_value(delivery_discount)
+
+            else:
+                # Fresh booking -> delivery MIS
+                state.other_discount_delivery.set_value(txn.get("discount_booking", 0))
 
         if state.adjustment_input:
             state.adjustment_input.set_value(txn.get("adjustment_booking", 0))

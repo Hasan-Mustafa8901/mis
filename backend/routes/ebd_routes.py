@@ -21,26 +21,15 @@ router = APIRouter(prefix="/mis", tags=["MIS"])
 
 # HELPERS
 def validate_mis_record_access(
-    session: Session,
-    current_user: User,
-    mis_record_id: int,
+    session: Session, current_user: User, mis_record_id: int
 ):
 
-    mis_record = session.get(
-        MISRecord,
-        mis_record_id,
-    )
+    mis_record = session.get(MISRecord, mis_record_id)
 
     if not mis_record:
-        raise HTTPException(
-            status_code=404,
-            detail="MIS record not found",
-        )
+        raise HTTPException(status_code=404, detail="MIS record not found")
 
-    validate_outlet_access(
-        current_user,
-        mis_record.outlet_id,
-    )
+    validate_outlet_access(current_user, mis_record.outlet_id)
 
     return mis_record
 
@@ -173,9 +162,7 @@ def toggle_received(
         value=payload["value"],
     )
 
-    return {
-        "status": "success",
-    }
+    return {"status": "success"}
 
 
 # APPROVE
@@ -183,24 +170,16 @@ def toggle_received(
 def approve_record(
     payload: MISRecordActionPayload,
     session: Session = Depends(get_session),
-    current_user: User = Depends(
-        require_roles(
-            UserRole.ADMIN,
-            UserRole.AUDIT_ASST,
-        )
-    ),
+    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.AUDIT_ASST)),
 ):
 
     validate_mis_record_access(
-        session=session,
-        current_user=current_user,
-        mis_record_id=payload.mis_record_id,
+        session=session, current_user=current_user, mis_record_id=payload.mis_record_id
     )
 
     try:
         MISUpdateService.approve_record(
-            session=session,
-            mis_record_id=payload.mis_record_id,
+            session=session, mis_record_id=payload.mis_record_id
         )
 
         return {
@@ -209,10 +188,7 @@ def approve_record(
         }
 
     except ValueError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # REJECT
@@ -220,18 +196,11 @@ def approve_record(
 def reject_record(
     payload: MISRecordActionPayload,
     session: Session = Depends(get_session),
-    current_user: User = Depends(
-        require_roles(
-            UserRole.ADMIN,
-            UserRole.AUDIT_ASST,
-        )
-    ),
+    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.AUDIT_ASST)),
 ):
 
     validate_mis_record_access(
-        session=session,
-        current_user=current_user,
-        mis_record_id=payload.mis_record_id,
+        session=session, current_user=current_user, mis_record_id=payload.mis_record_id
     )
 
     try:
@@ -241,16 +210,10 @@ def reject_record(
             reason=payload.reason or "",
         )
 
-        return {
-            "status": "success",
-            "message": "Record rejected",
-        }
+        return {"status": "success", "message": "Record rejected"}
 
     except ValueError as e:
-        raise HTTPException(
-            status_code=404,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # TOGGLE OUT OF SCOPE
@@ -274,9 +237,7 @@ def toggle_out_of_scope(
         reason=payload.get("reason"),
     )
 
-    return {
-        "status": "success",
-    }
+    return {"status": "success"}
 
 
 # TOGGLE APPROVE
@@ -294,14 +255,10 @@ def toggle_approve(
     )
 
     MISUpdateService.toggle_approve(
-        session=session,
-        mis_record_id=payload["mis_record_id"],
-        value=payload["value"],
+        session=session, mis_record_id=payload["mis_record_id"], value=payload["value"]
     )
 
-    return {
-        "status": "success",
-    }
+    return {"status": "success"}
 
 
 # TOGGLE REJECT
@@ -325,9 +282,7 @@ def toggle_reject(
         reason=payload.get("reason"),
     )
 
-    return {
-        "status": "success",
-    }
+    return {"status": "success"}
 
 
 # TOGGLE SCANNED
@@ -364,43 +319,26 @@ class BulkDeletePayload(BaseModel):
 def bulk_delete_mis_records(
     payload: BulkDeletePayload,
     session: Session = Depends(get_session),
-    current_user: User = Depends(
-        require_roles(
-            UserRole.ADMIN,
-            UserRole.AUDIT_ASST,
-        )
-    ),
+    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.AUDIT_ASST)),
 ):
 
     record_ids = payload.ids
 
     if not record_ids:
-        raise HTTPException(
-            status_code=400,
-            detail="No record ids provided",
-        )
+        raise HTTPException(status_code=400, detail="No record ids provided")
 
     # FETCH RECORDS
     records = session.exec(select(MISRecord).where(MISRecord.id.in_(record_ids))).all()
 
     if not records:
-        raise HTTPException(
-            status_code=404,
-            detail="No records found",
-        )
+        raise HTTPException(status_code=404, detail="No records found")
 
     # SECURITY VALIDATION
     for record in records:
-        validate_outlet_access(
-            current_user,
-            record.outlet_id,
-        )
+        validate_outlet_access(current_user, record.outlet_id)
 
     # DELETE
-    result = MISUpdateService.delete_records(
-        session=session,
-        record_ids=record_ids,
-    )
+    result = MISUpdateService.delete_records(session=session, record_ids=record_ids)
 
     return result
 
@@ -411,25 +349,13 @@ async def upload_ebd_file(
     outlet_id: int = Form(...),
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
-    current_user: User = Depends(
-        require_roles(
-            UserRole.ADMIN,
-            UserRole.AUDIT_ASST,
-        )
-    ),
+    current_user: User = Depends(require_roles(UserRole.ADMIN, UserRole.AUDIT_ASST)),
 ):
 
-    validate_outlet_access(
-        current_user,
-        outlet_id,
-    )
-
+    validate_outlet_access(current_user, outlet_id)
     # VALIDATE FILE
     if not file.filename.endswith((".xlsx", ".xls")):
-        raise HTTPException(
-            status_code=400,
-            detail="Only Excel files are allowed",
-        )
+        raise HTTPException(status_code=400, detail="Only Excel files are allowed")
     temp_path = None
 
     try:
@@ -442,27 +368,20 @@ async def upload_ebd_file(
             content = await file.read()
             temp_file.write(content)
             temp_path = temp_file.name
-        dealership = get_dealership_by_outlet(
-            session,
-            outlet_id,
-        )
 
+        dealership = get_dealership_by_outlet(session, outlet_id)
         # PROCESS FILE
         result = MISUploadService.upload_file(
             session=session,
             file_path=temp_path,
             outlet_id=outlet_id,
-            dealership_id=dealership.get(
-                "id",
-                0,
-            ),
+            dealership_id=dealership.get("id", 0),
         )
         return result
+
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=500, detail=str(e))
+
     finally:
         try:
             if temp_path and Path(temp_path).exists():
