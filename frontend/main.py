@@ -1241,10 +1241,7 @@ async def dashboard_page() -> None:
         current_transactions = txns
         all_month_map = defaultdict(list)
         for txn in txns:
-            booking_date = txn.get(
-                "booking_date",
-                "",
-            )
+            booking_date = txn.get("booking_date", "")
 
             if booking_date and len(booking_date) >= 7:
                 all_month_map[booking_date[:7]].append(txn)
@@ -1267,19 +1264,10 @@ async def dashboard_page() -> None:
         except Exception:
             return ym
 
-    DISCOUNT_KEYS = {
-        "Cash Discount All Customers",
-        "Additional Discount From Dealer",
-        "Additional for POI /Corporate Customers",
-        "Additional for Exchange Customers",
-        "Additional for Scrappage Customers",
-        "Additional Loyalty (EV TO EV)",
-        "Additional Loyalty (ICE TO EV)",
-        "Maximum benefit due to price increase",
-    }
-
-    def get_allowed_discount(t: dict) -> float:
-        return sum(float(t.get(f"{k}_allowed", 0) or 0) for k in DISCOUNT_KEYS)
+    def get_allowed_discount(t: dict) -> int:
+        if t.get("stage") == "booking":
+            return int(t.get("booking_allowed_discount", 0) or 0)
+        return 0
 
     #  DASHBOARD LAYOUT
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -1352,9 +1340,7 @@ async def dashboard_page() -> None:
                         "text-[12px] text-gray-400"
                     )
                 with ui.row().classes("items-center gap-3 shrink-0"):
-                    # =========================================
                     # DEALERSHIP FILTER
-                    # =========================================
                     if user_role == "admin":
                         default_dealership = ""
 
@@ -1383,9 +1369,7 @@ async def dashboard_page() -> None:
                         .props("outlined dense")
                     )
 
-                    # =========================================
                     # OUTLET FILTER
-                    # =========================================
 
                     outlet_options = {
                         "": "All Showrooms",
@@ -1407,9 +1391,7 @@ async def dashboard_page() -> None:
                     dealership_select.on_value_change(on_dealership_filter_change)
                     outlet_select.on_value_change(on_outlet_filter_change)
 
-                    # =========================================
                     # MONTH FILTER
-                    # =========================================
 
                     month_select = (
                         ui.select(
@@ -1823,82 +1805,82 @@ async def dashboard_page() -> None:
                                 f"{delivery_analytics['ok_cases']} of {delivery_analytics['total_entries']} transactions OK"
                             ).classes("text-[14px] text-gray-600")
 
-                    #  SALES ANALYTICS
-                    with ui.row().classes("w-full items-center gap-2 mb-3 mt-6"):
-                        ui.label("Sales Analytics").classes(
-                            "text-[11px] font-bold tracking-[0.8px] uppercase text-gray-500 whitespace-nowrap"
-                        )
-                        ui.separator().classes("flex-1")
+                    # #  SALES ANALYTICS
+                    # with ui.row().classes("w-full items-center gap-2 mb-3 mt-6"):
+                    #     ui.label("Sales Analytics").classes(
+                    #         "text-[11px] font-bold tracking-[0.8px] uppercase text-gray-500 whitespace-nowrap"
+                    #     )
+                    #     ui.separator().classes("flex-1")
 
-                    with ui.grid(columns=2).classes("w-full gap-4 mb-4"):
-                        # Units Sold by Car Model
-                        with ui.card().classes("shadow-sm rounded-xl p-5"):
-                            with ui.row().classes(
-                                "w-full items-baseline justify-between mb-3.5 pb-2.5 border-b border-gray-50"
-                            ):
-                                ui.label("Units Sold by Car Model").classes(
-                                    "text-[12.5px] font-semibold text-gray-900"
-                                )
-                                ui.label("all time").classes(
-                                    "text-[10px] text-gray-400 font-normal"
-                                )
-                            render_bar_chart(
-                                delivery_analytics["top_model_sales"],
-                                color="#6366F1",
-                                value_fmt="N",
-                                empty_msg="No model data",
-                                height=220,
-                            )
+                    # with ui.grid(columns=2).classes("w-full gap-4 mb-4"):
+                    #     # Units Sold by Car Model
+                    #     with ui.card().classes("shadow-sm rounded-xl p-5"):
+                    #         with ui.row().classes(
+                    #             "w-full items-baseline justify-between mb-3.5 pb-2.5 border-b border-gray-50"
+                    #         ):
+                    #             ui.label("Units Sold by Car Model").classes(
+                    #                 "text-[12.5px] font-semibold text-gray-900"
+                    #             )
+                    #             ui.label("all time").classes(
+                    #                 "text-[10px] text-gray-400 font-normal"
+                    #             )
+                    #         render_bar_chart(
+                    #             delivery_analytics["top_model_sales"],
+                    #             color="#6366F1",
+                    #             value_fmt="N",
+                    #             empty_msg="No model data",
+                    #             height=220,
+                    #         )
 
-                        # Discount by Car Model
-                        with ui.card().classes("shadow-sm rounded-xl p-5"):
-                            with ui.row().classes(
-                                "w-full items-baseline justify-between mb-3.5 pb-2.5 border-b border-gray-50"
-                            ):
-                                ui.label("Discount by Car Model").classes(
-                                    "text-[12.5px] font-semibold text-gray-900"
-                                )
-                                ui.label("total allowed").classes(
-                                    "text-[10px] text-gray-400 font-normal"
-                                )
-                            render_bar_chart(
-                                delivery_analytics["top_model_disc"],
-                                color="#10B981",
-                                value_fmt="K",
-                                empty_msg="No model data",
-                                height=220,
-                            )
+                    #     # Discount by Car Model
+                    #     with ui.card().classes("shadow-sm rounded-xl p-5"):
+                    #         with ui.row().classes(
+                    #             "w-full items-baseline justify-between mb-3.5 pb-2.5 border-b border-gray-50"
+                    #         ):
+                    #             ui.label("Discount by Car Model").classes(
+                    #                 "text-[12.5px] font-semibold text-gray-900"
+                    #             )
+                    #             ui.label("total allowed").classes(
+                    #                 "text-[10px] text-gray-400 font-normal"
+                    #             )
+                    #         render_bar_chart(
+                    #             delivery_analytics["top_model_disc"],
+                    #             color="#10B981",
+                    #             value_fmt="K",
+                    #             empty_msg="No model data",
+                    #             height=220,
+                    #         )
 
-                    # Sales conditions (full-width, split 2-col)
-                    if delivery_analytics["sorted_conds"]:
-                        items_list = list(delivery_analytics["sorted_conds"])
-                        half = (len(items_list) + 1) // 2
-                        left_items = items_list[:half]
-                        right_items = items_list[half:]
-                        with ui.card().classes("w-full shadow-sm rounded-xl p-5 mb-4"):
-                            with ui.row().classes(
-                                "w-full items-baseline justify-between mb-3.5 pb-2.5 border-b border-gray-50"
-                            ):
-                                ui.label("Sales Conditions Breakdown").classes(
-                                    "text-[12.5px] font-semibold text-gray-900"
-                                )
-                                ui.label("transactions per flag").classes(
-                                    "text-[10px] text-gray-400 font-normal"
-                                )
-                            with ui.grid(columns=2).classes("w-full gap-5"):
-                                render_bar_chart(
-                                    left_items,
-                                    color="#8B5CF6",
-                                    value_fmt="N",
-                                    height=max(120, len(left_items) * 36),
-                                )
-                                if right_items:
-                                    render_bar_chart(
-                                        right_items,
-                                        color="#8B5CF6",
-                                        value_fmt="N",
-                                        height=max(120, len(right_items) * 36),
-                                    )
+                    # # Sales conditions (full-width, split 2-col)
+                    # if delivery_analytics["sorted_conds"]:
+                    #     items_list = list(delivery_analytics["sorted_conds"])
+                    #     half = (len(items_list) + 1) // 2
+                    #     left_items = items_list[:half]
+                    #     right_items = items_list[half:]
+                    #     with ui.card().classes("w-full shadow-sm rounded-xl p-5 mb-4"):
+                    #         with ui.row().classes(
+                    #             "w-full items-baseline justify-between mb-3.5 pb-2.5 border-b border-gray-50"
+                    #         ):
+                    #             ui.label("Sales Conditions Breakdown").classes(
+                    #                 "text-[12.5px] font-semibold text-gray-900"
+                    #             )
+                    #             ui.label("transactions per flag").classes(
+                    #                 "text-[10px] text-gray-400 font-normal"
+                    #             )
+                    #         with ui.grid(columns=2).classes("w-full gap-5"):
+                    #             render_bar_chart(
+                    #                 left_items,
+                    #                 color="#8B5CF6",
+                    #                 value_fmt="N",
+                    #                 height=max(120, len(left_items) * 36),
+                    #             )
+                    #             if right_items:
+                    #                 render_bar_chart(
+                    #                     right_items,
+                    #                     color="#8B5CF6",
+                    #                     value_fmt="N",
+                    #                     height=max(120, len(right_items) * 36),
+                    #                 )
 
                     #  OUTLET ANALYTICS
                     with ui.row().classes("w-full items-center gap-2 mb-3 mt-6"):

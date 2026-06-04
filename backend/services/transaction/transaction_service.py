@@ -785,6 +785,7 @@ class TransactionService:
             "registration_number": tx.registration_number,
             "price_offered_booking": tx.price_offered_booking,
             "total_discount_booking": tx.total_discount_booking,
+            "excess_booking": tx.excess_booking,
             "total_actual_discount": tx.total_actual_discount,
             "total_allowed_discount": tx.total_allowed_discount,
             "total_excess_discount": tx.total_excess_discount,

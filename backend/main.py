@@ -1,7 +1,7 @@
 # Review This
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from sqlmodel import Session, SQLModel, select, func
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 from typing import List, Dict, Any
 from datetime import date
 from contextlib import asynccontextmanager
@@ -409,6 +409,7 @@ def get_dashboard_data(
         joinedload(Transaction.outlet),
         joinedload(Transaction.sales_executive),
         joinedload(Transaction.user),
+        selectinload(Transaction.items),
     )
 
     stmt = apply_outlet_scope(
@@ -433,7 +434,11 @@ def get_dashboard_data(
     return [
         {
             **TransactionService.serialize_transaction_row(tx),
-            "conditions": tx.conditions or {},
+            "booking_allowed_discount": sum(
+                item.allowed_amount or 0
+                for item in tx.items
+                if item.component_type == "discount"
+            ),
             "excess_booking": tx.excess_booking or 0,
         }
         for tx in txs
