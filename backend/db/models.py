@@ -63,6 +63,14 @@ class MISMatchingStatus(str, Enum):
     MANUAL = "manual"
 
 
+class ExportStatus(str, Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
 class Dealership(SQLModel, table=True):
     id: int = Field(default=None, primary_key=True)
     name: str
@@ -122,6 +130,7 @@ class User(SQLModel, table=True):
     )
 
     transactions: list["Transaction"] = Relationship(back_populates="user")
+    export_jobs: list["ExportJob"] = Relationship(back_populates="user")
     outlet: Optional["Outlet"] = Relationship(back_populates="users")
 
     is_active: bool = Field(default=True)
@@ -599,3 +608,26 @@ class Complaint(SQLModel, table=True):
     complainee_outlet: Optional["Outlet"] = Relationship(
         sa_relationship_kwargs={"foreign_keys": "[Complaint.complainee_outlet_id]"}
     )
+
+
+class ExportJob(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    created_by: Optional[int] = Field(default=None, foreign_key="user.id", index=True)
+    status: ExportStatus = Field(default=ExportStatus.PENDING, index=True)
+
+    file_name: Optional[str] = None
+    file_path: Optional[str] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=get_ist_now)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+
+    filters: Optional[str] = None
+
+    total_rows: Optional[int] = None  # expected rows before export starts
+    processed_rows: int = Field(default=0)  # progress during export
+    row_count: Optional[int] = None  # final exported rows
+
+    error_message: Optional[str] = None
+    user: Optional["User"] = Relationship(back_populates="export_jobs")

@@ -1,4 +1,14 @@
 from pydantic import BaseModel
+from datetime import date
+
+
+class MISExportRequest(BaseModel):
+    start_date: date | None = None
+    end_date: date | None = None
+    month: str | None = None
+    outlet_id: int | None = None
+    dealership_id: int | None = None
+    stage: str | None = None
 
 
 class DealershipCreate(BaseModel):

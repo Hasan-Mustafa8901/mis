@@ -20,6 +20,7 @@ from db.models import (
     Dealership,
     User,
     UserRole,
+    ExportJob,
 )
 from services.ingestion.price_seed_service import PriceListIngestionService
 from services.discount.discount_service import DiscountService
