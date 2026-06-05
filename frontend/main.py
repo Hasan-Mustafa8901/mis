@@ -2599,11 +2599,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             if mstate._debounce:
                 mstate._debounce.cancel()
 
-            mstate._debounce = ui.timer(
-                0.3,
-                lambda: load_data(),
-                once=True,
-            )
+            mstate._debounce = ui.timer(0.3, lambda: load_data(), once=True)
 
         mstate.load_data = load_data
 
