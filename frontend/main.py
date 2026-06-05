@@ -36,7 +36,7 @@ from auth_old import (
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 # BASE_URL = ************
 
@@ -2051,13 +2051,14 @@ class MISState:
         self.sorted_months = {}
         self.month_map = {}
 
+        self.export_timer: ui.timer | None = None
+
 
 async def load_master_data(mstate):
     mstate.dealerships = await api_get("/dealerships")
     mstate.outlets = await api_get("/outlets")
 
 
-# PAGE: MIS TABLES (Booking & Delivery)
 # PAGE: MIS TABLES (Booking & Delivery)
 async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
@@ -2194,8 +2195,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     params["outlet_id"] = mstate.selected_outlet
                 elif mstate.selected_dealer:
                     params["dealership_id"] = mstate.selected_dealer
-                print("PARAMS: ", params)
-
                 data = await api_get("/transactions-pages", params=params)
 
                 # existing logic
@@ -2224,11 +2223,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             if mstate._debounce:
                 mstate._debounce.cancel()
 
-            mstate._debounce = ui.timer(
-                0.3,
-                lambda: load_data(),
-                once=True,
-            )
+            mstate._debounce = ui.timer(0.3, lambda: load_data(), once=True)
 
         @ui.refreshable
         def render_header_meta():
@@ -2248,6 +2243,183 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ui.label(f"{mstate.total_entries} records{exc_txt}").classes(
                     "text-[12px] text-gray-400"
                 )
+
+        # Export Dialog
+        async def download_job_file(job_id: int):
+            try:
+                token = get_token()
+                headers = {"Authorization": f"Bearer {token}"} if token else {}
+                async with httpx.AsyncClient() as client:
+                    r = await client.get(
+                        f"{BASE_URL}/reports/mis/download/{job_id}",
+                        headers=headers,
+                        timeout=30,
+                    )
+                    if r.status_code != 200:
+                        try:
+                            err = r.json().get("detail", "Download failed")
+                        except Exception:
+                            err = "Download failed"
+                        ui.notify(err, type="negative")
+                        return
+                    ui.download(
+                        src=r.content, filename=f"{stage}_mis_export_{job_id}.xlsx"
+                    )
+                    ui.notify("Download started", type="positive")
+            except Exception as e:
+                ui.notify(f"Download failed: {e}", type="negative")
+
+        async def refresh_export_jobs():
+            try:
+                jobs = await api_get("/reports/mis/export/jobs")
+
+                if jobs:
+                    latest_status = jobs[0]["status"]
+
+                    if latest_status in ("completed", "failed", "expired"):
+                        mstate.export_timer.active = False
+
+                jobs_container.clear()
+                with jobs_container:
+                    if not jobs:
+                        ui.label("No recent exports found.").classes(
+                            "text-xs text-gray-400 italic"
+                        )
+                    for job in jobs[:5]:
+                        status = job["status"]
+                        color_map = {
+                            "completed": "text-green-600 font-semibold",
+                            "failed": "text-red-500 font-semibold",
+                            "processing": "text-blue-500 font-semibold",
+                            "pending": "text-yellow-600 font-semibold",
+                            "expired": "text-gray-400 italic",
+                        }
+                        status_class = color_map.get(status, "text-gray-600")
+                        created_time = (
+                            job["created_at"].replace("T", " ").split(".")[0]
+                            if job["created_at"]
+                            else ""
+                        )
+
+                        with ui.row().classes(
+                            "w-full items-center justify-between p-2 border border-gray-100 rounded-lg bg-gray-50"
+                        ):
+                            with ui.column().classes("gap-0.5"):
+                                job_filters = job.get("filters", {})
+                                month_str = job_filters.get("month")
+                                filter_desc = (
+                                    month_label_local(month_str)
+                                    if month_str
+                                    else "All Months"
+                                )
+                                ui.label(f"Export: {filter_desc}").classes(
+                                    "text-[11px] font-bold text-gray-800"
+                                )
+                                ui.label(f"{created_time}").classes(
+                                    "text-[10px] text-gray-400"
+                                )
+
+                            with ui.row().classes("items-center gap-2"):
+                                ui.label(status.title()).classes(
+                                    f"text-[11px] {status_class}"
+                                )
+                                if status == "completed":
+                                    ui.button(
+                                        icon="download",
+                                        on_click=lambda e, jid=job["id"]: (
+                                            download_job_file(jid)
+                                        ),
+                                    ).props("flat round dense size=sm color=primary")
+                                elif status == "failed":
+                                    ui.icon("error", color="negative").classes(
+                                        "cursor-pointer"
+                                    ).tooltip(
+                                        job.get("error_message") or "Unknown error"
+                                    )
+            except Exception as e:
+                print("Error refreshing export jobs:", e)
+
+        with (
+            ui.dialog() as export_dlg,
+            ui.card().classes("w-[500px] p-6 rounded-xl shadow-2xl"),
+        ):
+            ui.label("Export MIS Report").classes(
+                "text-lg font-bold text-gray-900 mb-2"
+            )
+
+            # Month options
+
+            month_select = (
+                ui.select(
+                    options={None: "All Months"},
+                    value=month,
+                    label="Filter by Calendar Month",
+                )
+                .classes("w-full mb-4")
+                .props("outlined dense")
+            )
+
+            async def trigger_export():
+                try:
+                    m_val = month_select.value
+                    payload = {"stage": stage}
+
+                    if mstate.selected_dealer:
+                        payload["dealership_id"] = mstate.selected_dealer
+
+                    if mstate.selected_outlet:
+                        payload["outlet_id"] = mstate.selected_outlet
+
+                    if m_val:
+                        payload["month"] = m_val
+
+                    print("EXPORT PAYLOAD:", payload)
+
+                    res = await api_post("/reports/mis/export", payload)
+                    ui.notify(
+                        f"Export job queued. Job ID: {res['job_id']}", type="positive"
+                    )
+                    await refresh_export_jobs()
+                except Exception as e:
+                    msg = str(e)
+                    if hasattr(e, "response") and e.response is not None:
+                        try:
+                            msg = e.response.json().get("detail", msg)
+                        except Exception:
+                            pass
+                    ui.notify(f"Export failed: {msg}", type="negative")
+
+            ui.button("Generate Excel", on_click=trigger_export).classes(
+                "bg-green-600 text-white w-full py-2.5 rounded-lg font-bold mb-4"
+            ).props("no-caps unelevated")
+
+            ui.label("Recent Exports").classes(
+                "text-sm font-semibold text-gray-700 mb-2"
+            )
+
+            jobs_container = ui.column().classes(
+                "w-full gap-2 mb-4 max-h-[200px] overflow-y-auto"
+            )
+
+            mstate.export_timer = ui.timer(3.0, refresh_export_jobs, active=False)
+
+            def on_dialog_change(e):
+                mstate.export_timer.active = e.value
+                if e.value:
+                    month_opts = {None: "All Months"}
+                    for ym in getattr(mstate, "sorted_months", []):
+                        month_opts[ym] = month_label_local(ym)
+                    print("Setting month options:", month_opts)
+                    month_select.set_options(month_opts)
+
+                    asyncio.create_task(refresh_export_jobs())
+
+            export_dlg.on_value_change(on_dialog_change)
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Close", on_click=export_dlg.close).props(
+                    "outline dense"
+                ).classes("px-4 py-1.5 text-xs text-gray-50 font-semibold")
 
         #  MAIN CONTENT
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
@@ -2301,6 +2473,19 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 def on_outlet_change(val):
                     mstate.selected_outlet = int(val) if val else None
                     schedule_load()
+
+                ## Export Button
+                with (
+                    ui.button(on_click=export_dlg.open)
+                    .classes(
+                        "border border-green-300 text-green-700 bg-green-50 font-semibold text-[13px] px-4 py-2 rounded-[7px] shadow-sm hover:bg-green-100"
+                    )
+                    .props("no-caps outline")
+                ):
+                    ui.icon("file_download").classes(
+                        "text-green-700 text-lg text-weight-bold"
+                    )
+                    ui.label("Export MIS").classes("text-weight-bold pl-2")
 
                 ## Delete Button
                 with (
