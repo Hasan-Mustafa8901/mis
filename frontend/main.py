@@ -2732,7 +2732,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     if m_val:
                         payload["month"] = m_val
 
-                    print("EXPORT PAYLOAD:", payload)
+                    logger.info("EXPORT PAYLOAD: %s", payload)
 
                     res = await api_post("/reports/mis/export", payload)
                     ui.notify(
@@ -2744,6 +2744,8 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     if hasattr(e, "response") and e.response is not None:
                         try:
                             msg = e.response.json().get("detail", msg)
+                            logger.info("EXPORT API ERROR: %s", msg)
+
                         except Exception:
                             pass
                     ui.notify(f"Export failed: {msg}", type="negative")
@@ -2768,7 +2770,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     month_opts = {None: "All Months"}
                     for ym in getattr(mstate, "sorted_months", []):
                         month_opts[ym] = month_label_local(ym)
-                    print("Setting month options:", month_opts)
+                    logger.info("Setting month options: %s", month_opts)
                     month_select.set_options(month_opts)
 
                     asyncio.create_task(refresh_export_jobs())

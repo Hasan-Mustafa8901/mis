@@ -193,7 +193,7 @@ def trigger_mis_export(
         "stage": payload.stage,
         "allowed_outlet_ids": allowed_outlet_ids,
     }
-    print("FILTERS STORED:", filters)
+
     job = ExportService.create_export_job(
         session=session, created_by=current_user.id, filters=filters
     )

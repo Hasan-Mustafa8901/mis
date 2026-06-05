@@ -3,7 +3,6 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from sqlmodel import Session, select
-from datetime import datetime, timezone
 
 from db.session import get_session
 from db.models import User
@@ -20,14 +19,6 @@ def get_current_user(
     token = credentials.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY_TOKEN, algorithms=[ALGORITHM])
-
-        print("=" * 50)
-        print("TOKEN OK")
-        print("SUB:", payload.get("sub"))
-        print("EXP:", payload.get("exp"))
-        print("UTC NOW:", datetime.now(timezone.utc))
-        print("=" * 50)
-
         # IMPORTANT: your token uses "sub"
         user_id = payload.get("sub")
 
