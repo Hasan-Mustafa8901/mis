@@ -9,6 +9,7 @@ from openpyxl.cell import WriteOnlyCell
 from db.models import DiscountComponent
 from services.reports.export_query import query_export_transactions_batch
 from datetime import date
+from rich import print
 
 
 def export_mis_excel_incremental(
@@ -88,13 +89,16 @@ def export_mis_excel_incremental(
         "Booking File Incomplete Remarks",
         "Delivery File Incomplete",
         "Delivery File Incomplete Remarks",
+        "Adjustment Delivery",
+        "Adjustment Booking",
         "Net Receivable",
         "Total Received",
         "Balance Amount",
+        "Other Discount (Delivery)",
+        "Other Discount (Booking)",
         "Payment Status",
         "Accessories",
     ]
-
     # Add dynamic columns
     for comp in components:
         headers.append(f"{comp.name} Actual")
@@ -222,6 +226,8 @@ def export_mis_excel_incremental(
                 txn.get("total_receivable"),
                 txn.get("total_received"),
                 txn.get("balance"),
+                txn.get("other_discount_delivery"),
+                txn.get("other_discount_booking"),
                 txn.get("payment_status") or "",
                 ", ".join(txn.get("accessories") or []),
             ]
@@ -252,6 +258,14 @@ def export_mis_excel_incremental(
                 cell.border = border
                 cell.fill = current_fill
                 row_cells.append(cell)
+
+                if len(values) != len(headers):
+                    print("HEADER COUNT:", len(headers))
+                    print("VALUE COUNT :", len(values))
+                    print("EXTRA COLS  :", len(values) - len(headers))
+                    raise Exception(
+                        f"Header/Value mismatch. headers={len(headers)} values={len(values)}"
+                    )
 
                 # Keep track of width
                 val_len = len(str(cell_val))

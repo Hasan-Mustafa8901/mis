@@ -155,7 +155,7 @@ def query_export_transactions_batch(
         Transaction.total_allowed_discount,
         Transaction.total_actual_discount,
         Transaction.total_excess_discount,
-        Transaction.other_discount_booking,
+        Transaction.discount_booking,
         Transaction.other_discount_delivery,
         Transaction.adjustment_booking,
         Transaction.adjustment_delivery,
