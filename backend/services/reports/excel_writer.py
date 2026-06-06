@@ -217,6 +217,8 @@ def export_mis_excel_incremental(
                 txn.get("booking_file_incomplete_remarks") or "",
                 "Yes" if txn.get("delivery_file_incomplete") else "No",
                 txn.get("delivery_file_incomplete_remarks") or "",
+                txn.get("adjustment_delivery"),
+                txn.get("adjustment_booking"),
                 txn.get("total_receivable"),
                 txn.get("total_received"),
                 txn.get("balance"),

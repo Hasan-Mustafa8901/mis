@@ -7,11 +7,11 @@ Two-page architecture:
 Backend: FastAPI at http://localhost:8000
 """
 
-import logging
 import json
 import locale
 import asyncio
 import re
+
 
 import httpx
 from datetime import datetime, date, timedelta
@@ -20,6 +20,7 @@ import calendar
 from nicegui import ui, app
 from utils import get_ist_today, disp_date  # , date_for_input
 from dotenv import load_dotenv
+from logger.logger_setup import setup_logger
 
 import os
 from auth import (
@@ -45,20 +46,14 @@ from api import (
     ServerError,
 )
 
+logger = setup_logger()
 
 # CONFIG & SHARED CONSTANTS
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
-)
-logger = logging.getLogger("frontend")
-
 SECRET_KEY_FRONTEND = os.getenv("SECRET_KEY_FRONTEND")
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
-print("AAAA")
 CONDITION_KEYS = {
     "Price Component": [
         ("self_insurance", "Self Insurance"),
@@ -8183,7 +8178,8 @@ def add_payment_row(
     total_label,
     payment_data: dict | None = None,
 ):
-
+    if not container:
+        return
     payment = {}
 
     with container:
@@ -9002,9 +8998,7 @@ def _fs_clear_error(state: FormState) -> None:
         state.error_msg_label.set_text("")
 
 
-async def _fs_handle_submit(
-    state: FormState,
-) -> None:
+async def _fs_handle_submit(state: FormState) -> None:
     logger.info(
         "Form submission triggered (stage: %s, mode: %s, transaction_id: %s)",
         state.stage,
@@ -9728,13 +9722,17 @@ def hydrate_file_status_section(state: FormState, txn: dict):
 def hydrate_payment_section(state):
 
     txn = state.transaction_data or {}
+    receipt_payments = txn.get("receipt_payments", [])
+    ledger_payments = txn.get("ledger_payments", [])
+
+    receipt_container = getattr(state, "receipt_payments_container", None)
+    ledger_container = getattr(state, "ledger_payments_container", None)
 
     # Clear existing rows
-    state.receipt_payments.clear()
-    state.ledger_payments.clear()
-
-    state.receipt_payments_container.clear()
-    state.ledger_payments_container.clear()
+    if receipt_container:
+        receipt_container.clear()
+    if ledger_container:
+        ledger_container.clear()
 
     # -----------------------------------
     # New Schema
@@ -10510,7 +10508,8 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY_FRONTEND,
-        reload=True,  # make false at the time of deployement
+        reload=False,  # make false at the time of deployement
+        uvicorn_reload_excludes="logs/**",
         port=3000,
         reconnect_timeout=60,
     )
