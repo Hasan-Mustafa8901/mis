@@ -64,6 +64,9 @@ class AuthService:
         if not user:
             raise HTTPException(status_code=401, detail="User Not Found")
 
+        if not user.is_active:
+            raise HTTPException(status_code=403, detail="User is inactive")
+
         if not AuthService.verify_password(password, user.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
 

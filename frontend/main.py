@@ -1,10 +1,13 @@
 """
-Automobile Sales Audit MIS — NiceGUI Frontend  (v3)
-Two-page architecture:
-  /      → Dashboard + Persistent MIS Transaction Table
-  /form  → Data Entry Form (New + Edit mode)
-
-Backend: FastAPI at http://localhost:8000
+AutoAudit MIS - Frontend (v 3.18)
+Author: Hasan Mustafa
+This is the main frontend application file for the AutoAudit MIS system, built using NiceGUI. It includes:
+- User authentication and session management
+- API communication with the FastAPI backend
+- Dynamic rendering of the MIS transaction table with AG Grid
+- Utility functions for formatting and data handling
+Note: This file focuses on the frontend logic and UI components.
+The backend API endpoints and database models are defined separately in the FastAPI application.
 """
 
 import json
