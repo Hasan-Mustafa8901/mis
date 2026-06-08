@@ -3,21 +3,19 @@
         "Model",
         "Concatenate"
     ],
-
     "column_mapping": {
         "Model": "car_name",
         "Concatenate": "full_variant_name",
-
         "booking date": "record_date",
         "delivery date": "record_date",
+        "date": "record_date",
         "customer name": "customer_name",
         "customer mobile": "customer_mobile",
         "mobile number": "customer_mobile",
         "car model": "car_model",
         "tl": "team_leader",
-        "location":"location"
+        "location": "location"
     },
-
     "price_components": [
         "Ex Showroom Price",
         "Insurance (with Depreciation Cover)",
@@ -28,7 +26,6 @@
         "Ext Warr",
         "Shield Of Trust"
     ],
-
     "discount_components": [
         "Cash Discount All Customers",
         "Additional Discount from DEALER",
@@ -39,7 +36,6 @@
         "Additional For Upward Sales Customers",
         "Maximum Benefit due to price increase"
     ],
-
     "accessories": [
         {
             "name": "Seat Cover",

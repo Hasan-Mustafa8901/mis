@@ -39,6 +39,7 @@ class MISUploadService:
                 df = pd.read_excel(file_path, sheet_name=sheet_name)
                 df.columns = df.columns.str.lower().str.strip()
                 df = normalize_columns(df)
+                print(df.head())
 
                 print(f"\nProcessing Sheet: {sheet_name}")
                 print("Normalized Columns:", df.columns)
@@ -51,7 +52,9 @@ class MISUploadService:
                     if not customer_name:
                         continue
 
-                    record_date = MISUploadService.parse_date(row.get("date"))
+                    record_date = MISUploadService.parse_date(row.get("record_date"))
+                    print("Raw Date: ", row.get("record_date"))
+                    print("Parsed Date: ", record_date)
 
                     if not record_date:
                         continue
@@ -85,6 +88,7 @@ class MISUploadService:
                             record_date,
                             record_type,
                             customer_name,
+                            customer_mobile,
                             car_model,
                         )
                         continue
