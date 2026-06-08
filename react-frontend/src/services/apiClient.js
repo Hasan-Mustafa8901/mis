@@ -18,7 +18,8 @@ function getApiBaseUrl() {
   return `${window.location.protocol}//${frontendHost}:8000`;
 }
 
-const API_BASE_URL = getApiBaseUrl();
+// const API_BASE_URL = getApiBaseUrl();
+const API_BASE_URL = "https://api.autoaudit.asija.cloud";
 
 
 async function request(
