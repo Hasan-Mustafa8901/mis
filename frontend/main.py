@@ -2538,7 +2538,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 # LOAD META
                 await load_meta()
 
-                params = {"limit": mstate.limit, "offset": mstate.offset}
+                params = {"limit": mstate.limit, "offset": mstate.offset, mstate.stage}
 
                 if mstate.selected_outlet:
                     params["outlet_id"] = mstate.selected_outlet
@@ -2554,10 +2554,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 mstate.total_rows = response.get("total", 0)
 
                 data = response.get("rows", [])
-
-                # DELIVERY FILTER
-                if mstate.stage == "delivery":
-                    data = [t for t in data if t.get("stage") == "delivery"]
 
                 # MONTH FILTER
                 if mstate.month:
@@ -8767,7 +8763,7 @@ def _fs_update_live(state: FormState) -> None:
 
     if getattr(state, "lbl_total_diff_price", None):
         if total_diff > 0:
-            state.lbl_total_diff_price.set_text(f"₹{total_diff:,}")
+            state.lbl_total_diff_price.set_text(f"₹{format_num_inr(total_diff)}")
             state.lbl_total_diff_price.style("color:#DC2626; font-weight:600")
 
         else:

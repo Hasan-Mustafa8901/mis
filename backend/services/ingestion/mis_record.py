@@ -58,7 +58,9 @@ class MISUploadService:
 
                     if not record_date:
                         continue
-                    print(row.get("location"))
+
+                    print("Location: ", row.get("location"))
+
                     customer_mobile = MISUploadService.clean_mobile(row.get("mobile"))
                     car_model = MISUploadService.clean_str(row.get("car_model"))
                     team_leader = MISUploadService.clean_str(row.get("team_leader"))
