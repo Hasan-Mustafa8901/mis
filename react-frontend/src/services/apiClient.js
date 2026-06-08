@@ -20,6 +20,7 @@ function getApiBaseUrl() {
 
 const API_BASE_URL = getApiBaseUrl();
 
+
 async function request(
   path,
   {
@@ -31,6 +32,7 @@ async function request(
     download = false,
   } = {}
 ) {
+  console.log(API_BASE_URL)
   const url = new URL(path, API_BASE_URL);
 
   if (params) {
