@@ -1,0 +1,485 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@utility shadow-card {
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+/* BASE */
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  color: #111827;
+  background: #f8fafc;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html.light,
+html.light body {
+  background: #f8fafc !important;
+  color: #020617 !important;
+  color-scheme: light;
+}
+
+html.dark,
+html.dark body {
+  background: #020617 !important;
+  color: #e5e7eb !important;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+input,
+select,
+textarea {
+  outline: none;
+}
+
+::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+/* APP UTILITIES */
+.card {
+  @apply bg-white rounded-2xl border border-slate-200 shadow-card;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50;
+}
+
+.input {
+  @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:ring-2 focus:ring-slate-200;
+}
+
+.label {
+  @apply text-xs font-semibold uppercase tracking-wide text-slate-500;
+}
+
+.table-th {
+  @apply sticky top-0 z-10 bg-slate-50 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide text-slate-500;
+}
+
+.table-td {
+  @apply border-t border-slate-100 px-3 py-3 text-sm text-slate-700;
+}
+
+/* LIGHT THEME FORCE RESET */
+html.light .card {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08) !important;
+}
+
+html.light .btn-secondary {
+  border-color: #cbd5e1 !important;
+  background: #ffffff !important;
+  color: #334155 !important;
+}
+
+html.light .btn-secondary:hover {
+  background: #f8fafc !important;
+}
+
+html.light .btn-primary {
+  background: #020617 !important;
+  color: #ffffff !important;
+}
+
+html.light .input,
+html.light input,
+html.light select,
+html.light textarea {
+  background: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+  color-scheme: light;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.light .label {
+  color: #64748b !important;
+}
+
+html.light .table-th {
+  background: #f8fafc !important;
+  color: #64748b !important;
+}
+
+html.light .table-td {
+  border-color: #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+html.light .bg-white {
+  background-color: #ffffff !important;
+}
+
+html.light .bg-slate-50 {
+  background-color: #f8fafc !important;
+}
+
+html.light .bg-slate-100 {
+  background-color: #f1f5f9 !important;
+}
+
+html.light .text-slate-950,
+html.light .text-slate-900,
+html.light .text-slate-800 {
+  color: #020617 !important;
+}
+
+html.light .text-slate-700,
+html.light .text-slate-600 {
+  color: #334155 !important;
+}
+
+html.light .text-slate-500,
+html.light .text-slate-400 {
+  color: #64748b !important;
+}
+
+html.light .border-slate-100 {
+  border-color: #f1f5f9 !important;
+}
+
+html.light .border-slate-200 {
+  border-color: #e2e8f0 !important;
+}
+
+html.light .border-slate-300 {
+  border-color: #cbd5e1 !important;
+}
+
+html.light table {
+  color: #334155 !important;
+}
+
+html.light table td {
+  color: #334155 !important;
+}
+
+html.light table th {
+  color: #64748b !important;
+}
+
+html.light table tfoot td {
+  color: #020617 !important;
+}
+
+/* DARK THEME */
+html.dark body {
+  background: #020617 !important;
+  color: #e5e7eb !important;
+}
+
+html.dark .card {
+  background: linear-gradient(180deg, #0f172a 0%, #020617 100%) !important;
+  border-color: #1e293b !important;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35) !important;
+}
+
+html.dark .btn-secondary {
+  border-color: #334155 !important;
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark .btn-secondary:hover {
+  background: #1e293b !important;
+}
+
+html.dark .btn-primary {
+  background: #f59e0b !important;
+  color: #111827 !important;
+}
+
+html.dark .input,
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background: #020617 !important;
+  border-color: #334155 !important;
+  color: #e5e7eb !important;
+  color-scheme: dark;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.dark .label {
+  color: #94a3b8 !important;
+}
+
+html.dark .table-th {
+  background: #0f172a !important;
+  color: #cbd5e1 !important;
+}
+
+html.dark .table-td {
+  border-color: #1e293b !important;
+  color: #e2e8f0 !important;
+}
+
+html.dark .bg-white {
+  background-color: #0f172a !important;
+}
+
+html.dark .bg-slate-50 {
+  background-color: #020617 !important;
+}
+
+html.dark .bg-slate-100 {
+  background-color: #1e293b !important;
+}
+
+html.dark .text-slate-950,
+html.dark .text-slate-900,
+html.dark .text-slate-800 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-500,
+html.dark .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-300 {
+  border-color: #1e293b !important;
+}
+
+html.dark .ring-slate-200 {
+  --tw-ring-color: #1e293b !important;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+html.dark table {
+  color: #e5e7eb !important;
+}
+
+html.dark table td {
+  color: #e5e7eb !important;
+}
+
+html.dark table th {
+  color: #cbd5e1 !important;
+}
+
+html.dark table tfoot td {
+  color: #f8fafc !important;
+}
+
+/* DASHBOARD POLISH */
+.dashboard-hero {
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.22), transparent 34%),
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.18), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+}
+
+html.dark .dashboard-hero {
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 34%),
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.16), transparent 30%),
+    linear-gradient(135deg, #0f172a 0%, #020617 100%);
+}
+
+html.light .dashboard-hero {
+  background:
+    radial-gradient(circle at top left, rgba(245, 158, 11, 0.22), transparent 34%),
+    radial-gradient(circle at top right, rgba(99, 102, 241, 0.18), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+}
+
+/* PREVENT WHITE FLASH / LIGHT SLIDE DURING DARK MODE ROUTE SWITCH */
+html,
+body,
+#root {
+  min-height: 100%;
+  background: #f8fafc;
+}
+
+html.dark,
+html.dark body,
+html.dark #root {
+  background: #020617 !important;
+  color: #e5e7eb !important;
+}
+
+html.light,
+html.light body,
+html.light #root {
+  background: #f8fafc !important;
+  color: #020617 !important;
+}
+
+html.dark .min-h-screen {
+  background-color: #020617 !important;
+}
+
+html.dark main {
+  background-color: #020617 !important;
+}
+
+html.dark .bg-white {
+  background-color: #020617 !important;
+}
+
+html.dark .bg-slate-50 {
+  background-color: #020617 !important;
+}
+
+html.dark .bg-slate-100 {
+  background-color: #0f172a !important;
+}
+
+html.dark .from-white {
+  --tw-gradient-from: #020617 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(2 6 23 / 0) var(--tw-gradient-to-position) !important;
+}
+
+html.dark .via-white {
+  --tw-gradient-via: #0f172a var(--tw-gradient-via-position) !important;
+}
+
+html.dark .to-white {
+  --tw-gradient-to: #020617 var(--tw-gradient-to-position) !important;
+}
+
+html.dark .from-slate-50 {
+  --tw-gradient-from: #020617 var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(2 6 23 / 0) var(--tw-gradient-to-position) !important;
+}
+
+html.dark .to-slate-50 {
+  --tw-gradient-to: #020617 var(--tw-gradient-to-position) !important;
+}
+
+html.dark .via-slate-50 {
+  --tw-gradient-via: #0f172a var(--tw-gradient-via-position) !important;
+}
+
+/* Remove browser default tap/paint flashes on interactive route changes */
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+/* TABLE HOVER FIX - DARK MODE */
+html.dark table tbody tr:hover {
+  background-color: #111827 !important;
+}
+
+html.dark table tbody tr:hover td {
+  background-color: #111827 !important;
+  color: #f8fafc !important;
+}
+
+/* If any row is using Tailwind hover:bg-slate-50 */
+html.dark .hover\:bg-slate-50:hover {
+  background-color: #111827 !important;
+}
+
+/* If any row is using hover:bg-white */
+html.dark .hover\:bg-white:hover {
+  background-color: #111827 !important;
+}
+
+/* Better selected/active row look in dark mode */
+html.dark table tbody tr {
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+html.dark table tbody tr:hover {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+/* Light mode normal hover */
+html.light table tbody tr:hover {
+  background-color: #f8fafc !important;
+}
+
+html.light table tbody tr:hover td {
+  background-color: #f8fafc !important;
+  color: #020617 !important;
+}
+/* Sidebar section menu scrollbar */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.55);
+}

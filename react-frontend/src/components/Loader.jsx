@@ -1,0 +1,1 @@
+export default function Loader({ label='Loading data...' }){ return <div className="flex min-h-48 items-center justify-center"><div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-600 shadow-card">{label}</div></div>; }

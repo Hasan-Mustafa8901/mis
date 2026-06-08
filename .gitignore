@@ -15,3 +15,18 @@ test_report_empty.py
 implementation_*.md
 daily_report_generator_old.py
 logs
+
+# JS
+node_modules/
+dist/
+build/
+
+.env
+.env.example
+.env.local
+.env.production
+.env.development
+
+.idea/
+*.log
+.DS_Store

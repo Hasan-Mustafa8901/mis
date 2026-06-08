@@ -1,0 +1,11 @@
+import { api } from './apiClient';
+export const getTransactionMeta = (params) => api.get('/transactions/meta', params);
+export const getTransactionsPage = (params) => api.get('/transactions-pages', params);
+export const getTransactions = (params) => api.get('/transactions', params);
+export const getTransaction = (id) => api.get(`/transactions/${id}`);
+export const createTransaction = (payload) => api.post('/transactions', payload);
+export const updateTransaction = (id, payload) => api.put(`/transactions/${id}`, payload);
+export const deleteTransaction = (id) => api.delete(`/transactions/${id}`);
+export const recalculateTransaction = (id, outlet_id) => api.post(`/transactions/${id}/calculate?outlet_id=${outlet_id}`, {});
+export const previewPriceList = (params) => api.get('/price-list/preview', params);
+export const uploadPriceList = (formData) => api.form('/price-list/upload', formData);
