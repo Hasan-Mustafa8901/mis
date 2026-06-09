@@ -814,6 +814,7 @@ class TransactionService:
             "car_name": car.name if car else None,
             "variant_name": variant.variant_name if variant else None,
             "outlet_name": outlet.name if outlet else None,
+            "sales_executive_id": tx.sales_executive_id,
             "sales_executive_name": (sales_exec.name if sales_exec else None),
             "booking_date": tx.booking_date.isoformat() if tx.booking_date else None,
             "delivery_date": tx.delivery_date.isoformat() if tx.delivery_date else None,

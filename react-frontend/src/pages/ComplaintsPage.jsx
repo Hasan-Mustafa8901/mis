@@ -97,6 +97,60 @@ const cleanNumber = (value) => {
   }
 };
 
+const getName = (value) => {
+  if (value === null || value === undefined) return '';
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+
+  if (typeof value === 'object') {
+    return String(
+      value.name ||
+      value.outlet_name ||
+      value.showroom_name ||
+      value.dealership_name ||
+      value.dealer_name ||
+      value.car_name ||
+      value.variant_name ||
+      value.full_variant_name ||
+      value.label ||
+      value.title ||
+      ''
+    );
+  }
+
+  return String(value);
+};
+
+const getId = (value) => {
+  if (value === null || value === undefined) return '';
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value);
+  }
+
+  if (typeof value === 'object') {
+    return String(value.id || value.value || getName(value));
+  }
+
+  return String(value);
+};
+
+const normaliseList = (list) => {
+  if (!Array.isArray(list)) return [];
+
+  return list.map((item) => getName(item)).filter(Boolean);
+};
+
+const getRows = (result) => {
+  if (Array.isArray(result)) return result;
+  if (Array.isArray(result?.data)) return result.data;
+  if (Array.isArray(result?.items)) return result.items;
+  if (Array.isArray(result?.results)) return result.results;
+  return [];
+};
+
 const getQueryParam = (key) => {
   return new URLSearchParams(window.location.search).get(key);
 };
@@ -477,14 +531,23 @@ export default function ComplaintsPage({ mode = 'both' }) {
         : 'Create, edit and review inter-dealership complaint records.';
 
   const filteredComplaineeDealerships = useMemo(() => {
-    const list = reference.dealerships || [];
-    return list.filter((dealer) => dealer.name !== form.complainant_dealership);
+    const list = Array.isArray(reference.dealerships)
+      ? reference.dealerships
+      : [];
+
+    return list.filter(
+      (dealer) => getName(dealer) !== form.complainant_dealership
+    );
   }, [reference.dealerships, form.complainant_dealership]);
 
   const filteredVariants = useMemo(() => {
-    if (!form.car_id) return reference.variants || [];
+    const variants = Array.isArray(reference.variants)
+      ? reference.variants
+      : [];
 
-    return (reference.variants || []).filter(
+    if (!form.car_id) return variants;
+
+    return variants.filter(
       (variant) =>
         String(variant.car_id || variant.carId || '') === String(form.car_id)
     );
@@ -497,8 +560,12 @@ export default function ComplaintsPage({ mode = 'both' }) {
 
     return complaints.filter((row) =>
       Object.values(row || {})
-        .map((value) => String(value || '').toLowerCase())
+        .map((value) => {
+          if (typeof value === 'object') return JSON.stringify(value || {});
+          return String(value || '');
+        })
         .join(' ')
+        .toLowerCase()
         .includes(text)
     );
   }, [complaints, search]);
@@ -511,14 +578,16 @@ export default function ComplaintsPage({ mode = 'both' }) {
   };
 
   async function fetchReferenceData() {
+    setError('');
+
     try {
       const data = await api.get('/reference-data');
 
       setReference({
-        dealerships: data?.dealerships || [],
-        outlets: data?.outlets || [],
-        cars: data?.cars || [],
-        variants: data?.variants || [],
+        dealerships: Array.isArray(data?.dealerships) ? data.dealerships : [],
+        outlets: Array.isArray(data?.outlets) ? data.outlets : [],
+        cars: Array.isArray(data?.cars) ? data.cars : [],
+        variants: Array.isArray(data?.variants) ? data.variants : [],
       });
     } catch {
       try {
@@ -530,10 +599,10 @@ export default function ComplaintsPage({ mode = 'both' }) {
         ]);
 
         setReference({
-          dealerships: Array.isArray(dealerships) ? dealerships : [],
-          outlets: Array.isArray(outlets) ? outlets : [],
-          cars: Array.isArray(cars) ? cars : [],
-          variants: Array.isArray(variants) ? variants : [],
+          dealerships: getRows(dealerships),
+          outlets: getRows(outlets),
+          cars: getRows(cars),
+          variants: getRows(variants),
         });
       } catch (e) {
         setError(e.message || 'Unable to load reference data.');
@@ -542,13 +611,11 @@ export default function ComplaintsPage({ mode = 'both' }) {
   }
 
   async function fetchComplaints() {
+    setError('');
+
     try {
       const result = await api.get('/complaints/');
-      const rows = Array.isArray(result)
-        ? result
-        : result?.data || result?.items || result?.results || [];
-
-      setComplaints(rows);
+      setComplaints(getRows(result));
     } catch (e) {
       setError(e.message || 'Unable to load complaints.');
     }
@@ -566,7 +633,7 @@ export default function ComplaintsPage({ mode = 'both' }) {
         `/complaints/dealerships/${encodeURIComponent(dealerName)}/outlets`
       );
 
-      const list = Array.isArray(outlets) ? outlets : [];
+      const list = normaliseList(getRows(outlets).length ? getRows(outlets) : outlets);
 
       if (target === 'complainant') {
         setComplainantOutlets(list);
@@ -588,9 +655,7 @@ export default function ComplaintsPage({ mode = 'both' }) {
 
     try {
       const result = await api.get('/complaints/');
-      const rows = Array.isArray(result)
-        ? result
-        : result?.data || result?.items || result?.results || [];
+      const rows = getRows(result);
 
       const target = rows.find((item) => {
         if (complaintCode) return item.complaint_code === complaintCode;
@@ -629,46 +694,17 @@ export default function ComplaintsPage({ mode = 'both' }) {
   }
 
   function validate() {
-    if (!form.complainant_dealership) {
-      return 'Complainant Dealership is mandatory.';
-    }
+    if (!form.complainant_dealership) return 'Complainant Dealership is mandatory.';
+    if (!form.complainant_showroom) return 'Complainant Showroom is mandatory.';
+    if (!form.complainee_dealership) return 'Complainee Dealership is mandatory.';
+    if (!form.complainee_showroom) return 'Complainee Showroom is mandatory.';
+    if (!form.customer_name) return 'Customer Name is mandatory.';
+    if (!form.customer_mobile) return 'Customer Mobile is mandatory.';
+    if (!form.remarks_by_complainant) return 'Remarks by Complainant is mandatory.';
 
-    if (!form.complainant_showroom) {
-      return 'Complainant Showroom is mandatory.';
-    }
-
-    if (!form.complainee_dealership) {
-      return 'Complainee Dealership is mandatory.';
-    }
-
-    if (!form.complainee_showroom) {
-      return 'Complainee Showroom is mandatory.';
-    }
-
-    if (!form.customer_name) {
-      return 'Customer Name is mandatory.';
-    }
-
-    if (!form.customer_mobile) {
-      return 'Customer Mobile is mandatory.';
-    }
-
-    if (!form.remarks_by_complainant) {
-      return 'Remarks by Complainant is mandatory.';
-    }
-
-    if (form.quotation_date && !isValidDate(form.quotation_date)) {
-      return 'Quotation Date is invalid.';
-    }
-
-    if (form.instrument_date && !isValidDate(form.instrument_date)) {
-      return 'Instrument Date is invalid.';
-    }
-
-    if (form.registration_date && !isValidDate(form.registration_date)) {
-      return 'Registration Date is invalid.';
-    }
-
+    if (form.quotation_date && !isValidDate(form.quotation_date)) return 'Quotation Date is invalid.';
+    if (form.instrument_date && !isValidDate(form.instrument_date)) return 'Instrument Date is invalid.';
+    if (form.registration_date && !isValidDate(form.registration_date)) return 'Registration Date is invalid.';
     if (form.complaint_raised_date && !isValidDate(form.complaint_raised_date)) {
       return 'Date of Complaint Raised is invalid.';
     }
@@ -815,11 +851,17 @@ export default function ComplaintsPage({ mode = 'both' }) {
                     >
                       <option value="">Select</option>
 
-                      {reference.dealerships.map((dealer) => (
-                        <option key={dealer.id || dealer.name} value={dealer.name}>
-                          {dealer.name}
-                        </option>
-                      ))}
+                      {reference.dealerships.map((dealer) => {
+                        const dealerName = getName(dealer);
+
+                        if (!dealerName) return null;
+
+                        return (
+                          <option key={getId(dealer)} value={dealerName}>
+                            {dealerName}
+                          </option>
+                        );
+                      })}
                     </Select>
                   </Field>
 
@@ -832,11 +874,17 @@ export default function ComplaintsPage({ mode = 'both' }) {
                     >
                       <option value="">Select</option>
 
-                      {complainantOutlets.map((outlet) => (
-                        <option key={outlet} value={outlet}>
-                          {outlet}
-                        </option>
-                      ))}
+                      {complainantOutlets.map((outlet) => {
+                        const outletName = getName(outlet);
+
+                        if (!outletName) return null;
+
+                        return (
+                          <option key={outletName} value={outletName}>
+                            {outletName}
+                          </option>
+                        );
+                      })}
                     </Select>
                   </Field>
 
@@ -857,11 +905,17 @@ export default function ComplaintsPage({ mode = 'both' }) {
                     >
                       <option value="X">X</option>
 
-                      {filteredComplaineeDealerships.map((dealer) => (
-                        <option key={dealer.id || dealer.name} value={dealer.name}>
-                          {dealer.name}
-                        </option>
-                      ))}
+                      {filteredComplaineeDealerships.map((dealer) => {
+                        const dealerName = getName(dealer);
+
+                        if (!dealerName) return null;
+
+                        return (
+                          <option key={getId(dealer)} value={dealerName}>
+                            {dealerName}
+                          </option>
+                        );
+                      })}
                     </Select>
                   </Field>
 
@@ -872,11 +926,17 @@ export default function ComplaintsPage({ mode = 'both' }) {
                         setValue('complainee_showroom', e.target.value)
                       }
                     >
-                      {complaineeOutlets.map((outlet) => (
-                        <option key={outlet} value={outlet}>
-                          {outlet}
-                        </option>
-                      ))}
+                      {complaineeOutlets.map((outlet) => {
+                        const outletName = getName(outlet);
+
+                        if (!outletName) return null;
+
+                        return (
+                          <option key={outletName} value={outletName}>
+                            {outletName}
+                          </option>
+                        );
+                      })}
                     </Select>
                   </Field>
                 </div>
@@ -957,11 +1017,18 @@ export default function ComplaintsPage({ mode = 'both' }) {
                     >
                       <option value="">Select</option>
 
-                      {reference.cars.map((car) => (
-                        <option key={car.id} value={car.id}>
-                          {car.name}
-                        </option>
-                      ))}
+                      {reference.cars.map((car) => {
+                        const carId = getId(car);
+                        const carName = getName(car);
+
+                        if (!carId || !carName) return null;
+
+                        return (
+                          <option key={carId} value={carId}>
+                            {carName}
+                          </option>
+                        );
+                      })}
                     </Select>
                   </Field>
 
@@ -972,13 +1039,18 @@ export default function ComplaintsPage({ mode = 'both' }) {
                     >
                       <option value="">Select</option>
 
-                      {filteredVariants.map((variant) => (
-                        <option key={variant.id} value={variant.id}>
-                          {variant.name ||
-                            variant.variant_name ||
-                            variant.full_variant_name}
-                        </option>
-                      ))}
+                      {filteredVariants.map((variant) => {
+                        const variantId = getId(variant);
+                        const variantName = getName(variant);
+
+                        if (!variantId || !variantName) return null;
+
+                        return (
+                          <option key={variantId} value={variantId}>
+                            {variantName}
+                          </option>
+                        );
+                      })}
                     </Select>
                   </Field>
 
