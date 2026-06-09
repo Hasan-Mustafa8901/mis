@@ -2538,7 +2538,11 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 # LOAD META
                 await load_meta()
 
-                params = {"limit": mstate.limit, "offset": mstate.offset, mstate.stage}
+                params = {
+                    "limit": mstate.limit,
+                    "offset": mstate.offset,
+                    "stage": mstate.stage,
+                }
 
                 if mstate.selected_outlet:
                     params["outlet_id"] = mstate.selected_outlet
