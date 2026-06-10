@@ -307,7 +307,6 @@ REFERENCE_CACHE: dict = {}
 async def fetch_reference_data(
     force_refresh: bool = False,
 ) -> dict:
-    print("FETCH_REFERENCE_DATA_CALLED")
     global REFERENCE_CACHE
 
     if REFERENCE_CACHE and not force_refresh:
@@ -1278,7 +1277,6 @@ async def dashboard_page() -> None:
         app.storage.user.get("role"),
     )
     render_topbar("Dashboard")
-    print("DASHBOARD BUILT.")
 
     user_data = app.storage.user
     allowed_outlet_ids = user_data.get("allowed_outlet_ids", []) or []
@@ -8268,7 +8266,6 @@ def attach_payment_row_handlers(
 ):
 
     def handle_change(*_):
-        print("PAYMENT CHANGE DETECTED")
         if state.is_hydrating:
             return
         _update_payment_total(payment_entries, total_label)
@@ -8342,7 +8339,6 @@ def attach_form_handlers(state: FormState):
 
     # HELPERS
     def live_update(*_):
-        print("LIVE UPDATE TRIGGERED")
         if state.is_hydrating:
             return
         _fs_update_live(state)
@@ -9600,18 +9596,6 @@ async def hydrate_form(state: FormState, txn: dict):
         # BOOKING CHECKLIST
         for key, cb in state.booking_cbs.items():
             cb.set_value(bool(txn.get(f"bk_checks_{key}", False)))
-
-        # print("DELIVERY CBS", json.dumps(getattr(state, "delivery_cbs", {}), indent=2))
-        print(
-            "DELIVERY CHECKLIST DATA",
-            json.dumps(
-                {
-                    f"del_checks_{key}": txn.get(f"del_checks_{key}", False)
-                    for key in getattr(state, "delivery_cbs", {})
-                },
-                indent=2,
-            ),
-        )
 
         # DELIVERY CHECKLIST
         for key, cb in state.delivery_cbs.items():
