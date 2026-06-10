@@ -129,7 +129,14 @@ class User(SQLModel, table=True):
         sa_column=Column(JSON),
     )
 
-    transactions: list["Transaction"] = Relationship(back_populates="user")
+    created_transactions: list["Transaction"] = Relationship(
+        back_populates="created_by_user",
+        sa_relationship_kwargs={"foreign_keys": "Transaction.created_by"},
+    )
+    updated_transactions: list["Transaction"] = Relationship(
+        back_populates="updated_by_user",
+        sa_relationship_kwargs={"foreign_keys": "Transaction.updated_by"},
+    )
     export_jobs: list["ExportJob"] = Relationship(back_populates="user")
     outlet: Optional["Outlet"] = Relationship(back_populates="users")
 
@@ -339,7 +346,15 @@ class Transaction(SQLModel, table=True):
     outlet: Optional[Outlet] = Relationship(back_populates="transactions")
     variant: Optional[Variant] = Relationship(back_populates="transactions")
     sales_executive: Optional[Employee] = Relationship(back_populates="transactions")
-    user: Optional["User"] = Relationship(back_populates="transactions")
+
+    created_by_user: Optional["User"] = Relationship(
+        back_populates="created_transactions",
+        sa_relationship_kwargs={"foreign_keys": "Transaction.created_by"},
+    )
+    updated_by_user: Optional["User"] = Relationship(
+        back_populates="updated_transactions",
+        sa_relationship_kwargs={"foreign_keys": "Transaction.updated_by"},
+    )
     customer: Customer = Relationship(back_populates="transactions")
     items: List["TransactionItem"] = Relationship(
         back_populates="transaction",

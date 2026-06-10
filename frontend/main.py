@@ -9616,9 +9616,20 @@ async def hydrate_form(state: FormState, txn: dict):
                 # Fresh booking -> delivery MIS
                 state.other_discount_delivery.set_value(txn.get("discount_booking", 0))
 
+        logger.info(
+            f"Stage={state.stage}, "
+            f"booking_adj={txn.get('adjustment_booking')}, "
+            f"delivery_adj={txn.get('adjustment_delivery')}"
+        )
+
         if state.adjustment_input:
-            state.adjustment_input.set_value(txn.get("adjustment_booking", 0))
-            state.adjustment_input.set_value(txn.get("adjustment_delivery", 0))
+            adjustment = (
+                txn.get("adjustment_booking", 0)
+                if state.stage == "booking"
+                else txn.get("adjustment_delivery", 0)
+            )
+
+            state.adjustment_input.set_value(adjustment)
 
         await hydrate_vehicle_section(state, txn)
 

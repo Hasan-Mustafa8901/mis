@@ -409,7 +409,7 @@ def get_dashboard_data(
         joinedload(Transaction.variant).joinedload(Variant.car),
         joinedload(Transaction.outlet),
         joinedload(Transaction.sales_executive),
-        joinedload(Transaction.user),
+        joinedload(Transaction.created_by_user),
         selectinload(Transaction.items),
     )
 
@@ -462,7 +462,7 @@ def get_all_transactions_pages(
         joinedload(Transaction.variant).joinedload(Variant.car),
         joinedload(Transaction.outlet),
         joinedload(Transaction.sales_executive),
-        joinedload(Transaction.user),
+        joinedload(Transaction.created_by_user),
     )
 
     stmt = apply_outlet_scope(stmt, Transaction, current_user)

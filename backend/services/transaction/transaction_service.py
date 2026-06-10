@@ -559,7 +559,7 @@ class TransactionService:
                     joinedload(Transaction.outlet).joinedload(Outlet.dealership),  # type: ignore
                     joinedload(Transaction.variant).joinedload(Variant.car),  # type: ignore
                     joinedload(Transaction.sales_executive),  # type: ignore
-                    joinedload(Transaction.user),  # type: ignore
+                    joinedload(Transaction.created_by_user),  # type: ignore
                     selectinload(Transaction.items),  # type: ignore
                     selectinload(Transaction.accessories).joinedload(  # type: ignore
                         TransactionAccessoryLink.accessory  # type: ignore
@@ -573,7 +573,7 @@ class TransactionService:
 
             # PRE-EXTRACT relationships to avoid repeated attribute access
             sales_exec = transaction.sales_executive
-            user = transaction.user
+            creator = transaction.created_by_user
             outlet = transaction.outlet
             dealership = outlet.dealership if outlet else None
             variant = transaction.variant
@@ -587,7 +587,7 @@ class TransactionService:
                 "status": transaction.status,
                 "stage": transaction.stage,
                 "mode": transaction.mode,
-                "created_by": user.name if user else None,
+                "created_by": creator.name if creator else None,
                 "created_at": transaction.created_at.isoformat()
                 if transaction.created_at
                 else None,
@@ -805,7 +805,7 @@ class TransactionService:
         variant = tx.variant
         outlet = tx.outlet
         sales_exec = tx.sales_executive
-        user = tx.user
+        user = tx.created_by_user
 
         car = variant.car if variant else None
 
