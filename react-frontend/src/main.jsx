@@ -4,13 +4,21 @@ import App from './App.jsx';
 import { AuthProvider } from './context/AuthContext.jsx';
 import './styles/index.css';
 
-const savedTheme = localStorage.getItem('audit_mis_theme') || 'light';
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => {
+      registration.unregister();
+    });
+  });
+}
 
-document.documentElement.classList.remove('light', 'dark');
-document.body.classList.remove('light', 'dark');
-
-document.documentElement.classList.add(savedTheme);
-document.body.classList.add(savedTheme);
+if ('caches' in window) {
+  caches.keys().then((cacheNames) => {
+    cacheNames.forEach((cacheName) => {
+      caches.delete(cacheName);
+    });
+  });
+}
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
