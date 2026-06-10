@@ -310,6 +310,7 @@ class Transaction(SQLModel, table=True):
     total_receivable: float = 0.0
     total_received: float = 0.0
     balance: float = 0.0
+    balance_by_user: float = 0.0  # This is the balance calculated by user based on the inputs they have given. This is required to track the difference if any in calculation by MIS and user.
     ledger_adjustment: int = 0
     ledger_adjustment_remarks: str = ""
 
@@ -331,6 +332,7 @@ class Transaction(SQLModel, table=True):
 
     created_by: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=get_ist_now)
+    updated_by: Optional[int] = Field(default=None, foreign_key="user.id")
     updated_at: Optional[datetime] = None
 
     # Relationships

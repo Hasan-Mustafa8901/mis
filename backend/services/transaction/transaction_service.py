@@ -356,6 +356,12 @@ class TransactionService:
             "ledger_adjustment_remarks", ""
         )
 
+        # Time and user who user updated the entry
+        transaction.updated_by = payload.get(
+            "user_id", None
+        )  # Optional: track who made the update
+        transaction.updated_at = get_ist_now()
+
         session.add(transaction)
         session.commit()
         # Match this record with ebd
@@ -1012,6 +1018,9 @@ class TransactionService:
         # TransactionService.apply_funds_reconciliation(session, transaction, payload)
 
         # UPDATED TIMESTAMP
+        transaction.updated_by = payload.get(
+            "user_id", None
+        )  # Optional: track who made the update
         transaction.updated_at = get_ist_now()
         session.add(transaction)
         session.commit()
