@@ -1,7 +1,7 @@
-# Review This
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from sqlmodel import Session, SQLModel, select, func
 from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import cast, String, or_, desc
 from typing import List, Dict, Any
 from datetime import date
 from contextlib import asynccontextmanager
@@ -20,7 +20,7 @@ from db.models import (
     Dealership,
     User,
     UserRole,
-    ExportJob,
+    Customer,
 )
 from services.ingestion.price_seed_service import PriceListIngestionService
 from services.discount.discount_service import DiscountService
@@ -307,6 +307,69 @@ def api_calculate_audit(
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/transactions/search")
+def api_search_transactions(
+    query: str,
+    limit: int = 25,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    search = query.strip().split()
+
+    if not search:
+        return []
+
+    limit = min(limit, 100)
+
+    stmt = select(Transaction).options(
+        joinedload(Transaction.customer),
+        joinedload(Transaction.variant).joinedload(Variant.car),
+        joinedload(Transaction.outlet),
+        joinedload(Transaction.sales_executive),
+        joinedload(Transaction.created_by_user),
+    )
+    # Security Scoping
+    stmt = apply_outlet_scope(stmt, Transaction, current_user)
+
+    stmt = (
+        stmt.join(Customer)
+        .join(Employee, Transaction.sales_executive_id == Employee.id, isouter=True)
+        .join(User, Transaction.created_by == User.id, isouter=True)
+    )
+    search_like = f"%{search}%"
+
+    conditions = [
+        # Customer
+        Customer.name.ilike(search_like),
+        Customer.mobile_number.ilike(search_like),
+        Customer.pan_number.ilike(search_like),
+        Customer.aadhar_number.ilike(search_like),
+        # Transaction
+        Transaction.invoice_number.ilike(search_like),
+        # Transaction.registration_number.ilike(search_like),
+        Transaction.customer_file_number.ilike(search_like),
+        Transaction.booking_receipt_num.ilike(search_like),
+        Transaction.vin_number.ilike(search_like),
+        Transaction.engine_number.ilike(search_like),
+        # Created By User Name
+        User.name.ilike(search_like),
+        # Make the date search supportive of all the formats in future versions.
+        # BOOKING DATE
+        cast(Transaction.booking_date, String).ilike(search_like),
+        # DELIVERY DATE
+        cast(Transaction.delivery_date, String).ilike(search_like),
+    ]
+    if search.isdigit():
+        conditions.append(Transaction.id == int(search))
+
+    stmt = stmt.where(or_(*conditions)).order_by(desc(Transaction.id)).limit(limit)
+
+    # Add a conditional option to get unique (.unique()) search results
+    txs = session.exec(stmt).all()
+
+    return [TransactionService.serialize_transaction_row(tx) for tx in txs]
 
 
 @app.post("/transactions")
