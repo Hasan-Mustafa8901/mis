@@ -176,6 +176,7 @@ def query_export_transactions_batch(
         Customer.pin_code.label("customer_pin_code"),
         Variant.variant_name,
         Variant.full_variant_name,
+        Variant.fuel_type,
         Car.name.label("car_name"),
         Employee.name.label("sales_executive_name"),
         Outlet.name.label("outlet_name"),

@@ -362,8 +362,6 @@ def api_search_transactions(
         # DELIVERY DATE
         cast(Transaction.delivery_date, String).ilike(search_like),
     ]
-    # if search[0].isdigit():
-    #     conditions.append(Transaction.id == int(search))
 
     stmt = stmt.where(or_(*conditions)).order_by(desc(Transaction.id)).limit(limit)
 
