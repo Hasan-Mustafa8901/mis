@@ -258,12 +258,7 @@ def get_auth_headers():
     }
 
 
-async def api_request(
-    method: str,
-    path: str,
-    **kwargs,
-):
-
+async def api_request(method: str, path: str, **kwargs):
     headers = kwargs.pop("headers", {})
     auth_headers = get_auth_headers()
     headers.update(auth_headers)
@@ -612,11 +607,7 @@ def login_page():
             ui.button("Login", on_click=handle_login).classes("w-full rounded-md")
 
 
-DATE_COLUMNS = {
-    "booking_date",
-    "delivery_date",
-    "created_at",
-}
+DATE_COLUMNS = {"booking_date", "delivery_date", "created_at"}
 
 
 # MIS TABLE RENDERING & HELPER METHODS
@@ -1290,7 +1281,7 @@ async def dashboard_page() -> None:
         print("FROM DASHBOARD")
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
-        logger.exception("ERROR While loading dealerships on Dashboard")
+        logger.exception("ERROR While loading dealerships on Dashboard: %s", str(e))
 
     outlets: list[dict] = []
     try:
@@ -1298,7 +1289,7 @@ async def dashboard_page() -> None:
         outlets = await api_get("/outlets") or []
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
-        logger.exception("ERROR While loading outlets on Dashboard")
+        logger.exception("ERROR While loading outlets on Dashboard: %s", str(e))
 
     # ADMIN => unrestricted
     if user_role != "admin":
@@ -2294,6 +2285,7 @@ class MISState:
         self.outlets: list = []
         self._load_tasks = None
         self._debounce = None
+        self.table_container = None
 
         self.stage: str = "booking"
         self.month: str | None = None
@@ -2303,10 +2295,12 @@ class MISState:
         self.limit: int = 0
         self.offset: int = 0
         self.total_rows: int = 0
-        self.total_entries = 0
-        self.total_excess = 0
-        self.sorted_months = {}
-        self.month_map = {}
+        self.total_entries: int = 0
+        self.total_excess: int = 0
+        self.sorted_months: dict = {}
+        self.month_map: dict = {}
+        self.search_query: str = ""
+        self.search_limit: int = 25
 
         self.export_timer: ui.timer | None = None
 
@@ -2409,7 +2403,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.notify("You are not allowed to delete.")
 
         except Exception as e:
-            logger.exception("ERROR: error occurred while deletion")
+            logger.exception("ERROR: error occurred while deletion: %s", str(e))
             ui.notify("Error Occured", type="negative")
 
     def reset_filters():
@@ -2525,7 +2519,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ui.notify("Failed to load metadata", type="negative")
 
             except Exception as e:
-                logger.exception("LOAD META ERROR")
+                logger.exception("LOAD META ERROR: %s", str(e))
 
                 ui.notify("Something went wrong", type="negative")
 
@@ -2536,26 +2530,40 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 # LOAD META
                 await load_meta()
 
-                params = {
-                    "limit": mstate.limit,
-                    "offset": mstate.offset,
-                    "stage": mstate.stage,
-                }
+                # SEARCH MODE
+                if mstate.search_query.strip():
+                    params = {
+                        "query": mstate.search_query,
+                        "limit": mstate.search_limit,
+                    }
+                    response = await api_get(
+                        "/transactions/search",
+                        params=params,
+                    )
+                    print("SEARCH PARAM: ", params)
+                    data = response or []
+                    mstate.total_rows = len(data)
+                # Normal
+                else:
+                    params = {
+                        "limit": mstate.limit,
+                        "offset": mstate.offset,
+                        "stage": mstate.stage,
+                    }
 
-                if mstate.selected_outlet:
-                    params["outlet_id"] = mstate.selected_outlet
+                    if mstate.selected_outlet:
+                        params["outlet_id"] = mstate.selected_outlet
 
-                elif mstate.selected_dealer:
-                    params["dealership_id"] = mstate.selected_dealer
+                    elif mstate.selected_dealer:
+                        params["dealership_id"] = mstate.selected_dealer
 
-                response = await api_get("/transactions-pages", params=params)
+                    response = await api_get("/transactions-pages", params=params)
 
-                if not response:
-                    response = {}
+                    if not response:
+                        response = {}
 
-                mstate.total_rows = response.get("total", 0)
-
-                data = response.get("rows", [])
+                    mstate.total_rows = response.get("total", 0)
+                    data = response.get("rows", [])
 
                 # MONTH FILTER
                 if mstate.month:
@@ -2865,6 +2873,65 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ):
                     ui.icon("add").classes("text-white text-lg text-weight-bold")
                     ui.label("New Entry").classes("text-weight-bold pl-2")
+            with ui.card().classes("w-full p-4 shadow-sm rounded-xl mb-4"):
+                with ui.row().classes("w-full items-center gap-3"):
+                    search_input = (
+                        ui.input(
+                            label="Search Transactions",
+                            placeholder="Customer, mobile, VIN, receipt, invoice...",
+                        )
+                        .props("outlined dense")
+                        .classes("flex-grow")
+                    )
+
+                    limit_select = (
+                        ui.select(
+                            {
+                                5: "5",
+                                25: "25",
+                                50: "50",
+                                100: "100",
+                            },
+                            value=25,
+                            label="Limit",
+                        )
+                        .props("outlined dense")
+                        .classes("w-28")
+                    )
+
+                    async def perform_search():
+                        print("ON clicking search button")
+
+                        mstate.search_query = search_input.value or ""
+                        mstate.search_limit = int(limit_select.value or 25)
+                        print("search:", search_input.value)
+                        print("limit:", limit_select.value)
+
+                        await load_data()
+
+                    async def clear_search():
+
+                        search_input.set_value("")
+
+                        mstate.search_query = ""
+
+                        await load_data()
+
+                    search_input.on(
+                        "keyup.enter",
+                        lambda e: asyncio.create_task(perform_search()),
+                    )
+
+                    ui.button(
+                        "Search",
+                        icon="search",
+                        on_click=lambda: asyncio.create_task(perform_search()),
+                    ).props("unelevated color=primary")
+
+                    ui.button(
+                        icon="close",
+                        on_click=lambda: asyncio.create_task(clear_search()),
+                    ).props("flat")
 
             with ui.card().classes(
                 "w-full p-0 shadow-sm rounded-xl mb-8"

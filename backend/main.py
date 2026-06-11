@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from datetime import date
 from contextlib import asynccontextmanager
 from collections import defaultdict
+from rich import print
 
 from fastapi.middleware.cors import CORSMiddleware
 from db.session import engine, get_session
@@ -315,8 +316,8 @@ def api_search_transactions(
     limit: int = 25,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
-):
-    search = query.strip().split()
+) -> list:
+    search = query.strip()
 
     if not search:
         return []
@@ -361,14 +362,13 @@ def api_search_transactions(
         # DELIVERY DATE
         cast(Transaction.delivery_date, String).ilike(search_like),
     ]
-    if search.isdigit():
-        conditions.append(Transaction.id == int(search))
+    # if search[0].isdigit():
+    #     conditions.append(Transaction.id == int(search))
 
     stmt = stmt.where(or_(*conditions)).order_by(desc(Transaction.id)).limit(limit)
 
     # Add a conditional option to get unique (.unique()) search results
     txs = session.exec(stmt).all()
-
     return [TransactionService.serialize_transaction_row(tx) for tx in txs]
 
 
