@@ -1,5 +1,6 @@
 # frontend\logger\logger_setup.py
 import logging
+
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 

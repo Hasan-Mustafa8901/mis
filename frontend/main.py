@@ -258,44 +258,6 @@ def get_auth_headers():
     }
 
 
-async def api_request(method: str, path: str, **kwargs):
-    headers = kwargs.pop("headers", {})
-    auth_headers = get_auth_headers()
-    headers.update(auth_headers)
-
-    # REMOVE NONE QUERY PARAMS
-    if "params" in kwargs and kwargs["params"]:
-        kwargs["params"] = {k: v for k, v in kwargs["params"].items() if v is not None}
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.request(
-                method=method,
-                url=f"{BASE_URL}{path}",
-                headers=headers,
-                timeout=20,
-                **kwargs,
-            )
-
-        # TOKEN EXPIRED / INVALID
-        if response.status_code == 401:
-            await logout_user()
-            ui.notify("Session expired. Please login again.", type="warning")
-            ui.navigate.to("/login")
-            return None
-
-        response.raise_for_status()
-        return response.json()
-
-    except httpx.HTTPStatusError as exc:
-        ui.notify(f"HTTP Error: {exc.response.status_code}", type="negative")
-        raise
-
-    except httpx.ConnectError:
-        ui.notify("Unable to connect to server", type="negative")
-        raise
-
-
 REFERENCE_CACHE: dict = {}
 
 
@@ -895,10 +857,7 @@ def render_table(transactions, state, stage: str = "booking"):
             }
             """
         if is_num:
-            existing_style = col.get(
-                "cellStyle",
-                {},
-            )
+            existing_style = col.get("cellStyle", {})
 
             col["cellStyle"] = {
                 **existing_style,
@@ -907,10 +866,7 @@ def render_table(transactions, state, stage: str = "booking"):
             }
 
         elif should_center_column(key):
-            existing_style = col.get(
-                "cellStyle",
-                {},
-            )
+            existing_style = col.get("cellStyle", {})
 
             col["cellStyle"] = {
                 **existing_style,
@@ -1278,7 +1234,6 @@ async def dashboard_page() -> None:
     dealerships: list[dict] = []
     try:
         dealerships = await api_get("/complaints/dealerships") or []
-        print("FROM DASHBOARD")
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
         logger.exception("ERROR While loading dealerships on Dashboard: %s", str(e))
@@ -1365,6 +1320,9 @@ async def dashboard_page() -> None:
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
+            )
+            ui.link("💼 Monthly Report", "/monthly-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -2458,6 +2416,9 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
+            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
+                "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
+            )
 
             # Booking link
             is_booking = stage == "booking"
@@ -3215,6 +3176,9 @@ async def complaints_ctrl_page():
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
             )
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -5196,7 +5160,10 @@ async def daily_reporting_page() -> None:
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
             )
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
-                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
@@ -5507,6 +5474,190 @@ async def daily_reporting_page() -> None:
 
     # Initial render (default: custom = today only)
     await load_daily_report(today_str, today_str)
+
+
+@ui.page("/monthly-reporting")
+@require_roles("admin")
+async def monthly_reporting_page():
+    # Load dealerships first
+    dealerships = await api_get("/dealerships")
+
+    dealership_options = {d["id"]: d["name"] for d in dealerships}
+
+    logger.info(
+        "Accessing /monthly-reporting page for user: %s", app.storage.user.get("name")
+    )
+    render_topbar("Monthly Reporting")
+
+    async def download_monthly_report(dealership_select, start_date, end_date):
+        try:
+            print("START: ", start_date)
+            print("END: ", end_date)
+            params = {
+                "start_date": start_date,
+                "end_date": end_date,
+                "dealership_id": dealership_select,
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{BASE_URL}/reports/monthly",
+                    headers=get_auth_headers(),
+                    params=params,
+                    timeout=120,
+                )
+
+                response.raise_for_status()
+
+                filename = "monthly_report.xlsx"
+
+                content_disposition = response.headers.get("Content-Disposition")
+
+                if content_disposition and "filename=" in content_disposition:
+                    filename = (
+                        content_disposition.split("filename=")[-1]
+                        .replace('"', "")
+                        .strip()
+                    )
+
+                ui.download(src=response.content, filename=filename)
+
+                ui.notify("Monthly report downloaded", type="positive")
+
+        except Exception as e:
+            logger.exception("Monthly report download failed")
+            ui.notify(str(e), type="negative")
+
+    # Page layout
+    with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
+        # Sidebar
+        with ui.column().classes(
+            "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 "
+            "sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
+        ):
+            ui.label("Quick Nav").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+
+            ui.link("📊 Dashboard", "/").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
+            )
+            ui.link("📅 Daily Reporting", "/daily-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📋 Booking MIS", "/booking-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("🚚 Delivery MIS", "/delivery-mis").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+            ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
+                "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            )
+
+            ui.element("div").classes("h-[1px] bg-gray-100 mx-4 my-2")
+            ui.label("Quick Actions").classes(
+                "text-[9px] font-bold tracking-[1.3px] uppercase text-gray-500 px-4 mb-1.5 mt-4.5"
+            )
+            with ui.button(on_click=open_new_entry_dialog).classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("add").classes("text-primary text-lg text-weight-bold")
+                ui.label("New Entry").classes("text-weight-bold pl-2")
+            with ui.link(target="/complaint-form").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("insert_drive_file").classes(
+                    "text-primary text-lg text-weight-bold"
+                )
+                ui.label("Complaint Form").classes("text-weight-bold pl-2")
+            with ui.link(target="settings").classes(
+                "flex items-center justify-between px-4 py-1.5 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
+            ):
+                ui.icon("settings").classes("text-primary text-lg text-weight-bold")
+                ui.label("Settings").classes("text-weight-bold pl-2")
+            with ui.column().classes(
+                "h-full justify-between w-full p-4 bg-white shadow"
+            ):
+                with ui.column().classes("mt-auto items-center"):
+
+                    async def handle_logout():
+                        await logout_user()
+
+                    ui.button("Logout", on_click=handle_logout).props(
+                        "color=red outline"
+                    ).classes("w-full")
+
+        today = date.today().isoformat()
+
+        with ui.column().classes(
+            "flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden gap-6"
+        ):
+            with ui.row().classes("w-full items-start justify-between mb-1"):
+                with ui.column().classes("gap-1"):
+                    ui.label("Monthly Reporting").classes(
+                        "text-[18px] font-bold text-gray-900 leading-none"
+                    )
+
+                    ui.label("Generate dealership-level monthly audit reports").classes(
+                        "text-[12px] text-gray-400"
+                    )
+
+            with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
+                with ui.row().classes(
+                    "w-full items-center justify-between px-5 py-3 "
+                    "border-b border-gray-100 bg-white"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.element("div").classes(
+                            "w-2.5 h-2.5 rounded-full bg-[#E8402A]"
+                        )
+
+                        ui.label("Monthly Report Generator").classes(
+                            "text-[13px] font-bold text-gray-800"
+                        )
+
+                    ui.label(
+                        "Download dealership-wise monthly statistics reports"
+                    ).classes("text-[11px] text-gray-400")
+
+                with ui.row().classes("w-full items-end gap-4 p-5"):
+                    start_date = (
+                        ui.input(label="Start Date", value=today)
+                        .props('type="date" outlined dense')
+                        .classes("w-40")
+                    )
+
+                    end_date = (
+                        ui.input(label="End Date", value=today)
+                        .props('type="date" outlined dense')
+                        .classes("w-40")
+                    )
+
+                    dealership_select = (
+                        ui.select(options=dealership_options, label="Dealership")
+                        .props("outlined dense")
+                        .classes("w-72")
+                    )
+
+                    async def handle_download():
+                        await download_monthly_report(
+                            dealership_select.value, start_date.value, end_date.value
+                        )
+
+                    ui.button(
+                        "Download Report",
+                        on_click=handle_download,
+                    ).classes(
+                        "bg-gradient-to-r from-[#E8402A] "
+                        "to-[#c73019] text-white "
+                        "px-8 py-2.5 rounded-lg "
+                        "font-bold shadow-lg "
+                        "shadow-red-500/20"
+                    ).props("no-caps unelevated")
 
 
 class SettingsState:
@@ -5941,10 +6092,7 @@ async def settings_page():
                 try:
                     await api_post(
                         "/dealership",
-                        {
-                            "name": d_name.value,
-                            "code": d_code.value,
-                        },
+                        {"name": d_name.value, "code": d_code.value},
                     )
                     # Refresh Cache
                     await fetch_reference_data(force_refresh=True)
@@ -6045,10 +6193,7 @@ async def settings_page():
             )
 
             outlet_select = (
-                ui.select(
-                    options=outlet_names,
-                    label="Outlet",
-                )
+                ui.select(options=outlet_names, label="Outlet")
                 .props("outlined dense")
                 .classes("w-full")
             )

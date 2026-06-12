@@ -190,13 +190,13 @@ const slugify = (value) => {
 const normaliseCarName = (txn) => {
   const rawName = String(
     txn.car_name ||
-      txn.car ||
-      txn.model_name ||
-      txn.car_model ||
-      txn.variant_name ||
-      txn.full_variant_name ||
-      txn.variant ||
-      "",
+    txn.car ||
+    txn.model_name ||
+    txn.car_model ||
+    txn.variant_name ||
+    txn.full_variant_name ||
+    txn.variant ||
+    "",
   ).toLowerCase();
 
   const matchedCar = CAR_MASTER_LIST.find((car) =>
@@ -296,10 +296,10 @@ const buildCarWiseAnalytics = (transactions) => {
 
     item.priceOffered += cleanNumber(
       txn.price_offered ||
-        txn.final_price ||
-        txn.priceOffered ||
-        txn.ex_showroom_price ||
-        txn.ex_showroom_price_actual,
+      txn.final_price ||
+      txn.priceOffered ||
+      txn.ex_showroom_price ||
+      txn.ex_showroom_price_actual,
     );
 
     const variant =
@@ -391,7 +391,7 @@ const buildShowroomWiseAnalytics = (transactions, outlets = []) => {
     const showroomKey = outletId
       ? `outlet-${outletId}`
       : outletNameToKey[normalizeNameKey(outletName)] ||
-        `name-${normalizeNameKey(outletName)}`;
+      `name-${normalizeNameKey(outletName)}`;
 
     if (!map[showroomKey]) {
       map[showroomKey] = {
@@ -441,10 +441,10 @@ const buildShowroomWiseAnalytics = (transactions, outlets = []) => {
 
     item.priceOffered += cleanNumber(
       txn.price_offered ||
-        txn.final_price ||
-        txn.priceOffered ||
-        txn.ex_showroom_price ||
-        txn.ex_showroom_price_actual,
+      txn.final_price ||
+      txn.priceOffered ||
+      txn.ex_showroom_price ||
+      txn.ex_showroom_price_actual,
     );
 
     const carName = normaliseCarName(txn);
@@ -840,9 +840,9 @@ const CarComparisonModal = ({
 
   const selectedCompareShowroom = selectedCompareShowroomKey
     ? showrooms.find(
-        (showroom) =>
-          String(showroom.key) === String(selectedCompareShowroomKey),
-      )
+      (showroom) =>
+        String(showroom.key) === String(selectedCompareShowroomKey),
+    )
     : null;
 
   const selectedShowroomNameKey = normalizeNameKey(
@@ -851,24 +851,24 @@ const CarComparisonModal = ({
 
   const comparisonTransactions = selectedCompareShowroomKey
     ? transactions.filter((txn) => {
-        const txnShowroomKey = getTxnShowroomKey(txn);
+      const txnShowroomKey = getTxnShowroomKey(txn);
 
-        if (String(txnShowroomKey) === String(selectedCompareShowroomKey)) {
-          return true;
-        }
+      if (String(txnShowroomKey) === String(selectedCompareShowroomKey)) {
+        return true;
+      }
 
-        const txnShowroomName =
-          txn.outlet_name ||
-          txn.showroom_name ||
-          txn.outlet ||
-          txn.showroom ||
-          "";
+      const txnShowroomName =
+        txn.outlet_name ||
+        txn.showroom_name ||
+        txn.outlet ||
+        txn.showroom ||
+        "";
 
-        return (
-          selectedShowroomNameKey &&
-          normalizeNameKey(txnShowroomName) === selectedShowroomNameKey
-        );
-      })
+      return (
+        selectedShowroomNameKey &&
+        normalizeNameKey(txnShowroomName) === selectedShowroomNameKey
+      );
+    })
     : transactions;
 
   const modalCars = selectedCompareShowroomKey
@@ -1117,12 +1117,12 @@ const CarComparisonModal = ({
         ...row,
         excessRate: row.actualDiscount
           ? Number(
-              (
-                (cleanNumber(row.excessDiscount) /
-                  cleanNumber(row.actualDiscount)) *
-                100
-              ).toFixed(1),
-            )
+            (
+              (cleanNumber(row.excessDiscount) /
+                cleanNumber(row.actualDiscount)) *
+              100
+            ).toFixed(1),
+          )
           : 0,
       }))
       .sort((a, b) => b.totalUnits - a.totalUnits);
@@ -1531,12 +1531,12 @@ const CarComparisonModal = ({
 
       const excessRate = car.actualDiscount
         ? Number(
-            (
-              (cleanNumber(car.excessDiscount) /
-                cleanNumber(car.actualDiscount)) *
-              100
-            ).toFixed(1),
-          )
+          (
+            (cleanNumber(car.excessDiscount) /
+              cleanNumber(car.actualDiscount)) *
+            100
+          ).toFixed(1),
+        )
         : 0;
 
       return {
@@ -2011,11 +2011,10 @@ const CarCarousel = ({
               key={car.carName}
               type="button"
               onClick={() => onSelect(car.carName)}
-              className={`group min-w-[190px] rounded-3xl border px-4 py-3 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
-                active
+              className={`group min-w-[190px] rounded-3xl border px-4 py-3 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${active
                   ? "border-amber-400 bg-amber-50 shadow-lg ring-2 ring-amber-200 dark:border-amber-400 dark:bg-amber-400/10 dark:ring-amber-400/20"
                   : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700"
-              }`}
+                }`}
             >
               <div className="mb-1 flex h-28 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 p-1 dark:bg-slate-900">
                 <CarImage car={car} />
@@ -2483,15 +2482,15 @@ const ShowroomComparisonModal = ({
       oldLabel:
         previousMonths.length > 0
           ? `${monthLabel(previousMonths[0])} - ${monthLabel(
-              previousMonths[previousMonths.length - 1],
-            )}`
+            previousMonths[previousMonths.length - 1],
+          )}`
           : "Previous Period",
 
       newLabel:
         selectedMonths.length > 0
           ? `${monthLabel(selectedMonths[0])} - ${monthLabel(
-              selectedMonths[selectedMonths.length - 1],
-            )}`
+            selectedMonths[selectedMonths.length - 1],
+          )}`
           : "Current Period",
 
       oldStats: makeStats(previousMonths),
@@ -2521,11 +2520,10 @@ const ShowroomComparisonModal = ({
           </div>
 
           <div
-            className={`rounded-full px-3 py-1 text-sm font-black ${
-              increased
+            className={`rounded-full px-3 py-1 text-sm font-black ${increased
                 ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"
                 : "bg-red-50 text-red-700 dark:bg-red-400/10 dark:text-red-300"
-            }`}
+              }`}
           >
             {increased ? "↑" : "↓"}{" "}
             {money
@@ -2759,12 +2757,12 @@ const ShowroomComparisonModal = ({
         ...row,
         excessRate: row.actualDiscount
           ? Number(
-              (
-                (cleanNumber(row.excessDiscount) /
-                  cleanNumber(row.actualDiscount)) *
-                100
-              ).toFixed(1),
-            )
+            (
+              (cleanNumber(row.excessDiscount) /
+                cleanNumber(row.actualDiscount)) *
+              100
+            ).toFixed(1),
+          )
           : 0,
       }))
       .sort((a, b) => b.totalUnits - a.totalUnits);
@@ -2777,12 +2775,12 @@ const ShowroomComparisonModal = ({
 
       const excessRate = showroom.actualDiscount
         ? Number(
-            (
-              (cleanNumber(showroom.excessDiscount) /
-                cleanNumber(showroom.actualDiscount)) *
-              100
-            ).toFixed(1),
-          )
+          (
+            (cleanNumber(showroom.excessDiscount) /
+              cleanNumber(showroom.actualDiscount)) *
+            100
+          ).toFixed(1),
+        )
         : 0;
 
       return {
@@ -3239,11 +3237,10 @@ const ShowroomCarousel = ({
               key={showroom.key}
               type="button"
               onClick={() => onSelect(showroom.key)}
-              className={`group min-w-[220px] rounded-3xl border px-4 py-3 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
-                active
+              className={`group min-w-[220px] rounded-3xl border px-4 py-3 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${active
                   ? "border-amber-400 bg-amber-50 shadow-lg ring-2 ring-amber-200 dark:border-amber-400 dark:bg-amber-400/10 dark:ring-amber-400/20"
                   : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700"
-              }`}
+                }`}
             >
               <div className="mb-2 flex h-20 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 p-1 dark:bg-slate-900">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-100 to-indigo-100 text-3xl dark:from-amber-400/10 dark:to-indigo-400/10">
@@ -3328,11 +3325,10 @@ const RtoCarousel = ({ analytics, selectedRtoKey, onSelect }) => {
               key={row.key}
               type="button"
               onClick={() => onSelect(row.key)}
-              className={`group min-w-[220px] rounded-3xl border px-4 py-3 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${
-                active
+              className={`group min-w-[220px] rounded-3xl border px-4 py-3 text-center transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${active
                   ? "border-amber-400 bg-amber-50 shadow-lg ring-2 ring-amber-200 dark:border-amber-400 dark:bg-amber-400/10 dark:ring-amber-400/20"
                   : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700"
-              }`}
+                }`}
             >
               <div className="mb-2 flex h-20 items-center justify-center overflow-hidden rounded-2xl bg-slate-50 p-1 dark:bg-slate-900">
                 {cardImage[row.key] ? (
@@ -3892,14 +3888,14 @@ const getPendencyValue = (row, keys, fallback = "—") => {
 const isPendencyPending = (pendency) => {
   const status = String(
     pendency.status ||
-      pendency.file_status ||
-      pendency.fileStatus ||
-      pendency.stage ||
-      pendency.current_status ||
-      pendency.currentStatus ||
-      pendency.task_status ||
-      pendency.taskStatus ||
-      "",
+    pendency.file_status ||
+    pendency.fileStatus ||
+    pendency.stage ||
+    pendency.current_status ||
+    pendency.currentStatus ||
+    pendency.task_status ||
+    pendency.taskStatus ||
+    "",
   )
     .trim()
     .toLowerCase();
@@ -4097,11 +4093,10 @@ const PendencyInformationTable = ({ analytics }) => {
 
                   <td className="px-4 py-3">
                     <span
-                      className={`rounded-full px-3 py-1 text-xs font-black ${
-                        row.pending
+                      className={`rounded-full px-3 py-1 text-xs font-black ${row.pending
                           ? "bg-red-50 text-red-700 dark:bg-red-400/10 dark:text-red-300"
                           : "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300"
-                      }`}
+                        }`}
                     >
                       {row.status}
                     </span>
@@ -4148,9 +4143,8 @@ const CarMetricCard = ({ title, value, tone = "slate" }) => {
       </p>
 
       <p
-        className={`mt-2 inline-flex rounded-xl px-3 py-1 text-xl font-black ${
-          toneMap[tone] || toneMap.slate
-        }`}
+        className={`mt-2 inline-flex rounded-xl px-3 py-1 text-xl font-black ${toneMap[tone] || toneMap.slate
+          }`}
       >
         {value}
       </p>
@@ -4538,9 +4532,8 @@ const KpiCard = ({ icon, title, value, subtitle, tone = "slate" }) => {
 
   return (
     <div
-      className={`relative overflow-hidden rounded-3xl border bg-gradient-to-br ${
-        toneMap[tone] || toneMap.slate
-      } to-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl dark:to-slate-950`}
+      className={`relative overflow-hidden rounded-3xl border bg-gradient-to-br ${toneMap[tone] || toneMap.slate
+        } to-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-xl dark:to-slate-950`}
     >
       <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-white/40 blur-2xl dark:bg-white/5" />
 
@@ -4776,9 +4769,8 @@ const PrettyTable = ({ title, subtitle, columns, rows, empty = "No data" }) => {
               {columns.map((col) => (
                 <th
                   key={col.key}
-                  className={`py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 ${
-                    col.align === "right" ? "text-right" : "text-left"
-                  }`}
+                  className={`py-3 text-[10px] font-black uppercase tracking-widest text-slate-400 ${col.align === "right" ? "text-right" : "text-left"
+                    }`}
                 >
                   {col.label}
                 </th>
@@ -4796,12 +4788,10 @@ const PrettyTable = ({ title, subtitle, columns, rows, empty = "No data" }) => {
                   {columns.map((col) => (
                     <td
                       key={col.key}
-                      className={`py-3 text-sm ${
-                        col.align === "right" ? "text-right" : "text-left"
-                      } ${
-                        col.className ||
+                      className={`py-3 text-sm ${col.align === "right" ? "text-right" : "text-left"
+                        } ${col.className ||
                         "font-semibold text-slate-700 dark:text-slate-200"
-                      }`}
+                        }`}
                     >
                       {col.render ? col.render(row, index) : row[col.key]}
                     </td>
@@ -4919,7 +4909,7 @@ const AnalyticsPanel = ({ title, stage, analytics, userRole }) => {
 
   return (
     <section>
-    
+
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <KpiCard
@@ -4971,8 +4961,8 @@ const AnalyticsPanel = ({ title, stage, analytics, userRole }) => {
           centerLabel="Total"
           centerValue={formatMoney(
             analytics.totalDiscount +
-              analytics.totalActualDiscount +
-              analytics.totalExcess,
+            analytics.totalActualDiscount +
+            analytics.totalExcess,
           )}
         />
       </div>
@@ -5209,14 +5199,14 @@ export default function DashboardPage() {
   const visualReportData = useMemo(() => {
     const selectedDealer = filters.dealership_id
       ? visibleDealerships.find(
-          (dealer) => String(dealer.id) === String(filters.dealership_id),
-        )
+        (dealer) => String(dealer.id) === String(filters.dealership_id),
+      )
       : null;
 
     const selectedOutlet = filters.outlet_id
       ? filteredOutletOptions.find(
-          (outlet) => String(outlet.id) === String(filters.outlet_id),
-        )
+        (outlet) => String(outlet.id) === String(filters.outlet_id),
+      )
       : null;
 
     const scopeParts = [];
@@ -5422,15 +5412,15 @@ export default function DashboardPage() {
       let complaintList = Array.isArray(complaintsResult)
         ? complaintsResult
         : complaintsResult?.items ||
-          complaintsResult?.data ||
-          complaintsResult?.results ||
-          [];
+        complaintsResult?.data ||
+        complaintsResult?.results ||
+        [];
       let pendencyList = Array.isArray(pendencyResult)
         ? pendencyResult
         : pendencyResult?.items ||
-          pendencyResult?.data ||
-          pendencyResult?.results ||
-          [];
+        pendencyResult?.data ||
+        pendencyResult?.results ||
+        [];
 
       if (userRole !== "admin") {
         outletList = outletList.filter((outlet) =>
