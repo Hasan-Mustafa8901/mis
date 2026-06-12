@@ -5,6 +5,7 @@ from schemas.reports.monthly_reports import (
     MonthlyStatistics,
     DiscountComponentSummary,
     ModelDiscountAnalysis,
+    ShowroomModelAnalysisRow,
 )
 
 from services.reports.monthly.queries import (
@@ -13,6 +14,7 @@ from services.reports.monthly.queries import (
     get_discount_summary,
     get_model_discount_analysis,
     get_dealership_name,
+    get_showroom_model_analysis,
 )
 
 
@@ -38,6 +40,30 @@ class MonthlyReportService:
         model_rows = get_model_discount_analysis(
             session, start_date, end_date, dealership_id
         )
+        showroom_rows = get_showroom_model_analysis(
+            session, start_date, end_date, dealership_id
+        )
+
+        showroom_model_analysis = [
+            ShowroomModelAnalysisRow(
+                car_name=car_name,
+                fuel_type=fuel_type,
+                outlet_name=outlet_name,
+                delivered_cases=count,
+                total_discount=total_discount,
+                average_discount=(total_discount / count if count else 0),
+                total_excess_discount=excess_discount,
+                average_excess_discount=(excess_discount / count if count else 0),
+            )
+            for (
+                car_name,
+                fuel_type,
+                outlet_name,
+                count,
+                total_discount,
+                excess_discount,
+            ) in showroom_rows
+        ]
 
         if isinstance(start_date, date):
             report_from = start_date.strftime("%d/%m/%Y")
@@ -72,4 +98,5 @@ class MonthlyReportService:
                 ) in model_rows
             ],
             **discount_summary,
+            showroom_model_analysis=showroom_model_analysis,
         )

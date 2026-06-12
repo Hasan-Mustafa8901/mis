@@ -3,6 +3,7 @@ from sqlalchemy import func
 from sqlmodel import select
 from db.models import (
     Dealership,
+    Outlet,
     DailyBooking,
     DailyDelivery,
     Transaction,
@@ -14,6 +15,7 @@ from .filters import apply_dealership_filter
 
 
 def get_dealership_name(session, dealership_id):
+
     stmt = select(Dealership.name).where(Dealership.id == dealership_id)
     return session.exec(stmt).one()
 
@@ -118,3 +120,31 @@ def get_model_discount_analysis(session, start_date, end_date, dealership_id):
     stmt = apply_dealership_filter(stmt, Transaction, dealership_id)
     rows = session.exec(stmt).all()
     return rows
+
+
+def get_showroom_model_analysis(session, start_date, end_date, dealership_id):
+    stmt = (
+        select(
+            Car.name,
+            Variant.fuel_type,
+            Outlet.name,
+            func.count(Transaction.id),
+            func.coalesce(func.sum(Transaction.total_actual_discount), 0),
+            func.coalesce(func.sum(Transaction.total_excess_discount), 0),
+        )
+        .join(Variant, Variant.id == Transaction.variant_id)
+        .join(Car, Car.id == Variant.car_id)
+        .join(Outlet, Outlet.id == Transaction.outlet_id)
+        .where(
+            Transaction.stage == "delivery",
+            Transaction.delivery_date.is_not(None),
+            Transaction.delivery_date.between(start_date, end_date),
+        )
+        .group_by(Car.name, Variant.fuel_type, Outlet.name)
+        .order_by(Car.name, Variant.fuel_type, Outlet.name)
+    )
+
+    if dealership_id is not None:
+        stmt = stmt.where(Outlet.dealership_id == dealership_id)
+
+    return session.exec(stmt).all()

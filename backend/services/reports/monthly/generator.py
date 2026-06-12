@@ -104,11 +104,11 @@ def _write_discount_summary(ws, row, report):
     row = _section_header(ws, row, "Discount Summary")
 
     metrics = [
-        ("TOTAL DISCOUNT GIVEN", report.total_discount_given),
-        ("MAXIMUM ALLOWABLE DISCOUNT", report.maximum_allowable_discount),
-        ("EXCESS DISCOUNT GIVEN", report.excess_discount_given),
-        ("AVERAGE DISCOUNT", report.average_discount),
-        ("AVERAGE EXCESS DISCOUNT", report.average_excess_discount),
+        ("Total Discount Given", report.total_discount_given),
+        ("Maximum Allowable Discount", report.maximum_allowable_discount),
+        ("Excess Discount Given", report.excess_discount_given),
+        ("Average Discount", report.average_discount),
+        ("Average Excess Discount", report.average_excess_discount),
     ]
 
     for label, value in metrics:
@@ -120,11 +120,8 @@ def _write_discount_summary(ws, row, report):
 
 
 def _write_model_analysis(ws, row, report):
-
     row = _section_header(ws, row, "Model / Fuel Type Analysis")
-
     grouped = {}
-
     for item in report.model_discount_analysis:
         grouped.setdefault(item.car_name, []).append(item)
 
@@ -164,6 +161,221 @@ def _write_model_analysis(ws, row, report):
     return row
 
 
+def _write_showroom_analysis(ws, row, report):
+
+    row = _section_header(ws, row, "Showroom Wise Model Analysis")
+
+    if not report.showroom_model_analysis:
+        ws.cell(row=row, column=1, value="NO DATA AVAILABLE")
+        return row + 2
+
+    outlets = sorted({r.outlet_name for r in report.showroom_model_analysis})
+
+    pivot = {}
+
+    for r in report.showroom_model_analysis:
+        key = (r.car_name, r.fuel_type)
+        pivot.setdefault(key, {})[r.outlet_name] = r
+
+    # HEADER ROW 1
+
+    ws.cell(row=row, column=1, value="MODEL / FUEL").font = HEADER_FONT
+    ws.cell(row=row, column=1).border = THIN_BORDER
+    start_col = 2
+
+    for outlet in outlets + ["TOTAL"]:
+        end_col = start_col + 4
+
+        ws.merge_cells(
+            start_row=row, start_column=start_col, end_row=row, end_column=end_col
+        )
+
+        cell = ws.cell(row=row, column=start_col, value=outlet.upper())
+
+        cell.font = HEADER_FONT
+        cell.border = THIN_BORDER
+
+        start_col += 5
+
+    row += 1
+
+    # HEADER ROW 2
+
+    metrics = [
+        "No of Vehicles",
+        "Discount Given",
+        "Average Discount Given",
+        "Excess Discount Given",
+        "Average Excess Discount",
+    ]
+
+    col = 2
+    for _ in outlets + ["TOTAL"]:
+        for metric in metrics:
+            cell = ws.cell(row=row, column=col, value=metric)
+
+            cell.font = HEADER_FONT
+            cell.border = THIN_BORDER
+
+            col += 1
+
+    row += 1
+
+    # DATA ROWS
+    grand_totals = {
+        outlet: {
+            "vehicles": 0,
+            "discount": 0,
+            "excess": 0,
+        }
+        for outlet in outlets
+    }
+
+    for car_name, fuel_type in sorted(pivot.keys()):
+        ws.cell(
+            row=row, column=1, value=f"{car_name} {fuel_type}".upper()
+        ).font = BODY_FONT
+
+        col = 2
+
+        total_vehicles = 0
+        total_discount = 0
+        total_excess = 0
+
+        for outlet in outlets:
+            data = pivot[(car_name, fuel_type)].get(outlet)
+
+            if data:
+                vehicles = data.delivered_cases
+                discount = data.total_discount
+                avg_discount = data.average_discount
+                excess = data.total_excess_discount
+                avg_excess = data.average_excess_discount
+
+            else:
+                vehicles = 0
+                discount = 0
+                avg_discount = 0
+                excess = 0
+                avg_excess = 0
+
+            total_vehicles += vehicles
+            total_discount += discount
+            total_excess += excess
+
+            grand_totals[outlet]["vehicles"] += vehicles
+
+            grand_totals[outlet]["discount"] += discount
+
+            grand_totals[outlet]["excess"] += excess
+
+            values = [
+                vehicles,
+                round(discount, 2),
+                round(avg_discount, 2),
+                round(excess, 2),
+                round(avg_excess, 2),
+            ]
+
+            for value in values:
+                cell = ws.cell(row=row, column=col, value=value)
+
+                cell.font = BODY_FONT
+                cell.border = THIN_BORDER
+
+                col += 1
+
+        # TOTAL BLOCK
+        overall_avg_discount = total_discount / total_vehicles if total_vehicles else 0
+
+        overall_avg_excess = total_excess / total_vehicles if total_vehicles else 0
+
+        totals = [
+            total_vehicles,
+            round(total_discount, 2),
+            round(overall_avg_discount, 2),
+            round(total_excess, 2),
+            round(overall_avg_excess, 2),
+        ]
+
+        for value in totals:
+            cell = ws.cell(row=row, column=col, value=value)
+
+            cell.font = BODY_FONT
+            cell.border = THIN_BORDER
+
+            col += 1
+
+        row += 1
+
+    # GRAND TOTAL ROW
+
+    ws.cell(row=row, column=1, value="TOTAL").font = HEADER_FONT
+
+    col = 2
+
+    overall_vehicle_total = 0
+    overall_discount_total = 0
+    overall_excess_total = 0
+
+    for outlet in outlets:
+        vehicles = grand_totals[outlet]["vehicles"]
+
+        discount = grand_totals[outlet]["discount"]
+
+        excess = grand_totals[outlet]["excess"]
+
+        avg_discount = discount / vehicles if vehicles else 0
+
+        avg_excess = excess / vehicles if vehicles else 0
+
+        overall_vehicle_total += vehicles
+        overall_discount_total += discount
+        overall_excess_total += excess
+
+        values = [
+            vehicles,
+            round(discount, 2),
+            round(avg_discount, 2),
+            round(excess, 2),
+            round(avg_excess, 2),
+        ]
+
+        for value in values:
+            cell = ws.cell(row=row, column=col, value=value)
+
+            cell.font = HEADER_FONT
+            cell.border = THIN_BORDER
+
+            col += 1
+
+    overall_avg_discount = (
+        overall_discount_total / overall_vehicle_total if overall_vehicle_total else 0
+    )
+
+    overall_avg_excess = (
+        overall_excess_total / overall_vehicle_total if overall_vehicle_total else 0
+    )
+
+    totals = [
+        overall_vehicle_total,
+        round(overall_discount_total, 2),
+        round(overall_avg_discount, 2),
+        round(overall_excess_total, 2),
+        round(overall_avg_excess, 2),
+    ]
+
+    for value in totals:
+        cell = ws.cell(row=row, column=col, value=value)
+
+        cell.font = HEADER_FONT
+        cell.border = THIN_BORDER
+
+        col += 1
+
+    return row + 2
+
+
 def generate_monthly_report(report):
     wb = Workbook()
 
@@ -179,6 +391,7 @@ def generate_monthly_report(report):
     row = _write_category_discount(ws, row, report)
     row = _write_discount_summary(ws, row, report)
     row = _write_model_analysis(ws, row, report)
+    row = _write_showroom_analysis(ws, row, report)
 
     buffer = BytesIO()
 
@@ -187,7 +400,7 @@ def generate_monthly_report(report):
     buffer.seek(0)
 
     filename = (
-        f"monthly_statistics_"
+        f"{report.dealership_name.title()} Audit Report"
         f"{report.report_period_from.replace('/', '-')}"
         f"_to_"
         f"{report.report_period_to.replace('/', '-')}"
