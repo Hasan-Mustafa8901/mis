@@ -2352,6 +2352,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     mstate.month = month
     mstate.limit = 25
     mstate.offset = 0
+    user = get_user()
 
     async def get_selected_ids():
         if not mstate.grid:
@@ -2377,6 +2378,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
             for id in txn_ids:
                 await api_delete(f"/transactions/{id}")
+                logger.info("%s deleted transaction with id: %d", user.get("name"), id)
             ui.notify("Deleted the entry successfully", type="positive")
 
             await load_data()

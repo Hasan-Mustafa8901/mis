@@ -62,11 +62,7 @@ def get_auth_headers() -> dict[str, str]:
 # =========================================================
 
 
-async def api_request(
-    method: str,
-    path: str,
-    **kwargs,
-) -> Any:
+async def api_request(method: str, path: str, **kwargs) -> Any:
     """
     Centralized API request handler.
 
@@ -95,10 +91,7 @@ async def api_request(
 
     try:
         response = await http_client.request(
-            method=method,
-            url=f"{BASE_URL}{path}",
-            headers=headers,
-            **kwargs,
+            method=method, url=f"{BASE_URL}{path}", headers=headers, **kwargs
         )
 
         # AUTH ERRORS
@@ -149,57 +142,24 @@ async def api_request(
 
 
 # WRAPPER METHODS
-async def api_get(
-    path: str,
-    params: dict | None = None,
-):
-    return await api_request(
-        "GET",
-        path,
-        params=params,
-    )
+async def api_get(path: str, params: dict | None = None):
+    return await api_request("GET", path, params=params)
 
 
-async def api_post(
-    path: str,
-    payload: dict,
-):
-    return await api_request(
-        "POST",
-        path,
-        json=payload,
-    )
+async def api_post(path: str, payload: dict):
+    return await api_request("POST", path, json=payload)
 
 
-async def api_put(
-    path: str,
-    payload: dict,
-):
-    return await api_request(
-        "PUT",
-        path,
-        json=payload,
-    )
+async def api_put(path: str, payload: dict):
+    return await api_request("PUT", path, json=payload)
 
 
-async def api_delete(
-    path: str,
-    payload: dict | None = None,
-):
-    return await api_request(
-        "DELETE",
-        path,
-        json=payload,
-    )
+async def api_delete(path: str, payload: dict | None = None):
+    return await api_request("DELETE", path, json=payload)
 
 
 # FILE UPLOAD
-async def api_post_file(
-    path: str,
-    file,
-    data: dict,
-):
-
+async def api_post_file(path: str, file, data: dict):
     headers = get_auth_headers()
 
     name = file.file.name
