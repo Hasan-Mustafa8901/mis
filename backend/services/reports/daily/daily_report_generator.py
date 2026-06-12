@@ -7,8 +7,9 @@ from datetime import date, datetime
 def generate_daily_report(backend_data=None):
     """
     Generate a formatted Excel daily report and return (BytesIO, filename).
+    All data is supplied via backend.
 
-    All data is supplied via backend_data. Structure expected:
+    Structure expected:
 
     backend_data = {
         "report_date": "30/04/2026",          # str dd/mm/yyyy  OR  date/datetime object
@@ -39,7 +40,7 @@ def generate_daily_report(backend_data=None):
             # same keys as "booking" above
         },
 
-        # ── Sheet 1: Pending Files ─────────────────────────────────────────
+        # Sheet 1: Pending Files
         "booking_files_pending": [
             # one dict per row, up to 10 rows displayed
             {
@@ -56,7 +57,7 @@ def generate_daily_report(backend_data=None):
             # same structure as booking_files_pending
         ],
 
-        # ── Sheet 2: Pending Documents ─────────────────────────────────────
+        # Sheet 2: Pending Documents
         "booking_docs_pending": [
             # one dict per row, up to 10 rows displayed
             {
@@ -254,7 +255,9 @@ def generate_daily_report(backend_data=None):
         ws.cell(row=row, column=4).value = d_label
         ws.cell(row=row, column=5).value = e_label
 
-    def write_data_row(row, label, b_val, d_val, highlight=False, is_last=False):
+    def write_data_row(
+        row, label, booking_val, delivery_val, highlight=False, is_last=False
+    ):
         bottom = med if is_last else thn
         bg = fill_red if highlight else PatternFill(fill_type=None)
         ws.row_dimensions[row].height = 15
@@ -271,15 +274,19 @@ def generate_daily_report(backend_data=None):
             )
             ws.cell(row=row, column=col).fill = bg
 
-        dc = ws.cell(row=row, column=4, value=b_val)
+        dc = ws.cell(row=row, column=4, value=booking_val)
         dc.font = font_normal
-        dc.alignment = align_right if isinstance(b_val, (int, float)) else align_center
+        dc.alignment = (
+            align_right if isinstance(booking_val, (int, float)) else align_center
+        )
         dc.fill = bg
         dc.border = Border(left=thn, right=thn, top=thn, bottom=bottom)
 
-        ec = ws.cell(row=row, column=5, value=d_val)
+        ec = ws.cell(row=row, column=5, value=delivery_val)
         ec.font = font_normal
-        ec.alignment = align_right if isinstance(d_val, (int, float)) else align_center
+        ec.alignment = (
+            align_right if isinstance(delivery_val, (int, float)) else align_center
+        )
         ec.fill = bg
         ec.border = Border(left=thn, right=med, top=thn, bottom=bottom)
 
@@ -351,7 +358,7 @@ def generate_daily_report(backend_data=None):
 
         return start_row + num_rows
 
-    # ── Layout ────────────────────────────────────────────────────────────────
+    # Layout
 
     # Title — rows 1-2
     write_title(1)
@@ -363,6 +370,7 @@ def generate_daily_report(backend_data=None):
     recon_rows = [
         ("Total Cases Reported", False),
         ("Files Received", False),
+        ("Files Out of Scope", False),
         ("Files Pending", True),
         ("Files Incomplete", True),
         ("Files Verified", False),
@@ -411,32 +419,17 @@ def generate_daily_report(backend_data=None):
     # LIST 1 — PENDING FILES (BOOKING)
     booking_header_row = 28
 
-    write_section_header(
-        booking_header_row,
-        "List of Pending Files (Booking)",
-    )
+    write_section_header(booking_header_row, "List of Pending Files (Booking)")
 
     write_list_col_headers(
         booking_header_row + 1,
-        [
-            "S.No.",
-            "Booking Date",
-            "Customer Name",
-            "Mobile No.",
-            "TL",
-        ],
+        ["S.No.", "Booking Date", "Customer Name", "Mobile No.", "TL"],
     )
 
     next_booking_pending_row = write_list_data_rows(
         start_row=booking_header_row + 2,
         data_list=booking_files_pending,
-        value_keys=[
-            "sno",
-            "date",
-            "name",
-            "mobile",
-            "tl",
-        ],
+        value_keys=["sno", "date", "name", "mobile", "tl"],
     )
 
     # =========================================================
@@ -444,64 +437,34 @@ def generate_daily_report(backend_data=None):
     # =========================================================
     booking_oos_header_row = next_booking_pending_row + 2
 
-    write_section_header(
-        booking_oos_header_row,
-        "Out Of Scope Files (Booking)",
-    )
+    write_section_header(booking_oos_header_row, "Out Of Scope Files (Booking)")
 
     write_list_col_headers(
         booking_oos_header_row + 1,
-        [
-            "S.No.",
-            "Booking Date",
-            "Customer Name",
-            "Mobile No.",
-            "Reason",
-        ],
+        ["S.No.", "Booking Date", "Customer Name", "Mobile No.", "Reason"],
     )
 
     next_booking_oos_row = write_list_data_rows(
         start_row=booking_oos_header_row + 2,
         data_list=booking_out_of_scope,
-        value_keys=[
-            "sno",
-            "date",
-            "name",
-            "mobile",
-            "reason",
-        ],
+        value_keys=["sno", "date", "name", "mobile", "reason"],
     )
     # =========================================================
     # LIST 3 — DELAY IN RECEIVING FILES (BOOKING)
     # =========================================================
     booking_delay_header_row = next_booking_oos_row + 2
 
-    write_section_header(
-        booking_delay_header_row,
-        "Delay In Receiving Files (Booking)",
-    )
+    write_section_header(booking_delay_header_row, "Delay In Receiving Files (Booking)")
 
     write_list_col_headers(
         booking_delay_header_row + 1,
-        [
-            "S.No.",
-            "Booking Date",
-            "Receiving Date",
-            "Delay Days",
-            "Customer Name",
-        ],
+        ["S.No.", "Booking Date", "Receiving Date", "Delay Days", "Customer Name"],
     )
 
     next_booking_delay_row = write_list_data_rows(
         start_row=booking_delay_header_row + 2,
         data_list=booking_delay_files,
-        value_keys=[
-            "sno",
-            "record_date",
-            "receiving_date",
-            "delay_days",
-            "name",
-        ],
+        value_keys=["sno", "record_date", "receiving_date", "delay_days", "name"],
     )
 
     # =========================================================
@@ -509,32 +472,17 @@ def generate_daily_report(backend_data=None):
     # =========================================================
     delivery_header_row = next_booking_delay_row + 2
 
-    write_section_header(
-        delivery_header_row,
-        "List of Pending Files (Delivery)",
-    )
+    write_section_header(delivery_header_row, "List of Pending Files (Delivery)")
 
     write_list_col_headers(
         delivery_header_row + 1,
-        [
-            "S.No.",
-            "Delivery Date",
-            "Customer Name",
-            "Mobile No.",
-            "TL",
-        ],
+        ["S.No.", "Delivery Date", "Customer Name", "Mobile No.", "TL"],
     )
 
     next_delivery_pending_row = write_list_data_rows(
         start_row=delivery_header_row + 2,
         data_list=delivery_files_pending,
-        value_keys=[
-            "sno",
-            "date",
-            "name",
-            "mobile",
-            "tl",
-        ],
+        value_keys=["sno", "date", "name", "mobile", "tl"],
     )
 
     # =========================================================
@@ -542,32 +490,17 @@ def generate_daily_report(backend_data=None):
     # =========================================================
     delivery_oos_header_row = next_delivery_pending_row + 2
 
-    write_section_header(
-        delivery_oos_header_row,
-        "Out Of Scope Files (Delivery)",
-    )
+    write_section_header(delivery_oos_header_row, "Out Of Scope Files (Delivery)")
 
     write_list_col_headers(
         delivery_oos_header_row + 1,
-        [
-            "S.No.",
-            "Delivery Date",
-            "Customer Name",
-            "Mobile No.",
-            "Reason",
-        ],
+        ["S.No.", "Delivery Date", "Customer Name", "Mobile No.", "Reason"],
     )
 
     next_delivery_oos_row = write_list_data_rows(
         start_row=delivery_oos_header_row + 2,
         data_list=delivery_out_of_scope,
-        value_keys=[
-            "sno",
-            "date",
-            "name",
-            "mobile",
-            "reason",
-        ],
+        value_keys=["sno", "date", "name", "mobile", "reason"],
     )
 
     # =========================================================
@@ -576,63 +509,35 @@ def generate_daily_report(backend_data=None):
     delivery_delay_header_row = next_delivery_oos_row + 2
 
     write_section_header(
-        delivery_delay_header_row,
-        "Delay In Receiving Files (Delivery)",
+        delivery_delay_header_row, "Delay In Receiving Files (Delivery)"
     )
 
     write_list_col_headers(
         delivery_delay_header_row + 1,
-        [
-            "S.No.",
-            "Delivery Date",
-            "Receiving Date",
-            "Delay Days",
-            "Customer Name",
-        ],
+        ["S.No.", "Delivery Date", "Receiving Date", "Delay Days", "Customer Name"],
     )
 
     next_delivery_delay_row = write_list_data_rows(
         start_row=delivery_delay_header_row + 2,
         data_list=delivery_delay_files,
-        value_keys=[
-            "sno",
-            "record_date",
-            "receiving_date",
-            "delay_days",
-            "name",
-        ],
+        value_keys=["sno", "record_date", "receiving_date", "delay_days", "name"],
     )
     # =========================================================
     # LIST 7 — REJECTED FILES DELIVERED
     # =========================================================
     rejected_delivery_header_row = next_delivery_delay_row + 2
 
-    write_section_header(
-        rejected_delivery_header_row,
-        "Rejected Files Delivered",
-    )
+    write_section_header(rejected_delivery_header_row, "Rejected Files Delivered")
 
     write_list_col_headers(
         rejected_delivery_header_row + 1,
-        [
-            "S.No.",
-            "Delivery Date",
-            "Customer Name",
-            "Mobile No.",
-            "Reason",
-        ],
+        ["S.No.", "Delivery Date", "Customer Name", "Mobile No.", "Reason"],
     )
 
     write_list_data_rows(
         start_row=rejected_delivery_header_row + 2,
         data_list=rejected_files_delivered,
-        value_keys=[
-            "sno",
-            "date",
-            "name",
-            "mobile",
-            "reason",
-        ],
+        value_keys=["sno", "date", "name", "mobile", "reason"],
     )
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -777,13 +682,7 @@ def generate_daily_report(backend_data=None):
                 bottom=thn,
             )
 
-    def ws2_write_data_rows(
-        start_row,
-        data_list,
-        value_keys,
-        num_cols,
-    ):
-
+    def ws2_write_data_rows(start_row, data_list, value_keys, num_cols):
         num_rows = len(data_list)
 
         # =====================================
@@ -795,34 +694,23 @@ def generate_daily_report(backend_data=None):
 
         for i in range(num_rows):
             r = start_row + i
-
             is_last = i == num_rows - 1
-
             bottom = med if is_last else thn
-
             ws2.row_dimensions[r].height = 15
-
             row_data = data_list[i] if i < len(data_list) else {}
-
             vals = [row_data.get(k, "") for k in value_keys]
 
             for col in range(1, num_cols + 1):
                 val = vals[col - 1] if col - 1 < len(vals) else ""
 
-                c = ws2.cell(
-                    row=r,
-                    column=col,
-                    value=val,
-                )
+                c = ws2.cell(row=r, column=col, value=val)
 
                 if col > NUM_BASE_COLS:
                     c.fill = _status_fill(val)
-
                     c.font = _status_font(val)
 
                 else:
                     c.fill = PatternFill(fill_type=None)
-
                     c.font = font_normal
 
                 c.alignment = align_center
@@ -843,15 +731,10 @@ def generate_daily_report(backend_data=None):
     booking_docs_header_row = 4
 
     ws2_write_section_header(
-        booking_docs_header_row,
-        "List of Pending Documents (Booking)",
-        NUM_BOOKING_COLS,
+        booking_docs_header_row, "List of Pending Documents (Booking)", NUM_BOOKING_COLS
     )
 
-    ws2_write_col_headers(
-        booking_docs_header_row + 1,
-        BOOKING_ALL_COLS,
-    )
+    ws2_write_col_headers(booking_docs_header_row + 1, BOOKING_ALL_COLS)
 
     next_ws2_row = ws2_write_data_rows(
         start_row=booking_docs_header_row + 2,
@@ -869,10 +752,7 @@ def generate_daily_report(backend_data=None):
         NUM_DELIVERY_COLS,
     )
 
-    ws2_write_col_headers(
-        delivery_docs_header_row + 1,
-        DELIVERY_ALL_COLS,
-    )
+    ws2_write_col_headers(delivery_docs_header_row + 1, DELIVERY_ALL_COLS)
 
     ws2_write_data_rows(
         start_row=delivery_docs_header_row + 2,

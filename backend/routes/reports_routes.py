@@ -11,7 +11,10 @@ from db.session import get_session
 from services.auth.dependencies import get_current_user
 from services.auth.scope import get_allowed_outlets, validate_outlet_access
 from services.reports.daily.service import DailyReportService
+from services.reports.monthly.service import MonthlyReportService
+
 from services.reports.daily.daily_report_generator import generate_daily_report
+from services.reports.monthly.generator import generate_monthly_report
 from services.reports.export_query import get_export_transactions_count
 from services.reports.export_service import ExportService
 from schemas.mis import MISExportRequest
@@ -54,10 +57,7 @@ def download_daily_report(
 
     # USER REQUESTED SPECIFIC OUTLET
     if outlet_id:
-        validate_outlet_access(
-            current_user,
-            outlet_id,
-        )
+        validate_outlet_access(current_user, outlet_id)
 
         report_data = DailyReportService.generate(
             session=session,
@@ -84,6 +84,31 @@ def download_daily_report(
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         ),
         headers={"Content-Disposition": (f'attachment; filename="{filename}"')},
+    )
+
+
+@router.get("/monthly")
+def download_monthly_report(
+    start_date: date,
+    end_date: date,
+    dealership_id: int,
+    session: Session = Depends(get_session),
+):
+    report = MonthlyReportService.generate(
+        session=session,
+        start_date=start_date,
+        end_date=end_date,
+        dealership_id=dealership_id,
+    )
+
+    buffer, filename = generate_monthly_report(report)
+
+    return StreamingResponse(
+        buffer,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

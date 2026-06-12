@@ -11,6 +11,7 @@ class ReconciliationMetrics(BaseModel):
     files_verified: int = 0
     files_approved: int = 0
     files_rejected: int = 0
+    files_out_of_scope: int = 0
     verification_completion_pct: float = 0.0
 
 

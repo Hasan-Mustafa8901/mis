@@ -1476,11 +1476,7 @@ async def dashboard_page() -> None:
                     # MONTH FILTER
 
                     month_select = (
-                        ui.select(
-                            options={"": "All Months"},
-                            value="",
-                            label="Month",
-                        )
+                        ui.select(options={"": "All Months"}, value="", label="Month")
                         .classes("w-44")
                         .props("outlined dense")
                     )
@@ -2276,6 +2272,8 @@ async def dashboard_page() -> None:
 
 
 class MISState:
+    STORAGE_KEY = "mis_state"
+
     def __init__(self) -> None:
         self.selected_dealer: int | None
         self.selected_outlet: int | None
@@ -2303,6 +2301,37 @@ class MISState:
         self.search_limit: int = 25
 
         self.export_timer: ui.timer | None = None
+
+    # Implement persist filters and state
+    def save(self):
+        app.storage.user[self.STORAGE_KEY] = {
+            "selected_dealer": self.selected_dealer,
+            "selected_outlet": self.selected_outlet,
+            "search_query": getattr(self, "search_query", ""),
+            "search_limit": getattr(self, "search_limit", 25),
+            "offset": self.offset,
+            "limit": self.limit,
+            # AG Grid
+            "filter_model": getattr(self, "filter_model", {}),
+            "sort_model": getattr(self, "sort_model", []),
+        }
+
+    def restore(self):
+        saved = app.storage.user.get(self.STORAGE_KEY)
+        if not saved:
+            return
+
+        self.selected_dealer = saved.get("selected_dealer")
+        self.selected_outlet = saved.get("selected_outlet")
+
+        self.search_query = saved.get("search_query", "")
+        self.search_limit = saved.get("search_limit", 25)
+
+        self.offset = saved.get("offset", 0)
+        self.limit = saved.get("limit", 25)
+
+        self.filter_model = saved.get("filter_model", {})
+        self.sort_model = saved.get("sort_model", [])
 
 
 async def load_master_data(state):
@@ -2886,12 +2915,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                     limit_select = (
                         ui.select(
-                            {
-                                5: "5",
-                                25: "25",
-                                50: "50",
-                                100: "100",
-                            },
+                            {5: "5", 25: "25", 50: "50", 100: "100"},
                             value=25,
                             label="Limit",
                         )
@@ -2900,21 +2924,13 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     )
 
                     async def perform_search():
-                        print("ON clicking search button")
-
                         mstate.search_query = search_input.value or ""
                         mstate.search_limit = int(limit_select.value or 25)
-                        print("search:", search_input.value)
-                        print("limit:", limit_select.value)
-
                         await load_data()
 
                     async def clear_search():
-
                         search_input.set_value("")
-
                         mstate.search_query = ""
-
                         await load_data()
 
                     search_input.on(

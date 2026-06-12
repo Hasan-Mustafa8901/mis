@@ -5,10 +5,7 @@ from datetime import date
 from sqlmodel import Session
 
 from db.models import MISRecordType, Dealership, Outlet
-from schemas.reports.daily_weekly_reports import (
-    DailyReportData,
-    StageReport,
-)
+from schemas.reports.daily_weekly_reports import DailyReportData, StageReport
 
 from services.reports.daily.queries import (
     get_booking_reconciliation,
@@ -43,20 +40,12 @@ class DailyReportService:
         booking_stage = StageReport(
             reconciliation=(
                 get_booking_reconciliation(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
             discount=(
                 get_booking_discount_summary(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
         )
@@ -64,20 +53,12 @@ class DailyReportService:
         delivery_stage = StageReport(
             reconciliation=(
                 get_delivery_reconciliation(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
             discount=(
                 get_delivery_discount_summary(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
         )
@@ -86,9 +67,7 @@ class DailyReportService:
         )
         print(scope)
 
-        # =====================================================
         # REPORT DATE
-        # =====================================================
         if start_date == end_date:
             report_date = end_date.strftime("%d/%m/%Y")
 
@@ -98,78 +77,44 @@ class DailyReportService:
                 "to": end_date.strftime("%d/%m/%Y"),
             }
 
-        # =====================================================
         # REPORT DATA
-        # =====================================================
         report = DailyReportData(
             report_date=report_date,
             scope=scope,
             booking=booking_stage,
             delivery=delivery_stage,
-            # =====================================
             # BOOKING FILES PENDING
-            # =====================================
             booking_files_pending=(
                 get_booking_pending_files(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
-            # =====================================
             # DELIVERY FILES PENDING
-            # =====================================
             delivery_files_pending=(
                 get_delivery_pending_files(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
-            # =====================================
             # BOOKING DOCS PENDING
-            # =====================================
             booking_docs_pending=(
                 get_booking_docs_pending(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
-            # =====================================
             # DELIVERY DOCS PENDING
-            # =====================================
             delivery_docs_pending=(
                 get_delivery_docs_pending(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
             booking_out_of_scope=(
                 get_booking_out_of_scope(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
             delivery_out_of_scope=(
                 get_delivery_out_of_scope(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
             booking_delay_files=(
@@ -194,24 +139,16 @@ class DailyReportService:
             ),
             rejected_files_delivered=(
                 get_rejected_files_delivered(
-                    session,
-                    start_date,
-                    end_date,
-                    dealership_id,
-                    outlet_id,
+                    session, start_date, end_date, dealership_id, outlet_id
                 )
             ),
         )
 
-        # =====================================================
         # EXCEL PAYLOAD
-        # =====================================================
         return cls._to_excel_payload(report)
 
     @staticmethod
-    def _to_excel_payload(
-        report: DailyReportData,
-    ) -> dict:
+    def _to_excel_payload(report: DailyReportData) -> dict:
 
         return {
             "report_date": report.report_date,
@@ -219,6 +156,7 @@ class DailyReportService:
             "booking": {
                 "Total Cases Reported": report.booking.reconciliation.total_cases_reported,
                 "Files Received": report.booking.reconciliation.files_received,
+                "Files Out of Scope": report.booking.reconciliation.files_out_of_scope,
                 "Files Pending": report.booking.reconciliation.files_pending,
                 "Files Incomplete": report.booking.reconciliation.files_incomplete,
                 "Files Verified": report.booking.reconciliation.files_verified,
@@ -238,6 +176,7 @@ class DailyReportService:
             "delivery": {
                 "Total Cases Reported": report.delivery.reconciliation.total_cases_reported,
                 "Files Received": report.delivery.reconciliation.files_received,
+                "Files Out of Scope": report.delivery.reconciliation.files_out_of_scope,
                 "Files Pending": report.delivery.reconciliation.files_pending,
                 "Files Incomplete": report.delivery.reconciliation.files_incomplete,
                 "Files Verified": report.delivery.reconciliation.files_verified,
