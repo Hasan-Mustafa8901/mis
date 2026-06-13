@@ -1322,7 +1322,7 @@ async def dashboard_page() -> None:
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
             )
-            ui.link("💼 Monthly Report", "/reporting").classes(
+            ui.link("💼 Reports", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -2418,7 +2418,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
-            ui.link("💼 Reporting", "/reporting").classes(
+            ui.link("💼 Reports", "/reporting").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
 
@@ -3180,7 +3180,7 @@ async def complaints_ctrl_page():
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("💼 Reporting", "/reporting").classes(
+            ui.link("💼 Reports", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -5164,7 +5164,7 @@ async def daily_reporting_page() -> None:
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("💼 Reporting", "/reporting").classes(
+            ui.link("💼 Reports", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -5492,10 +5492,7 @@ async def monthly_reporting_page():
     render_topbar("Reporting")
 
     async def download_report(
-        endpoint: str,
-        start_date: str,
-        end_date: str,
-        dealership_id: int | None = None,
+        endpoint: str, start_date: str, end_date: str, dealership_id: int | None = None
     ):
         try:
             params = {"start_date": start_date, "end_date": end_date}
@@ -5551,7 +5548,7 @@ async def monthly_reporting_page():
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("💼 Reporting", "/reporting").classes(
+            ui.link("💼 Reports", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(

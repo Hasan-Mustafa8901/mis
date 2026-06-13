@@ -61,7 +61,7 @@ def get_category_discounts(session, start_date, end_date, dealership_id):
             Transaction.delivery_date.between(start_date, end_date),
             TransactionItem.component_type == "discount",
         )
-        .group_by(TransactionItem.component_name)
+        .group_by(TransactionItem.component_id)
         .order_by(TransactionItem.component_id)
     )
     stmt = apply_dealership_filter(stmt, Transaction, dealership_id)
