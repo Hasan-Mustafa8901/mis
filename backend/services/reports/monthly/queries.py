@@ -54,7 +54,11 @@ def get_monthly_reconciliation(session, start_date, end_date, dealership_id):
 
 def get_category_discounts(session, start_date, end_date, dealership_id):
     stmt = (
-        select(TransactionItem.component_name, func.sum(TransactionItem.actual_amount))
+        select(
+            TransactionItem.component_id,
+            TransactionItem.component_name,
+            func.sum(TransactionItem.actual_amount),
+        )
         .join(Transaction, Transaction.id == TransactionItem.transaction_id)
         .where(
             Transaction.stage == "delivery",
@@ -67,7 +71,7 @@ def get_category_discounts(session, start_date, end_date, dealership_id):
     stmt = apply_dealership_filter(stmt, Transaction, dealership_id)
     rows = session.exec(stmt).all()
 
-    return {name: amount or 0 for name, amount in rows}
+    return {name: amount or 0 for _, name, amount in rows}
 
 
 def get_discount_summary(session, start_date, end_date, dealership_id):
