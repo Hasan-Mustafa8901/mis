@@ -17,6 +17,8 @@ from services.reports.daily.daily_report_generator import generate_daily_report
 from services.reports.monthly.generator import generate_monthly_report
 from services.reports.export_query import get_export_transactions_count
 from services.reports.export_service import ExportService
+from services.reports.daily.combined_report_service import CombinedReportService
+from services.reports.daily.combined_report_generator import CombinedReportGenerator
 from schemas.mis import MISExportRequest
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -87,13 +89,46 @@ def download_daily_report(
     )
 
 
+@router.get("/combined")
+def download_combined_report(
+    start_date: date,
+    end_date: date,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=403, detail="Only administrators can download combined reports"
+        )
+
+    report_data = CombinedReportService.generate(
+        session=session, start_date=start_date, end_date=end_date
+    )
+
+    buffer, filename = CombinedReportGenerator(backend_data=report_data).generate()
+
+    return StreamingResponse(
+        buffer,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers={"Content-Disposition": (f'attachment; filename="{filename}"')},
+    )
+
+
 @router.get("/monthly")
 def download_monthly_report(
     start_date: date,
     end_date: date,
     dealership_id: int,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators can download combined reports",
+        )
     report = MonthlyReportService.generate(
         session=session,
         start_date=start_date,

@@ -51,7 +51,10 @@ def get_complaints(
 
 
 @router.get("/metrics/status")
-def get_complaints_per_status(session: Session = Depends(get_session)):
+def get_complaints_per_status(
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
     return complaint_service.get_complaints_per_status(session)
 
 

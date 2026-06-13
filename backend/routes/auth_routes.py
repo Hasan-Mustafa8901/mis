@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from db.session import get_session
 from schemas.auth import UserCreate, UserLogin, TokenResponse
 from services.auth.auth_service import AuthService
+from services.auth.dependencies import get_current_user
 from sqlmodel import Session, select
 from db.models import User, Outlet
 
@@ -12,6 +13,7 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @router.get("/users")
 def get_users(
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
 
     users = session.exec(select(User)).all()

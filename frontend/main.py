@@ -2869,7 +2869,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 with ui.row().classes("w-full items-center gap-3"):
                     search_input = (
                         ui.input(
-                            label="Search Transactions",
+                            label="Search Entries",
                             placeholder="Customer, mobile, VIN, receipt, invoice...",
                         )
                         .props("outlined dense")

@@ -33,18 +33,18 @@ def _write_header(ws, row, report):
 
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
     cell = ws.cell(row=row, column=1)
-    cell.value = "MONTHLY STATISTICS REPORT"
+    cell.value = "Market Discipline Audit Report"
     cell.font = TITLE_FONT
     row += 2
-    ws.cell(row=row, column=1, value="DEALERSHIP").font = HEADER_FONT
-    ws.cell(row=row, column=2, value=report.dealership_name.upper())
+    ws.cell(row=row, column=1, value="Dealership").font = HEADER_FONT
+    ws.cell(row=row, column=2, value=report.dealership_name.title()).font = BODY_FONT
     row += 1
-    ws.cell(row=row, column=1, value="PERIOD").font = HEADER_FONT
+    ws.cell(row=row, column=1, value="Period").font = HEADER_FONT
     ws.cell(
         row=row,
         column=2,
-        value=(f"{report.report_period_from} TO {report.report_period_to}"),
-    )
+        value=(f"{report.report_period_from} To {report.report_period_to}"),
+    ).font = BODY_FONT
 
     return row + 2
 
@@ -64,20 +64,20 @@ def _write_reconciliation(ws, row, report):
 
     row = _section_header(ws, row, "Reconciliation")
     metrics = [
-        ("TOTAL VEHICLE BOOKED", report.total_vehicle_booked),
-        ("TOTAL VEHICLE DELIVERED [A]", report.total_vehicle_delivered),
-        ("TOTAL OUT OF AUDIT PURVIEW [B]", report.total_out_of_audit_purview),
+        ("Total Vehicle Booked", report.total_vehicle_booked),
+        ("Total Vehicle Delivered [A]", report.total_vehicle_delivered),
+        ("Total Out of Audit Purview [B]", report.total_out_of_audit_purview),
         (
-            "TOTAL DELIVERY CASES TO BE VERIFIED [C]",
+            "Total Delivery Cases To Be Verified [C]",
             report.total_delivery_cases_to_be_verified,
         ),
-        ("FILES PENDING VERIFICATION [D]", report.files_pending_verification),
-        ("TOTAL DELIVERY CASES VERIFIED [E]", report.total_delivery_cases_verified),
+        ("Files Pending Verification [D]", report.files_pending_verification),
+        ("Total Delivery Cases Verified [E]", report.total_delivery_cases_verified),
     ]
 
     for label, value in metrics:
-        ws.cell(row=row, column=1, value=label)
-        ws.cell(row=row, column=2, value=value)
+        ws.cell(row=row, column=1, value=label).font = BODY_FONT
+        ws.cell(row=row, column=2, value=value).font = BODY_FONT
 
         row += 1
 
@@ -87,13 +87,13 @@ def _write_reconciliation(ws, row, report):
 def _write_category_discount(ws, row, report):
 
     row = _section_header(ws, row, "Category Wise Discount")
-    ws.cell(row=row, column=1, value="DISCOUNT COMPONENT").font = Font(bold=True)
-    ws.cell(row=row, column=2, value="AMOUNT").font = Font(bold=True)
+    ws.cell(row=row, column=1, value="DISCOUNT COMPONENT").font = HEADER_FONT
+    ws.cell(row=row, column=2, value="AMOUNT").font = HEADER_FONT
     row += 1
 
     for item in report.category_discounts:
-        ws.cell(row=row, column=1, value=item.component.upper())
-        ws.cell(row=row, column=2, value=item.amount)
+        ws.cell(row=row, column=1, value=item.component.upper()).font = BODY_FONT
+        ws.cell(row=row, column=2, value=item.amount).font = BODY_FONT
         row += 1
 
     return row + 1
@@ -112,8 +112,8 @@ def _write_discount_summary(ws, row, report):
     ]
 
     for label, value in metrics:
-        ws.cell(row=row, column=1, value=label)
-        ws.cell(row=row, column=2, value=value)
+        ws.cell(row=row, column=1, value=label).font = BODY_FONT
+        ws.cell(row=row, column=2, value=value).font = BODY_FONT
         row += 1
 
     return row + 1
@@ -126,28 +126,27 @@ def _write_model_analysis(ws, row, report):
         grouped.setdefault(item.car_name, []).append(item)
 
     for model_name, rows in grouped.items():
-        ws.cell(row=row, column=1, value=f"MODEL : {model_name.upper()}").font = Font(
-            bold=True
-        )
-
+        ws.cell(
+            row=row, column=1, value=f"MODEL : {model_name.title()}"
+        ).font = HEADER_FONT
         row += 1
 
         headers = [
-            "FUEL TYPE",
-            "DELIVERED",
-            "TOTAL DISCOUNT",
-            "AVG DISCOUNT",
-            "EXCESS DISCOUNT",
-            "AVG EXCESS",
+            "Variant",
+            "Delivered",
+            "Total Discount",
+            "Average Discount",
+            "Excess Discount",
+            "Average Excess",
         ]
 
         for col, header in enumerate(headers, start=1):
-            ws.cell(row=row, column=col, value=header).font = Font(bold=True)
+            ws.cell(row=row, column=col, value=header).font = HEADER_FONT
 
         row += 1
 
         for item in rows:
-            ws.cell(row=row, column=1, value=item.fuel_type.upper())
+            ws.cell(row=row, column=1, value=item.fuel_type.title())
             ws.cell(row=row, column=2, value=item.delivered_cases)
             ws.cell(row=row, column=3, value=item.total_discount)
             ws.cell(row=row, column=4, value=item.average_discount)
@@ -166,7 +165,7 @@ def _write_showroom_analysis(ws, row, report):
     row = _section_header(ws, row, "Showroom Wise Model Analysis")
 
     if not report.showroom_model_analysis:
-        ws.cell(row=row, column=1, value="NO DATA AVAILABLE")
+        ws.cell(row=row, column=1, value="No Data Available").font = HEADER_FONT
         return row + 2
 
     outlets = sorted({r.outlet_name for r in report.showroom_model_analysis})
@@ -179,11 +178,11 @@ def _write_showroom_analysis(ws, row, report):
 
     # HEADER ROW 1
 
-    ws.cell(row=row, column=1, value="MODEL / FUEL").font = HEADER_FONT
+    ws.cell(row=row, column=1, value="Model / Variant").font = HEADER_FONT
     ws.cell(row=row, column=1).border = THIN_BORDER
     start_col = 2
 
-    for outlet in outlets + ["TOTAL"]:
+    for outlet in outlets + ["Total"]:
         end_col = start_col + 4
 
         ws.merge_cells(
@@ -223,12 +222,7 @@ def _write_showroom_analysis(ws, row, report):
 
     # DATA ROWS
     grand_totals = {
-        outlet: {
-            "vehicles": 0,
-            "discount": 0,
-            "excess": 0,
-        }
-        for outlet in outlets
+        outlet: {"vehicles": 0, "discount": 0, "excess": 0} for outlet in outlets
     }
 
     for car_name, fuel_type in sorted(pivot.keys()):
@@ -264,17 +258,15 @@ def _write_showroom_analysis(ws, row, report):
             total_excess += excess
 
             grand_totals[outlet]["vehicles"] += vehicles
-
             grand_totals[outlet]["discount"] += discount
-
             grand_totals[outlet]["excess"] += excess
 
             values = [
                 vehicles,
-                round(discount, 2),
-                round(avg_discount, 2),
-                round(excess, 2),
-                round(avg_excess, 2),
+                round(discount),
+                round(avg_discount),
+                round(excess),
+                round(avg_excess),
             ]
 
             for value in values:
@@ -287,15 +279,14 @@ def _write_showroom_analysis(ws, row, report):
 
         # TOTAL BLOCK
         overall_avg_discount = total_discount / total_vehicles if total_vehicles else 0
-
         overall_avg_excess = total_excess / total_vehicles if total_vehicles else 0
 
         totals = [
             total_vehicles,
-            round(total_discount, 2),
-            round(overall_avg_discount, 2),
-            round(total_excess, 2),
-            round(overall_avg_excess, 2),
+            round(total_discount),
+            round(overall_avg_discount),
+            round(total_excess),
+            round(overall_avg_excess),
         ]
 
         for value in totals:
@@ -309,8 +300,7 @@ def _write_showroom_analysis(ws, row, report):
         row += 1
 
     # GRAND TOTAL ROW
-
-    ws.cell(row=row, column=1, value="TOTAL").font = HEADER_FONT
+    ws.cell(row=row, column=1, value="Total").font = HEADER_FONT
 
     col = 2
 
@@ -320,30 +310,24 @@ def _write_showroom_analysis(ws, row, report):
 
     for outlet in outlets:
         vehicles = grand_totals[outlet]["vehicles"]
-
         discount = grand_totals[outlet]["discount"]
-
         excess = grand_totals[outlet]["excess"]
-
         avg_discount = discount / vehicles if vehicles else 0
-
         avg_excess = excess / vehicles if vehicles else 0
-
         overall_vehicle_total += vehicles
         overall_discount_total += discount
         overall_excess_total += excess
 
         values = [
             vehicles,
-            round(discount, 2),
-            round(avg_discount, 2),
-            round(excess, 2),
-            round(avg_excess, 2),
+            round(discount),
+            round(avg_discount),
+            round(excess),
+            round(avg_excess),
         ]
 
         for value in values:
             cell = ws.cell(row=row, column=col, value=value)
-
             cell.font = HEADER_FONT
             cell.border = THIN_BORDER
 
@@ -359,15 +343,14 @@ def _write_showroom_analysis(ws, row, report):
 
     totals = [
         overall_vehicle_total,
-        round(overall_discount_total, 2),
-        round(overall_avg_discount, 2),
-        round(overall_excess_total, 2),
-        round(overall_avg_excess, 2),
+        round(overall_discount_total),
+        round(overall_avg_discount),
+        round(overall_excess_total),
+        round(overall_avg_excess),
     ]
 
     for value in totals:
         cell = ws.cell(row=row, column=col, value=value)
-
         cell.font = HEADER_FONT
         cell.border = THIN_BORDER
 
@@ -380,7 +363,7 @@ def generate_monthly_report(report):
     wb = Workbook()
 
     ws = wb.active
-    ws.title = "Monthly Statistics"
+    ws.title = "Market Discipline Audit Report"
 
     _setup_columns(ws)
 
@@ -400,7 +383,7 @@ def generate_monthly_report(report):
     buffer.seek(0)
 
     filename = (
-        f"{report.dealership_name.title()} Audit Report"
+        f"{report.dealership_name.title()} Audit Report "
         f"{report.report_period_from.replace('/', '-')}"
         f"_to_"
         f"{report.report_period_to.replace('/', '-')}"
