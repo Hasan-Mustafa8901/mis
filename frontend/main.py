@@ -21,7 +21,7 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 import calendar
 from nicegui import ui, app
-from utils import get_ist_today, disp_date  # , date_for_input
+from utils import get_ist_today, disp_date, get_ist_now  # , date_for_input
 from dotenv import load_dotenv
 from logger.logger_setup import setup_logger
 
@@ -1322,7 +1322,7 @@ async def dashboard_page() -> None:
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
             )
-            ui.link("💼 Monthly Report", "/monthly-reporting").classes(
+            ui.link("💼 Monthly Report", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -2418,7 +2418,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
-            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
+            ui.link("💼 Reporting", "/reporting").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
 
@@ -3180,7 +3180,7 @@ async def complaints_ctrl_page():
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
+            ui.link("💼 Reporting", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -5164,7 +5164,7 @@ async def daily_reporting_page() -> None:
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
+            ui.link("💼 Reporting", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -5478,32 +5478,34 @@ async def daily_reporting_page() -> None:
     await load_daily_report(today_str, today_str)
 
 
-@ui.page("/monthly-reporting")
+@ui.page("/reporting")
 @require_roles("admin")
 async def monthly_reporting_page():
     # Load dealerships first
+    user = get_user()
+    user_name = user.get("name", "User")
     dealerships = await api_get("/dealerships")
 
     dealership_options = {d["id"]: d["name"] for d in dealerships}
 
-    logger.info(
-        "Accessing /monthly-reporting page for user: %s", app.storage.user.get("name")
-    )
-    render_topbar("Monthly Reporting")
+    logger.info("Accessing /reporting page for user: %s", app.storage.user.get("name"))
+    render_topbar("Reporting")
 
-    async def download_monthly_report(dealership_select, start_date, end_date):
+    async def download_report(
+        endpoint: str,
+        start_date: str,
+        end_date: str,
+        dealership_id: int | None = None,
+    ):
         try:
-            print("START: ", start_date)
-            print("END: ", end_date)
-            params = {
-                "start_date": start_date,
-                "end_date": end_date,
-                "dealership_id": dealership_select,
-            }
+            params = {"start_date": start_date, "end_date": end_date}
+
+            if dealership_id:
+                params["dealership_id"] = dealership_id
 
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    f"{BASE_URL}/reports/monthly",
+                    f"{BASE_URL}{endpoint}",
                     headers=get_auth_headers(),
                     params=params,
                     timeout=120,
@@ -5511,7 +5513,7 @@ async def monthly_reporting_page():
 
                 response.raise_for_status()
 
-                filename = "monthly_report.xlsx"
+                filename = "report.xlsx"
 
                 content_disposition = response.headers.get("Content-Disposition")
 
@@ -5524,10 +5526,12 @@ async def monthly_reporting_page():
 
                 ui.download(src=response.content, filename=filename)
 
-                ui.notify("Monthly report downloaded", type="positive")
+                logger.info("%s Downloaded %s", user_name, filename)
+
+                ui.notify("Report downloaded", type="positive")
 
         except Exception as e:
-            logger.exception("Monthly report download failed")
+            logger.exception("Report download failed")
             ui.notify(str(e), type="negative")
 
     # Page layout
@@ -5547,7 +5551,7 @@ async def monthly_reporting_page():
             ui.link("📅 Daily Reporting", "/daily-reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-gray-600 border-l-3 border-transparent hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
-            ui.link("💼 Monthly Reporting", "/monthly-reporting").classes(
+            ui.link("💼 Reporting", "/reporting").classes(
                 "flex items-center justify-between px-4 py-2 text-[12.5px] font-semibold text-[#E8402A] bg-[#FEF2F0] border-l-3 border-[#E8402A] hover:bg-gray-50 hover:text-gray-900 transition-all no-underline"
             )
             ui.link("📋 Booking MIS", "/booking-mis").classes(
@@ -5600,11 +5604,11 @@ async def monthly_reporting_page():
         ):
             with ui.row().classes("w-full items-start justify-between mb-1"):
                 with ui.column().classes("gap-1"):
-                    ui.label("Monthly Reporting").classes(
+                    ui.label("Reporting").classes(
                         "text-[18px] font-bold text-gray-900 leading-none"
                     )
 
-                    ui.label("Generate dealership-level monthly audit reports").classes(
+                    ui.label("Generate dealership-level audit reports").classes(
                         "text-[12px] text-gray-400"
                     )
 
@@ -5646,8 +5650,11 @@ async def monthly_reporting_page():
                     )
 
                     async def handle_download():
-                        await download_monthly_report(
-                            dealership_select.value, start_date.value, end_date.value
+                        await download_report(
+                            "/reports/monthly",
+                            start_date.value,
+                            end_date.value,
+                            dealership_select.value,
                         )
 
                     ui.button(
@@ -5659,6 +5666,55 @@ async def monthly_reporting_page():
                         "px-8 py-2.5 rounded-lg "
                         "font-bold shadow-lg "
                         "shadow-red-500/20"
+                    ).props("no-caps unelevated")
+
+            with ui.card().classes("w-full shadow-sm rounded-xl p-0 overflow-hidden"):
+                with ui.row().classes(
+                    "w-full items-center justify-between px-5 py-3 "
+                    "border-b border-gray-100 bg-white"
+                ):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.element("div").classes(
+                            "w-2.5 h-2.5 rounded-full bg-[#2563eb]"
+                        )
+
+                        ui.label("Combined Report Generator").classes(
+                            "text-[13px] font-bold text-gray-800"
+                        )
+
+                    ui.label("Download all dealerships in a single report").classes(
+                        "text-[11px] text-gray-400"
+                    )
+
+                with ui.row().classes("w-full items-end gap-4 p-5"):
+                    combined_start_date = (
+                        ui.input(label="Start Date", value=today)
+                        .props('type="date" outlined dense')
+                        .classes("w-40")
+                    )
+
+                    combined_end_date = (
+                        ui.input(label="End Date", value=today)
+                        .props('type="date" outlined dense')
+                        .classes("w-40")
+                    )
+
+                    async def handle_combined_download():
+                        await download_report(
+                            endpoint="/reports/combined",
+                            start_date=combined_start_date.value,
+                            end_date=combined_end_date.value,
+                        )
+
+                    ui.button(
+                        "Download Combined Report", on_click=handle_combined_download
+                    ).classes(
+                        "bg-gradient-to-r "
+                        "from-[#2563eb] "
+                        "to-[#1d4ed8] "
+                        "text-white "
+                        "px-8 py-2.5 rounded-lg "
+                        "font-bold shadow-lg"
                     ).props("no-caps unelevated")
 
 
@@ -8030,10 +8086,7 @@ def build_file_status_section(state: FormState) -> None:
 
 
 def _section_header(
-    emoji: str,
-    title: str,
-    subtitle: str,
-    icon_bg: str = "bg-gray-100",
+    emoji: str, title: str, subtitle: str, icon_bg: str = "bg-gray-100"
 ) -> None:
     with ui.row().classes(
         "w-full items-center justify-between pb-3 border-b border-gray-100"
