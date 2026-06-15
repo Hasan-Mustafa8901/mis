@@ -1968,12 +1968,8 @@ def render_table(transactions, state, stage: str = "booking"):
     pin_cols = {
         "serial_no",
         "booking_date",
-        # "audit_observations",
         "Delivered",
-        # "sales_executive_name",
         "customer_name",
-        # "mobile_number",
-        # "variant_name",
         "delivery_date",
     }
 
@@ -2695,10 +2691,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                         ):
                             with ui.column().classes("gap-0.5"):
                                 job_filters = job.get("filters", {})
-                                month_str = job_filters.get("month")
-
-                                print("MONTH STR: ", month_str)
-                                print("MONTH LABEL: ", month_label_local(month_str))
+                                month_str = job_filters.get("start_date")[:-3]
 
                                 filter_desc = (
                                     month_label_local(month_str)
