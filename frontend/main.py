@@ -15,7 +15,7 @@ import locale
 import asyncio
 import re
 
-
+from pprint import pprint
 import httpx
 from datetime import datetime, date, timedelta
 from collections import defaultdict
@@ -570,451 +570,6 @@ def login_page():
 
 
 DATE_COLUMNS = {"booking_date", "delivery_date", "created_at"}
-
-
-# MIS TABLE RENDERING & HELPER METHODS
-def build_ordered_columns(row: dict, stage: str = "combined"):
-    """
-    Build ordered columns for the MIS table.
-    """
-    keys = list(row.keys())
-
-    def pick(prefix):
-        return [k for k in keys if k.startswith(prefix)]
-
-    #  GROUPS (based on your backend naming)
-    ordered = []
-
-    # 1. Core info
-    ordered += [
-        "id",
-        "booking_date",
-        # add booking status
-        "audit_observations",
-        "outlet_name",
-        "sales_executive_name",
-        "customer_name",
-        "mobile_number",
-        "variant_name",
-        "status",
-    ]
-    if stage == "delivery":
-        ordered.insert(2, "delivery_date")
-
-    # 2. Price components
-    ordered += (
-        pick("Ex")
-        + pick("Insurance")
-        + pick("Registration")
-        + pick("AMC")
-        + pick("Extended")
-        + pick("FasTag")
-        + pick("TCS")
-    )
-
-    # 3. Discount components
-    ordered += [k for k in keys if "_actual" in k and "Discount" in k]
-    ordered += (
-        pick("Additional for")
-        + pick("Additional Loyalty")
-        + pick("Micro")
-        + pick("SBI")
-        + pick("Power")
-        + pick("Shop")
-        + pick("Alliance")
-        + pick("Green")
-    )
-
-    # 6. Accessories / finance / exchange
-    ordered += pick("accessories_")
-    ordered += pick("finance_")
-    ordered += pick("exchange_")
-
-    # 7. Checklist
-    ordered += pick("checklist_")
-
-    # 8. Audit
-    ordered += pick("audit_")
-
-    # 9. Totals
-    ordered += [
-        "discount_booking",
-        "total_discount_booking",
-        "price_offered_booking",
-        "excess_booking",
-        "total_receivable",
-        "total_received",
-        "balance_amount",
-        "payment_status",
-        "booking_file_incomplete",
-        "delivery_file_incomplete",
-        "total_actual_discount",
-        "total_allowed_discount",
-        "total_excess_discount",
-        "created_by",
-        "created_at",
-    ]
-
-    # remove duplicates + preserve order
-    seen = set()
-    ordered = [x for x in ordered if not (x in seen or seen.add(x))]
-
-    return ordered
-
-
-def clear_label(column_name: str):
-    """
-    Cleans up column names for display.
-    """
-    return (
-        column_name.replace("_", " ")
-        .replace("actual", "(Actual)")
-        .replace("allowed", "(Listed)")
-        .replace("diff", "(Diff)")
-        .title()
-    )
-
-
-def should_center_column(
-    key: str,
-) -> bool:
-
-    key = key.lower()
-
-    # Do not center numeric/currency columns
-    if any(
-        pattern in key
-        for pattern in (
-            "amount",
-            "price",
-            "discount",
-            "received",
-            "balance",
-            "excess",
-            "payment",
-            "invoice",
-            "receivable",
-            "allowed",
-            "actual",
-            "diff",
-        )
-    ):
-        return False
-
-    return True
-
-
-def render_table(transactions, state, stage: str = "booking"):
-    """
-    Renders the MIS transaction table using AG Grid (ui.aggrid).
-    """
-    if not transactions:
-        with ui.card().classes("w-full").style("padding:48px;text-align:center"):
-            ui.label("📭").style("font-size:36px")
-            ui.label("No transactions yet").style(
-                "font-size:14px;font-weight:500;color:#6B7280;margin-top:8px"
-            )
-            ui.label("Click 'New Entry' to add the first record.").style(
-                "font-size:12px;color:#9CA3AF;margin-top:4px"
-            )
-        return
-    # Add derived column
-
-    for t in transactions:
-        t["Delivered"] = "Yes" if t.get("stage") == "delivery" else "No"
-        for key in DATE_COLUMNS:
-            if key in t:
-                t[key] = disp_date(t.get(key))
-
-    ordered_keys = build_ordered_columns(transactions[0], stage=stage)
-
-    if "id" in ordered_keys:
-        ordered_keys.remove("id")
-
-    for idx, t in enumerate(transactions, start=1):
-        t["serial_no"] = idx
-
-    if "serial_no" not in ordered_keys:
-        ordered_keys.insert(0, "serial_no")
-
-    if "Delivered" not in ordered_keys:
-        ordered_keys.insert(3, "Delivered")
-
-    NUMERIC_KEYS = {
-        k
-        for k in ordered_keys
-        if any(
-            tok in k
-            for tok in (
-                "_actual",
-                "_allowed",
-                "total_",
-                "price",
-                "amount",
-                "discount",
-                "excess",
-                "payment",
-                "invoice_",
-                "net_",
-            )
-        )
-    }
-    pin_cols = {
-        "serial_no",
-        "booking_date",
-        # "audit_observations",
-        "Delivered",
-        # "sales_executive_name",
-        "customer_name",
-        # "mobile_number",
-        # "variant_name",
-        "delivery_date",
-    }
-
-    # Define custom widths for specific columns (optional)
-    CUSTOM_WIDTHS = {
-        "serial_no": 80,
-        "customer_name": 150,
-        "mobile_number": 150,
-        "variant_name": 200,
-        "booking_date": 115,
-        "delivery_date": 110,
-        "Delivered": 100,
-    }
-
-    col_defs = []
-    col_defs.insert(
-        0,
-        {
-            "headerCheckboxSelection": True,
-            "checkboxSelection": True,
-            "width": 20,
-            "pinned": "left",
-            "filter": False,
-        },
-    )
-    for key in ordered_keys:
-        is_num = key in NUMERIC_KEYS
-        is_status = key == "status"
-
-        col: dict = {
-            "field": key,
-            "headerName": clear_label(key),
-            "filter": "agNumberColumnFilter" if is_num else "agTextColumnFilter",
-        }
-
-        if key == "serial_no":
-            col["headerName"] = "S.No."
-        elif key == "discount_booking":
-            col["headerName"] = "Other Discount at booking"
-
-        if key in pin_cols:
-            col["pinned"] = "left"
-
-        if key in CUSTOM_WIDTHS:
-            col["width"] = CUSTOM_WIDTHS[key]
-
-        if is_num:
-            col[":valueFormatter"] = """
-            (params) => {
-                if (
-                    params.value === null ||
-                    params.value === undefined ||
-                    params.value === ''
-                ) {
-                    return '—';
-                }
-
-                return '₹' + Number(params.value)
-                    .toLocaleString('en-IN');
-            }
-            """
-
-            col["type"] = "numericColumn"
-
-        if is_status:
-            col[":cellStyle"] = """
-            (params) => {
-
-                if (params.value === 'Excess Discount') {
-
-                    return {
-                        background: '#FEE2E2',
-                        color: '#991B1B',
-                        fontWeight: '600',
-                        borderRadius: '4px',
-                        textAlign: 'center',
-                    };
-                }
-
-                return {
-                    background: '#D1FAE5',
-                    color: '#065F46',
-                    fontWeight: '600',
-                    borderRadius: '4px',
-                    textAlign: 'center',
-                };
-            }
-            """
-        if is_num:
-            existing_style = col.get("cellStyle", {})
-
-            col["cellStyle"] = {
-                **existing_style,
-                "justifyContent": "flex-end",
-                "textAlign": "right",
-            }
-
-        elif should_center_column(key):
-            existing_style = col.get("cellStyle", {})
-
-            col["cellStyle"] = {
-                **existing_style,
-                "justifyContent": "center",
-                "textAlign": "center",
-            }
-
-        col_defs.append(col)
-
-    grid = (
-        ui.aggrid(
-            {
-                "columnDefs": col_defs,
-                "rowData": transactions,
-                "defaultColDef": {
-                    "flex": 0,
-                    "sortable": True,
-                    "filter": True,
-                    "floatingFilter": True,
-                    "resizable": True,
-                    "wrapHeaderText": True,
-                    "autoHeaderHeight": True,
-                    "wrapText": True,
-                    "autoHeight": True,
-                    "headerClass": "ag-center-header",
-                    "cellStyle": {
-                        "display": "flex",
-                        "alignItems": "center",
-                        "lineHeight": "18px",
-                    },
-                },
-                "domLayout": "normal",
-                "suppressColumnVirtualization": False,
-                "animateRows": True,
-                "rowSelection": "multiple",
-                "suppressRowClickSelection": True,
-                "rowHeight": 38,
-                "suppressCellFocus": True,
-            },
-            theme="alpine",
-            auto_size_columns=False,
-        )
-        .classes("w-full h-130")
-        .style("font-family:Inter,sans-serif;font-size:13px;")
-    )
-    state.grid = grid
-
-    async def go_prev():
-        if state.offset <= 0:
-            return
-        state.offset = max(0, state.offset - state.limit)
-        await state.load_data()
-
-    async def go_next():
-        logger.info("OFFSET, LIMIT: %s, %s", state.offset, state.limit)
-        logger.info("Total Rows: %s", state.total_rows)
-        next_offset = state.offset + state.limit
-        # OPTIONAL GUARD
-        if next_offset >= state.total_rows:
-            ui.notify("No more records", type="info")
-            return
-        state.offset = next_offset
-
-        await state.load_data()
-
-    async def on_limit_change(e):
-        new_limit = int(e.value)
-        # RESET TO FIRST PAGE
-        state.offset = 0
-        state.limit = new_limit
-        await state.load_data()
-
-    with ui.row().classes("w-full justify-between items-center px-4 py-4"):
-        # LEFT SIDE
-        with ui.row().classes("items-center gap-3"):
-            ui.label().bind_text_from(
-                state,
-                "offset",
-                backward=lambda o: (
-                    f"Showing "
-                    f"{o + 1}"
-                    f" - "
-                    f"{min(o + state.limit, state.total_rows)}"
-                    f" of "
-                    f"{state.total_rows}"
-                ),
-            )
-            ui.space().classes("w-5")
-            ui.select(
-                options=[25, 50, 100],
-                value=state.limit,
-                label="Rows per Page",
-                on_change=on_limit_change,
-            ).props("dense outlined").classes("w-36")
-
-        # RIGHT SIDE
-        with ui.row().classes("gap-2"):
-            ui.button(
-                icon="chevron_left",
-                text="Previous",
-                on_click=go_prev,
-            ).props("outline").classes("rounded-lg px-4")
-
-            ui.button(
-                text="Next",
-                icon="chevron_right",
-                on_click=go_next,
-            ).props("unelevated").classes("bg-primary text-white rounded-lg px-4")
-
-    def create_dialog(txn_id):
-        with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
-            ui.label("Update Entry").classes("text-lg font-bold mb-2")
-
-            ui.button(
-                "Edit this Entry",
-                on_click=lambda: (
-                    dialog.close(),
-                    ui.navigate.to(f"/form?transaction_id={txn_id}&stage=booking"),
-                ),
-            ).classes("w-full")
-
-            ui.button(
-                "Delivered",
-                on_click=lambda: (
-                    dialog.close(),
-                    ui.navigate.to(f"/form?transaction_id={txn_id}&stage=delivery"),
-                ),
-            ).classes("w-full")
-
-            ui.button(
-                "Make A Complaint",
-                on_click=lambda: (
-                    dialog.close(),
-                    ui.notify("Complaint feature coming soon!", type="info"),
-                ),
-            ).classes("w-full")
-
-        dialog.open()
-
-    async def on_cell_clicked(e):
-        row = e.args.get("data", {})
-        txn_id = row.get("id")
-        if txn_id and stage == "booking":
-            create_dialog(txn_id)
-        if txn_id and stage == "delivery":
-            ui.navigate.to(f"/form?transaction_id={txn_id}&stage={stage}")
-
-    grid.on("cellClicked", on_cell_clicked)
 
 
 #   CHART HELPERS — ui.echart wrappers
@@ -2229,12 +1784,494 @@ async def dashboard_page() -> None:
             month_select.on_value_change(on_month_change)
 
 
-class MISState:
-    STORAGE_KEY = "mis_state"
+# MIS TABLE RENDERING & HELPER METHODS
+def build_ordered_columns(row: dict, stage: str = "combined"):
+    """
+    Build ordered columns for the MIS table.
+    """
+    keys = list(row.keys())
 
-    def __init__(self) -> None:
-        self.selected_dealer: int | None
-        self.selected_outlet: int | None
+    def pick(prefix):
+        return [k for k in keys if k.startswith(prefix)]
+
+    #  GROUPS (based on your backend naming)
+    ordered = []
+
+    # 1. Core info
+    ordered += [
+        "id",
+        "booking_date",
+        # add booking status
+        "audit_observations",
+        "outlet_name",
+        "sales_executive_name",
+        "customer_name",
+        "mobile_number",
+        "variant_name",
+        "status",
+    ]
+    if stage == "delivery":
+        ordered.insert(2, "delivery_date")
+
+    # 2. Price components
+    ordered += (
+        pick("Ex")
+        + pick("Insurance")
+        + pick("Registration")
+        + pick("AMC")
+        + pick("Extended")
+        + pick("FasTag")
+        + pick("TCS")
+    )
+
+    # 3. Discount components
+    ordered += [k for k in keys if "_actual" in k and "Discount" in k]
+    ordered += (
+        pick("Additional for")
+        + pick("Additional Loyalty")
+        + pick("Micro")
+        + pick("SBI")
+        + pick("Power")
+        + pick("Shop")
+        + pick("Alliance")
+        + pick("Green")
+    )
+
+    # 6. Accessories / finance / exchange
+    ordered += pick("accessories_")
+    ordered += pick("finance_")
+    ordered += pick("exchange_")
+
+    # 7. Checklist
+    ordered += pick("checklist_")
+
+    # 8. Audit
+    ordered += pick("audit_")
+
+    # 9. Totals
+    ordered += [
+        "discount_booking",
+        "total_discount_booking",
+        "price_offered_booking",
+        "excess_booking",
+        "total_receivable",
+        "total_received",
+        "balance_amount",
+        "payment_status",
+        "booking_file_incomplete",
+        "delivery_file_incomplete",
+        "total_actual_discount",
+        "total_allowed_discount",
+        "total_excess_discount",
+        "created_by",
+        "created_at",
+    ]
+
+    # remove duplicates + preserve order
+    seen = set()
+    ordered = [x for x in ordered if not (x in seen or seen.add(x))]
+
+    return ordered
+
+
+def clear_label(column_name: str):
+    """
+    Cleans up column names for display.
+    """
+    return (
+        column_name.replace("_", " ")
+        .replace("actual", "(Actual)")
+        .replace("allowed", "(Listed)")
+        .replace("diff", "(Diff)")
+        .title()
+    )
+
+
+def should_center_column(key: str) -> bool:
+    key = key.lower()
+    cols = (
+        "amount",
+        "price",
+        "discount",
+        "received",
+        "balance",
+        "excess",
+        "payment",
+        "invoice",
+        "receivable",
+        "allowed",
+        "actual",
+        "diff",
+    )
+    # Do not center numeric/currency columns
+    if any(pattern in key for pattern in cols):
+        return False
+
+    return True
+
+
+def render_table(transactions, state, stage: str = "booking"):
+    """
+    Renders the MIS transaction table using AG Grid (ui.aggrid).
+    """
+    if not transactions:
+        with ui.card().classes("w-full").style("padding:48px;text-align:center"):
+            ui.label("📭").style("font-size:36px")
+            ui.label("No transactions yet").style(
+                "font-size:14px;font-weight:500;color:#6B7280;margin-top:8px"
+            )
+            ui.label("Click 'New Entry' to add the first record.").style(
+                "font-size:12px;color:#9CA3AF;margin-top:4px"
+            )
+        return
+    # Add derived column
+
+    for t in transactions:
+        t["Delivered"] = "Yes" if t.get("stage") == "delivery" else "No"
+        for key in DATE_COLUMNS:
+            if key in t:
+                t[key] = disp_date(t.get(key))
+
+    ordered_keys = build_ordered_columns(transactions[0], stage=stage)
+
+    if "id" in ordered_keys:
+        ordered_keys.remove("id")
+
+    for idx, t in enumerate(transactions, start=1):
+        t["serial_no"] = idx
+
+    if "serial_no" not in ordered_keys:
+        ordered_keys.insert(0, "serial_no")
+
+    if "Delivered" not in ordered_keys:
+        ordered_keys.insert(3, "Delivered")
+
+    NUMERIC_KEYS = {
+        k
+        for k in ordered_keys
+        if any(
+            tok in k
+            for tok in (
+                "_actual",
+                "_allowed",
+                "total_",
+                "price",
+                "amount",
+                "discount",
+                "excess",
+                "payment",
+                "invoice_",
+                "net_",
+            )
+        )
+    }
+    pin_cols = {
+        "serial_no",
+        "booking_date",
+        # "audit_observations",
+        "Delivered",
+        # "sales_executive_name",
+        "customer_name",
+        # "mobile_number",
+        # "variant_name",
+        "delivery_date",
+    }
+
+    # Define custom widths for specific columns (optional)
+    CUSTOM_WIDTHS = {
+        "serial_no": 80,
+        "customer_name": 150,
+        "mobile_number": 150,
+        "variant_name": 200,
+        "booking_date": 115,
+        "delivery_date": 110,
+        "Delivered": 100,
+    }
+
+    col_defs = []
+    col_defs.insert(
+        0,
+        {
+            "headerCheckboxSelection": True,
+            "checkboxSelection": True,
+            "width": 20,
+            "pinned": "left",
+            "filter": False,
+        },
+    )
+    for key in ordered_keys:
+        is_num = key in NUMERIC_KEYS
+        is_status = key == "status"
+
+        col: dict = {
+            "field": key,
+            "headerName": clear_label(key),
+            "filter": "agNumberColumnFilter" if is_num else "agTextColumnFilter",
+        }
+
+        if key == "serial_no":
+            col["headerName"] = "S.No."
+        elif key == "discount_booking":
+            col["headerName"] = "Other Discount at booking"
+
+        if key in pin_cols:
+            col["pinned"] = "left"
+
+        if key in CUSTOM_WIDTHS:
+            col["width"] = CUSTOM_WIDTHS[key]
+
+        if is_num:
+            col[":valueFormatter"] = """
+            (params) => {
+                if (
+                    params.value === null ||
+                    params.value === undefined ||
+                    params.value === ''
+                ) {
+                    return '—';
+                }
+
+                return '₹' + Number(params.value)
+                    .toLocaleString('en-IN');
+            }
+            """
+
+            col["type"] = "numericColumn"
+
+        if is_status:
+            col[":cellStyle"] = """
+            (params) => {
+
+                if (params.value === 'Excess Discount') {
+
+                    return {
+                        background: '#FEE2E2',
+                        color: '#991B1B',
+                        fontWeight: '600',
+                        borderRadius: '4px',
+                        textAlign: 'center',
+                    };
+                }
+
+                return {
+                    background: '#D1FAE5',
+                    color: '#065F46',
+                    fontWeight: '600',
+                    borderRadius: '4px',
+                    textAlign: 'center',
+                };
+            }
+            """
+        if is_num:
+            existing_style = col.get("cellStyle", {})
+
+            col["cellStyle"] = {
+                **existing_style,
+                "justifyContent": "flex-end",
+                "textAlign": "right",
+            }
+
+        elif should_center_column(key):
+            existing_style = col.get("cellStyle", {})
+
+            col["cellStyle"] = {
+                **existing_style,
+                "justifyContent": "center",
+                "textAlign": "center",
+            }
+
+        col_defs.append(col)
+
+    grid = (
+        ui.aggrid(
+            {
+                "columnDefs": col_defs,
+                "rowData": transactions,
+                "defaultColDef": {
+                    "flex": 0,
+                    "sortable": True,
+                    "filter": True,
+                    "floatingFilter": True,
+                    "resizable": True,
+                    "wrapHeaderText": True,
+                    "autoHeaderHeight": True,
+                    "wrapText": True,
+                    "autoHeight": True,
+                    "headerClass": "ag-center-header",
+                    "cellStyle": {
+                        "display": "flex",
+                        "alignItems": "center",
+                        "lineHeight": "18px",
+                    },
+                },
+                "domLayout": "normal",
+                "suppressColumnVirtualization": False,
+                "animateRows": True,
+                "rowSelection": "multiple",
+                "suppressRowClickSelection": True,
+                "rowHeight": 38,
+                "suppressCellFocus": True,
+            },
+            theme="alpine",
+            auto_size_columns=False,
+        )
+        .classes("w-full h-130")
+        .style("font-family:Inter,sans-serif;font-size:13px;")
+    )
+    state.grid = grid
+
+    async def restore_grid_state():
+        try:
+            if state.filter_model:
+                await grid.run_grid_method("setFilterModel", state.filter_model)
+                logger.info("GRID FILTERS RESTORED")
+
+            if state.sort_model:
+                await grid.run_grid_method(
+                    "applyColumnState",
+                    {
+                        "state": state.sort_model,
+                        "defaultState": {"sort": None},
+                    },
+                )
+                logger.info("GRID SORT RESTORED")
+
+        except Exception as e:
+            logger.exception("RESTORE GRID STATE ERROR: %s", str(e))
+
+    ui.timer(0.2, lambda: asyncio.create_task(restore_grid_state()), once=True)
+
+    async def save_grid_state():
+        try:
+            state.filter_model = await grid.run_grid_method("getFilterModel")
+            column_state = await grid.run_grid_method("getColumnState")
+            state.sort_model = [
+                {
+                    "colId": c["colId"],
+                    "sort": c["sort"],
+                    "sortIndex": c["sortIndex"],
+                }
+                for c in column_state
+                if c.get("sort")
+            ]
+            state.save()
+            logger.info("GRID FILTERS & SORT SAVED")
+        except Exception as e:
+            logger.exception("SAVE GRID STATE ERROR: %s", str(e))
+
+    grid.on("filterChanged", lambda e: asyncio.create_task(save_grid_state()))
+    grid.on("sortChanged", lambda e: asyncio.create_task(save_grid_state()))
+
+    async def go_prev():
+        if state.offset <= 0:
+            return
+        state.offset = max(0, state.offset - state.limit)
+        state.save()
+        await state.load_data()
+
+    async def go_next():
+        logger.info("OFFSET, LIMIT: %s, %s", state.offset, state.limit)
+        logger.info("Total Rows: %s", state.total_rows)
+        next_offset = state.offset + state.limit
+        # OPTIONAL GUARD
+        if next_offset >= state.total_rows:
+            ui.notify("No more records", type="info")
+            return
+        state.offset = next_offset
+        state.save()
+
+        await state.load_data()
+
+    async def on_limit_change(e):
+        new_limit = int(e.value)
+        # RESET TO FIRST PAGE
+        state.offset = 0
+        state.limit = new_limit
+        state.save()
+        await state.load_data()
+
+    with ui.row().classes("w-full justify-between items-center px-4 py-4"):
+        # LEFT SIDE
+        with ui.row().classes("items-center gap-3"):
+            ui.label().bind_text_from(
+                state,
+                "offset",
+                backward=lambda o: (
+                    f"Showing "
+                    f"{o + 1}"
+                    f" - "
+                    f"{min(o + state.limit, state.total_rows)}"
+                    f" of "
+                    f"{state.total_rows}"
+                ),
+            )
+            ui.space().classes("w-5")
+            ui.select(
+                options=[25, 50, 100],
+                value=state.limit,
+                label="Rows per Page",
+                on_change=on_limit_change,
+            ).props("dense outlined").classes("w-36")
+
+        # RIGHT SIDE
+        with ui.row().classes("gap-2"):
+            ui.button(
+                icon="chevron_left",
+                text="Previous",
+                on_click=go_prev,
+            ).props("outline").classes("rounded-lg px-4")
+
+            ui.button(
+                text="Next",
+                icon="chevron_right",
+                on_click=go_next,
+            ).props("unelevated").classes("bg-primary text-white rounded-lg px-4")
+
+    def create_dialog(txn_id):
+        with ui.dialog() as dialog, ui.card().classes("p-6 w-80"):
+            ui.label("Update Entry").classes("text-lg font-bold mb-2")
+
+            ui.button(
+                "Edit this Entry",
+                on_click=lambda: (
+                    dialog.close(),
+                    ui.navigate.to(f"/form?transaction_id={txn_id}&stage=booking"),
+                ),
+            ).classes("w-full")
+
+            ui.button(
+                "Delivered",
+                on_click=lambda: (
+                    dialog.close(),
+                    ui.navigate.to(f"/form?transaction_id={txn_id}&stage=delivery"),
+                ),
+            ).classes("w-full")
+
+            ui.button(
+                "Make A Complaint",
+                on_click=lambda: (
+                    dialog.close(),
+                    ui.notify("Complaint feature coming soon!", type="info"),
+                ),
+            ).classes("w-full")
+
+        dialog.open()
+
+    async def on_cell_clicked(e):
+        row = e.args.get("data", {})
+        txn_id = row.get("id")
+        if txn_id and stage == "booking":
+            create_dialog(txn_id)
+        if txn_id and stage == "delivery":
+            ui.navigate.to(f"/form?transaction_id={txn_id}&stage={stage}")
+
+    grid.on("cellClicked", on_cell_clicked)
+
+
+class MISState:
+    def __init__(self, stage: str) -> None:
+        self.selected_dealer: int | None = None
+        self.selected_outlet: int | None = None
         self.dealer_select: ui.select | None
         self.outlet_select: ui.select | None
         self.dealerships: list = []
@@ -2243,26 +2280,37 @@ class MISState:
         self._debounce = None
         self.table_container = None
 
-        self.stage: str = "booking"
+        self.stage: str = stage
         self.month: str | None = None
-        self.grid = None
         self.load_data = []
         self.selected_ids: list[int] = []
-        self.limit: int = 0
+
+        # Pagination state
+        self.limit: int = 25
         self.offset: int = 0
         self.total_rows: int = 0
         self.total_entries: int = 0
         self.total_excess: int = 0
+
         self.sorted_months: dict = {}
         self.month_map: dict = {}
+        # Grid state
+        self.grid = None
+        self.sort_model: list = []
+        self.filter_model: dict = {}
+        # Search State
         self.search_query: str = ""
         self.search_limit: int = 25
 
         self.export_timer: ui.timer | None = None
 
-    # Implement persist filters and state
+    @property
+    def storage_key(self):
+        return f"mis_state_{self.stage}"
+
+    # Implementation of persistent filters and state
     def save(self):
-        app.storage.user[self.STORAGE_KEY] = {
+        app.storage.user[self.storage_key] = {
             "selected_dealer": self.selected_dealer,
             "selected_outlet": self.selected_outlet,
             "search_query": getattr(self, "search_query", ""),
@@ -2275,7 +2323,7 @@ class MISState:
         }
 
     def restore(self):
-        saved = app.storage.user.get(self.STORAGE_KEY)
+        saved = app.storage.user.get(self.storage_key)
         if not saved:
             return
 
@@ -2291,6 +2339,9 @@ class MISState:
         self.filter_model = saved.get("filter_model", {})
         self.sort_model = saved.get("sort_model", [])
 
+    def clear(self):
+        app.storage.user.pop(self.storage_key, None)
+
 
 async def load_master_data(state):
     try:
@@ -2299,41 +2350,24 @@ async def load_master_data(state):
 
     except UnauthorizedError:
         await logout_user()
-
-        ui.notify(
-            "Session expired. Please login again.",
-            type="warning",
-        )
-
+        ui.notify("Session expired. Please login again.", type="warning")
         ui.navigate.to("/login")
 
     except ConnectionFailedError:
-        ui.notify(
-            "Unable to connect to server",
-            type="negative",
-        )
-
+        ui.notify("Unable to connect to server", type="negative")
         state.dealerships = []
         state.outlets = []
 
     except APIError as e:
         logger.error("MASTER DATA ERROR: %s", e, exc_info=True)
-
-        ui.notify(
-            "Unable to load master data",
-            type="negative",
-        )
+        ui.notify("Unable to load master data", type="negative")
 
         state.dealerships = []
         state.outlets = []
 
     except Exception as e:
-        logger.exception("UNEXPECTED MASTER DATA ERROR", str(e))
-
-        ui.notify(
-            "Something went wrong",
-            type="negative",
-        )
+        logger.exception("UNEXPECTED MASTER DATA ERROR: %s", str(e))
+        ui.notify("Something went wrong", type="negative")
 
         state.dealerships = []
         state.outlets = []
@@ -2344,14 +2378,12 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
     """Generic MIS table page logic used by both Booking and Delivery routes."""
     label = "Booking MIS" if stage == "booking" else "Delivery MIS"
     render_topbar(label)
-    mstate = MISState()
+    mstate = MISState(stage)
+    mstate.restore()
 
-    mstate.selected_dealer = None
-    mstate.selected_outlet = None
     mstate.stage = stage
     mstate.month = month
-    mstate.limit = 25
-    mstate.offset = 0
+
     user = get_user()
 
     async def get_selected_ids():
@@ -2401,6 +2433,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
         mstate.dealer_select.set_value(None)
         mstate.outlet_select.set_value(None)
+        mstate.save()
 
         schedule_load()
 
@@ -2494,6 +2527,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 mstate.total_excess = meta.get("total_excess", 0)
                 mstate.month_map = meta.get("months", {})
                 mstate.sorted_months = sorted(mstate.month_map.keys(), reverse=True)
+                mstate.save()
                 render_header_meta.refresh()
 
             except UnauthorizedError:
@@ -2587,7 +2621,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                 ui.notify("Failed to load transactions", type="negative")
 
             except Exception as e:
-                logger.exception("LOAD DATA ERROR", e)
+                logger.exception("LOAD DATA ERROR: %s", str(e))
 
                 ui.notify("Something went wrong", type="negative")
 
@@ -2662,6 +2696,10 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                             with ui.column().classes("gap-0.5"):
                                 job_filters = job.get("filters", {})
                                 month_str = job_filters.get("month")
+
+                                print("MONTH STR: ", month_str)
+                                print("MONTH LABEL: ", month_label_local(month_str))
+
                                 filter_desc = (
                                     month_label_local(month_str)
                                     if month_str
@@ -2789,20 +2827,35 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                 with ui.row().classes("items-center gap-3 mb-3"):
                     mstate.dealer_select = (
-                        ui.select(options=dealer_opts, label="Dealership")
+                        ui.select(
+                            options=dealer_opts,
+                            value=mstate.selected_dealer,
+                            label="Dealership",
+                        )
                         .props("outlined dense clearable")
                         .classes("w-64")
                         .on_value_change(lambda e: on_dealer_change(e.value))
                     )
 
                     mstate.outlet_select = (
-                        ui.select(options=outlet_opts, label="Showroom")
+                        ui.select(
+                            options=outlet_opts,
+                            value=mstate.selected_outlet,
+                            label="Showroom",
+                        )
                         .props("outlined dense clearable")
                         .classes("w-64")
                         .on_value_change(lambda e: on_outlet_change(e.value))
                     )
+                    mstate.save()
 
-                    ui.button("Reset", on_click=reset_filters).props("outline dense")
+                    ui.button(
+                        "Reset",
+                        on_click=lambda: (
+                            mstate.clear(),
+                            ui.navigate.reload(),
+                        ),
+                    ).props("outline dense")
 
                 def on_dealer_change(val):
                     mstate.selected_dealer = int(val) if val else None
@@ -2824,11 +2877,13 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
 
                     mstate.outlet_select.set_value(None)
                     mstate.selected_outlet = None
+                    mstate.save()
 
                     schedule_load()
 
                 def on_outlet_change(val):
                     mstate.selected_outlet = int(val) if val else None
+                    mstate.save()
                     schedule_load()
 
                 ## Export Button
@@ -2870,6 +2925,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     search_input = (
                         ui.input(
                             label="Search Entries",
+                            value=mstate.search_query,
                             placeholder="Customer, mobile, VIN, receipt, invoice...",
                         )
                         .props("outlined dense")
@@ -2879,7 +2935,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     limit_select = (
                         ui.select(
                             {5: "5", 25: "25", 50: "50", 100: "100"},
-                            value=25,
+                            value=mstate.search_limit or 25,
                             label="Limit",
                         )
                         .props("outlined dense")
@@ -2889,16 +2945,17 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     async def perform_search():
                         mstate.search_query = search_input.value or ""
                         mstate.search_limit = int(limit_select.value or 25)
+                        mstate.save()
                         await load_data()
 
                     async def clear_search():
                         search_input.set_value("")
                         mstate.search_query = ""
+                        mstate.save()
                         await load_data()
 
                     search_input.on(
-                        "keyup.enter",
-                        lambda e: asyncio.create_task(perform_search()),
+                        "keyup.enter", lambda e: asyncio.create_task(perform_search())
                     )
 
                     ui.button(
@@ -3161,7 +3218,7 @@ async def complaints_ctrl_page():
         complaints = []
         total_entries = 0
     except APIError as e:
-        logger.exception("ERROR ON DASHBOARD", e)
+        logger.exception("ERROR ON DASHBOARD: %s", str(e))
         ui.notify("An Error Occured", type="negative")
         complaints = []
         total_entries = 0
@@ -3270,7 +3327,7 @@ async def complaints_ctrl_page():
                     ui.notify("Unable to connect to server", type="negative")
                     status_options_raw = []
                 except APIError as e:
-                    logger.exception("ERROR ON DASHBOARD", e)
+                    logger.exception("ERROR ON DASHBOARD: %s", str(e))
                     ui.notify("An Error Occured", type="negative")
                     status_options_raw = []
 
@@ -3323,7 +3380,7 @@ async def complaints_ctrl_page():
                         ui.notify("Failed to update status", type="negative")
 
                     except Exception as e:
-                        logger.exception("UPDATE STATUS ERROR", e)
+                        logger.exception("UPDATE STATUS ERROR: %s", str(e))
                         ui.notify("Something went wrong", type="negative")
 
                 ui.button("Update Status", on_click=update_status).classes(
@@ -3399,12 +3456,9 @@ async def complaints_ctrl_page():
                         )
 
                     except Exception as e:
-                        logger.exception("SUBMIT REMARKS ERROR:", e)
+                        logger.exception("SUBMIT REMARKS ERROR: %s", str(e))
 
-                        ui.notify(
-                            "Something went wrong",
-                            type="negative",
-                        )
+                        ui.notify("Something went wrong", type="negative")
 
                 ui.button("Submit Remarks", on_click=submit_remarks).classes(
                     "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
@@ -3424,11 +3478,11 @@ async def complaints_ctrl_page():
                     ui.notify("Unable to connect to server", type="negative")
                     flag_options_raw = []
                 except APIError as e:
-                    logger.exception("ERROR ON DASHBOARD", e)
+                    logger.exception("ERROR ON DASHBOARD: %s", str(e))
                     ui.notify("An Error Occured", type="negative")
                     flag_options_raw = []
                 except Exception as exc:
-                    logger.exception("ERROR ON DASHBOARD", exc)
+                    logger.exception("ERROR ON DASHBOARD: %s", str(exc))
                     ui.notify("An Error Occured", type="negative")
                     flag_options_raw = []
 
@@ -3488,12 +3542,9 @@ async def complaints_ctrl_page():
                         ui.notify("Failed to update flag", type="negative")
 
                     except Exception as e:
-                        logger.exception("UPDATE FLAG ERROR:", e)
+                        logger.exception("UPDATE FLAG ERROR: %s", str(e))
 
-                        ui.notify(
-                            "Something went wrong",
-                            type="negative",
-                        )
+                        ui.notify("Something went wrong", type="negative")
 
                 ui.button("Update Flag", on_click=update_flag).classes(
                     "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
@@ -3854,7 +3905,8 @@ async def daily_reporting_page() -> None:
 
                                                 except Exception as e:
                                                     logger.exception(
-                                                        "TOGGLE RECEIVED ERROR:", e
+                                                        "TOGGLE RECEIVED ERROR: %s",
+                                                        str(e),
                                                     )
 
                                                     ui.notify(
@@ -3935,7 +3987,7 @@ async def daily_reporting_page() -> None:
 
                                                 except Exception as e:
                                                     logger.exception(
-                                                        "TOGGLE OOS ERROR:", e
+                                                        "TOGGLE OOS ERROR: %s", str(e)
                                                     )
 
                                                     ui.notify(
@@ -3944,10 +3996,7 @@ async def daily_reporting_page() -> None:
                                                     )
 
                                             ui.checkbox(
-                                                value=row.get(
-                                                    "out_of_scope",
-                                                    False,
-                                                ),
+                                                value=row.get("out_of_scope", False),
                                                 on_change=toggle_oos,
                                             )
 
@@ -4007,7 +4056,8 @@ async def daily_reporting_page() -> None:
                                                         type="negative",
                                                     )
                                                     logger.exception(
-                                                        "ERROR OCCURRED WHILE APPROVING"
+                                                        "ERROR OCCURRED WHILE APPROVING: %s",
+                                                        str(e),
                                                     )
 
                                             ui.checkbox(
@@ -4087,7 +4137,8 @@ async def daily_reporting_page() -> None:
                                                             type="negative",
                                                         )
                                                         logger.exception(
-                                                            "ERROR OCCURRED WHILE APPROVING"
+                                                            "ERROR OCCURRED WHILE APPROVING: %s",
+                                                            str(e),
                                                         )
 
                                                 ui.checkbox(
@@ -4165,14 +4216,12 @@ async def daily_reporting_page() -> None:
                                                         type="negative",
                                                     )
                                                     logger.exception(
-                                                        "ERROR OCCURRED WHILE APPROVING"
+                                                        "ERROR OCCURRED WHILE APPROVING: %s",
+                                                        str(e),
                                                     )
 
                                             ui.checkbox(
-                                                value=row.get(
-                                                    "scanned",
-                                                    False,
-                                                ),
+                                                value=row.get("scanned", False),
                                                 on_change=toggle_scanned,
                                             )
 
@@ -4261,12 +4310,11 @@ async def daily_reporting_page() -> None:
                             "Some Error Occured.",
                             type="negative",
                         )
-                        logger.exception("ERROR OCCURRED WHILE APPROVING", e)
+                        logger.exception("ERROR OCCURRED WHILE APPROVING: %s", str(e))
 
-                ui.button(
-                    "Delete Selected",
-                    on_click=bulk_delete_selected,
-                ).props("color=negative")
+                ui.button("Delete Selected", on_click=bulk_delete_selected).props(
+                    "color=negative"
+                )
 
                 async def export_dialog_excel():
                     title = (
@@ -4522,7 +4570,7 @@ async def daily_reporting_page() -> None:
             rows = []
 
         except Exception as e:
-            logger.exception("ERROR: While Loading EBD data")
+            logger.exception("ERROR: While Loading EBD data: %s", str(e))
             ui.notify("Something went wrong", type="negative")
             rows = []
 
@@ -5528,8 +5576,8 @@ async def monthly_reporting_page():
                 ui.notify("Report downloaded", type="positive")
 
         except Exception as e:
-            logger.exception("Report download failed")
-            ui.notify(str(e), type="negative")
+            logger.exception("Report download failed: %s", str(e))
+            ui.notify("Failed to download report", type="negative")
 
     # Page layout
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
@@ -5950,7 +5998,7 @@ async def settings_page():
             users = []
 
         except Exception as e:
-            logger.exception("ERROR FETCHING USERS")
+            logger.exception("ERROR FETCHING USERS: %s", str(e))
             ui.notify(str(e), type="negative")
             users = []
 
@@ -9364,6 +9412,7 @@ async def _fs_handle_submit(state: FormState) -> None:
         ui.navigate.to("/login")
 
     except ConnectionFailedError as e:
+        logger.error("Connection Error in Form: %s", str(e))
         state.error_msg_label.set_text(str(e))
         state.error_banner.set_visibility(True)
 
@@ -9373,7 +9422,7 @@ async def _fs_handle_submit(state: FormState) -> None:
         state.error_banner.set_visibility(True)
 
     except Exception as e:
-        logger.exception("FORM SUBMIT ERROR")
+        logger.exception("FORM SUBMIT ERROR: %s", str(e))
         state.error_msg_label.set_text(str(e))
         state.error_banner.set_visibility(True)
 
@@ -9728,10 +9777,7 @@ async def load_transaction(state: FormState):
 
 def build_form(state: FormState):
 
-    if state.form_mode in [
-        "booking_create",
-        "booking_edit",
-    ]:
+    if state.form_mode in ["booking_create", "booking_edit"]:
         with ui.row().classes("w-full justify-between items-center"):
             ui.label("Booking MIS Form").classes("text-2xl text-bold mb-5")
 
@@ -10268,7 +10314,8 @@ def build_complaint_dealership_section(state: FormState) -> None:
                     await logout_user()
                     ui.notify("Session Expired. Please Login again.", type="warning")
                     ui.navigate.to("/login")
-                except ConnectionFailedError:
+                except ConnectionFailedError as ce:
+                    logger.error("Connection Error: %s", ce, exc_info=True)
                     ui.notify("Unable to connect to the server", type="warning")
 
                 except APIError as ex:
@@ -10503,7 +10550,7 @@ def build_complaint_action_bar(state: FormState) -> None:
                 state.error_banner.set_visibility(True)
 
             except Exception as e:
-                logger.exception("COMPLAINT SUBMIT ERROR")
+                logger.exception("COMPLAINT SUBMIT ERROR: %s", str(e))
                 state.error_msg_label.set_text(str(e))
                 state.error_banner.set_visibility(True)
 
