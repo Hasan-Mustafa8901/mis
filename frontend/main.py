@@ -269,8 +269,6 @@ async def fetch_reference_data(
     if REFERENCE_CACHE and not force_refresh:
         return REFERENCE_CACHE
 
-    print("CACHE MISS")
-
     tasks = {
         "cars": api_get("/cars"),
         "variants": api_get("/variants"),
@@ -618,7 +616,6 @@ async def dashboard_page() -> None:
 
     outlets: list[dict] = []
     try:
-        print("FROM DASHBOARD")
         outlets = await api_get("/outlets") or []
     except Exception as e:
         ui.notify("ERROR Occured", type="negative")
@@ -640,7 +637,6 @@ async def dashboard_page() -> None:
         default_dealership = str(dealerships[0]["id"])
 
     async def load_dashboard_data():
-        print("DASHBOARD DATA LOADING")
         nonlocal current_transactions
 
         params = {}
@@ -1583,9 +1579,6 @@ async def dashboard_page() -> None:
                                     "w-full text-center py-8 text-gray-400 text-[13px]"
                                 )
 
-            #  Initial render with all data
-            await load_dashboard_data()
-
             # MONTH FILTER
             # FRONTEND ONLY
             def on_month_change(e):
@@ -1605,6 +1598,9 @@ async def dashboard_page() -> None:
                 render_dashboard(filtered)
 
             month_select.on_value_change(on_month_change)
+
+            # DEFER INITIAL LOADING UNTIL AFTER WEBSOCKET HANDSHAKE
+            ui.context.client.on_connect(load_dashboard_data)
 
 
 # MIS TABLE RENDERING & HELPER METHODS
@@ -2246,16 +2242,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
             logger.exception("ERROR: error occurred while deletion: %s", str(e))
             ui.notify("Error Occured", type="negative")
 
-    def reset_filters():
-        mstate.selected_dealer = None
-        mstate.selected_outlet = None
-
-        mstate.dealer_select.set_value(None)
-        mstate.outlet_select.set_value(None)
-        mstate.save()
-
-        schedule_load()
-
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
         #  SIDEBAR
         with ui.column().classes(
@@ -2319,12 +2305,12 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     "text-[18px] font-bold text-gray-900 leading-none"
                 )
                 exc_txt = (
-                    f" · ₹{mstate.total_excess:,} excess"
+                    f" · ₹{format_num_inr(mstate.total_excess)} excess"
                     if mstate.total_excess > 0
                     else ""
                 )
                 ui.label(f"{mstate.total_entries} records{exc_txt}").classes(
-                    "text-[12px] text-gray-400"
+                    "text-[12px] text-gray-700"
                 )
 
         async def load_meta():
@@ -2385,7 +2371,6 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                         "/transactions/search",
                         params=params,
                     )
-                    print("SEARCH PARAM: ", params)
                     data = response or []
                     mstate.total_rows = len(data)
                 # Normal
@@ -4957,7 +4942,7 @@ async def daily_reporting_page() -> None:
 
             elif rstate.selected_dealer:
                 params["dealership_id"] = rstate.selected_dealer
-            print(json.dumps(params, indent=2))
+
             # DOWNLOAD REQUEST
             response = await http_client.get(
                 f"{BASE_URL}/reports/daily",

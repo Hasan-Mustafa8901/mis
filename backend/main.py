@@ -6,7 +6,6 @@ from typing import List, Dict, Any
 from datetime import date
 from contextlib import asynccontextmanager
 from collections import defaultdict
-from rich import print
 
 from fastapi.middleware.cors import CORSMiddleware
 from db.session import engine, get_session
@@ -607,8 +606,8 @@ def get_transactions_meta(
     elif dealership_id:
         stmt = stmt.join(Outlet).where(Outlet.dealership_id == dealership_id)
 
-    # if stage:
-    #     stmt = stmt.where(Transaction.stage == stage)
+    if stage == "delivery":
+        stmt = stmt.where(Transaction.stage == stage)
 
     txs = session.exec(stmt).all()
 
@@ -626,7 +625,7 @@ def get_transactions_meta(
 
     return {
         "total_entries": len(txs),
-        "total_excess": total_excess,
+        "total_excess": int(total_excess),
         "months": dict(month_map),
     }
 
