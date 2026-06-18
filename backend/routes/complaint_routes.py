@@ -121,12 +121,20 @@ def update_flag(
 
 @router.post("/save-complaint")
 def api_save_complaint(
-    payload: Dict[str, Any], session: Session = Depends(get_session)
+    payload: Dict[str, Any],
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
-    success, res = complaint_service.save_complaint(session, payload)
+    from rich import print
+
+    print("Payload:\n", payload)
+    success, res = complaint_service.save_complaint(session, payload, current_user)
     if not success:
         raise HTTPException(status_code=400, detail=res)
-    return {"message": "Complaint saved successfully", "code": res}
+    return {
+        "message": "Complaint saved successfully",
+        "code": res,
+    }
 
 
 class FlashReportPayload(BaseModel):

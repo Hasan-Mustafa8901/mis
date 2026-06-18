@@ -152,6 +152,9 @@ class Customer(SQLModel, table=True):
     name: str = Field(index=True)
     mobile_number: str = Field(index=True)
     alternate_mobile: Optional[str] = None
+    relative_name: Optional[str] = None
+    other_id: Optional[str] = None
+    other_id_detail: Optional[str] = None
     email: Optional[str] = None
     pan_number: Optional[str] = None
     aadhar_number: Optional[str] = None

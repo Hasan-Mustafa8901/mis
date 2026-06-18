@@ -86,6 +86,7 @@ def generate_complaint_code(session: Session, complaint: Complaint):
     return code, serial_no
 
 
+# We need seperate setup for all the c
 def query_complaints(session: Session, filters=None, offset=0, limit=50):
     query = select(Complaint).options(
         joinedload(Complaint.customer),
@@ -139,6 +140,9 @@ def query_complaints(session: Session, filters=None, offset=0, limit=50):
             item["customer_aadhar"] = row.customer.aadhar_number
             item["customer_pan"] = row.customer.pan_number
             item["customer_pin"] = row.customer.pin_code
+            item["customer_email"] = row.customer.email
+            item["customer_relative"] = row.customer.relative_name
+            item["customer_other_id"] = row.customer.other_id
         else:
             item["customer_name"] = None
             item["customer_mobile"] = None
@@ -148,9 +152,10 @@ def query_complaints(session: Session, filters=None, offset=0, limit=50):
 
         # Flatten remarks
         if row.remark:
+            item["name_aa_complainee"] = row.remark.aa_complainee
             item["remarks_complainant"] = row.remark.remarks_complainant
-            item["remark_complainee_aa"] = row.remark.remarks_complainant_aa
-            item["remark_admin"] = row.remark.aa_complainee
+            item["remark_complainant_aa"] = row.remark.remarks_complainant_aa
+
         else:
             item["remarks_complainant"] = None
             item["remark_complainee_aa"] = None
@@ -181,7 +186,7 @@ def query_complaints(session: Session, filters=None, offset=0, limit=50):
         # Flatten Quotation and Booking details
         item["quotation_number"] = row.quotation_number
         item["quotation_date"] = row.quotation_date if row.quotation_date else None
-        item["tcs_amount"] = row.tcs_amount
+        item["tcs_amount"] = row.tcs_amount if row.tcs_amount else None
         item["total_offered_price"] = row.total_offered_price
         item["net_offered_price"] = row.net_offered_price
 
@@ -198,6 +203,7 @@ def query_complaints(session: Session, filters=None, offset=0, limit=50):
             row.date_of_complaint.isoformat() if row.date_of_complaint else None
         )
 
+        # Not Needed To be deleted later on
         # Flatten price info
         item["ex_showroom_price"] = row.ex_showroom_price
         item["insurance"] = row.insurance
@@ -380,7 +386,7 @@ def get_outlet_id_by_name(
     return None
 
 
-def save_complaint(session: Session, data: dict):
+def save_complaint(session: Session, data: dict, user: User):
     try:
         # --- Customer ---
         c = data.get("customer_details", {})
@@ -394,6 +400,9 @@ def save_complaint(session: Session, data: dict):
 
         customer = Customer(
             name=c["customer_name"],
+            relative_name=c.get("relative_name"),
+            other_id=c.get("other_id"),
+            email=c.get("email"),
             mobile_number=c["contact_number"],
             pan_number=c.get("pan"),
             aadhar_number=c.get("aadhar"),
@@ -411,8 +420,8 @@ def save_complaint(session: Session, data: dict):
             remark = Remark(
                 id=f"R-{customer.id}",
                 remarks_complainant=r.get("remarks_by_complainant"),
-                remarks_complainant_aa=r.get("aa_name"),
-                aa_complainee=r.get("remarks_by_aa"),
+                remarks_complainant_aa=r.get("remarks_by_aa"),
+                aa_complainee=r.get("aa_name"),
             )
             session.add(remark)
             session.flush()
@@ -491,7 +500,7 @@ def save_complaint(session: Session, data: dict):
             complainee_showroom_text=complainee_showroom_text,
             customer_id=customer.id,
             remark_id=remark_id,
-            raised_by=data.get("employee_id"),
+            raised_by=user.id,
             date_of_complaint=comp_date,
             # Vehicle
             variant_id=data.get("variant_id"),

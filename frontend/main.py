@@ -1899,7 +1899,7 @@ def render_table(transactions, state, stage: str = "booking"):
             }
 
         col_defs.append(col)
-
+    # IN date columns add value formatter as dates
     grid = (
         ui.aggrid(
             {
@@ -6371,18 +6371,18 @@ class FormState:
         self.complainee_showroom: ui.select | None = None
         self.complaint_status: ui.select | None = None
 
-        self.comp_quotation_no: ui.input | None = None
+        self.comp_quotation_number: ui.input | None = None
         self.comp_quotation_date: ui.input | None = None
         self.comp_total_offered: ui.input | None = None
         self.comp_net_offered: ui.input | None = None
-        self.comp_tcs: ui.input | None = None
+        self.comp_tcs: ui.input | None = None  # Delete This
 
-        self.comp_booking_file_no: ui.input | None = None
-        self.comp_receipt_no: ui.input | None = None
+        self.comp_booking_file_number: ui.input | None = None
+        self.comp_receipt_number: ui.input | None = None
         self.comp_booking_amt: ui.input | None = None
         self.comp_mode_of_payment: ui.select | None = None
         self.comp_instrument_date: ui.input | None = None
-        self.comp_instrument_no: ui.input | None = None
+        self.comp_instrument_number: ui.input | None = None
         self.comp_bank_name: ui.input | None = None
 
         self.complainant_remarks: ui.textarea | None = None
@@ -9770,7 +9770,7 @@ def build_complaint_quotation_section(state: FormState) -> None:
                 "text-[15px] font-bold text-gray-900"
             )
         with ui.grid(columns=3).classes("w-full gap-5"):
-            state.comp_quotation_no = (
+            state.comp_quotation_number = (
                 ui.input(label="Quotation Number")
                 .classes("w-full")
                 .props("outlined dense")
@@ -9804,12 +9804,12 @@ def build_complaint_booking_section(state: FormState) -> None:
                 "text-[15px] font-bold text-gray-900"
             )
         with ui.grid(columns=3).classes("w-full gap-5"):
-            state.comp_booking_file_no = (
+            state.comp_booking_file_number = (
                 ui.input(label="Booking File Number")
                 .classes("w-full")
                 .props("outlined dense")
             )
-            state.comp_receipt_no = (
+            state.comp_receipt_number = (
                 ui.input(label="Receipt Number")
                 .classes("w-full")
                 .props("outlined dense")
@@ -9840,7 +9840,7 @@ def build_complaint_booking_section(state: FormState) -> None:
                 .classes("w-full")
                 .props('outlined dense type="date"')
             )
-            state.comp_instrument_no = (
+            state.comp_instrument_number = (
                 ui.input(label="Instrument Number")
                 .classes("w-full")
                 .props("outlined dense")
@@ -9979,9 +9979,8 @@ def build_complaint_payload(state: FormState) -> dict:
             return 0
 
     return {
-        "stage": "complaint",
         "variant_id": state.variant_id,
-        "employee_id": get_token() if get_token() else "unknown",
+        "employee_id": state.executive_id,
         "dealer_showroom_details": {
             "complainant_dealership": val(state.complainant_dealership),
             "complainant_showroom": val(state.complainant_showroom),
@@ -9991,6 +9990,8 @@ def build_complaint_payload(state: FormState) -> dict:
         "customer_details": {
             "customer_name": val(state.cust_name),
             "contact_number": val(state.cust_mobile),
+            "relative_name": val(state.cust_relative),
+            "other_id": val(state.cust_other_id),
             "email": val(state.cust_email),
             "address": val(state.cust_address),
             "city": val(state.cust_city),
@@ -10006,19 +10007,19 @@ def build_complaint_payload(state: FormState) -> dict:
             "car_color": val(state.car_color),
         },
         "quotation_details": {
-            "quotation_number": val(state.comp_quotation_no),
+            "quotation_number": val(state.comp_quotation_number),
             "quotation_date": val(state.comp_quotation_date),
             "tcs_amount": intval(state.comp_tcs),
             "total_offered_price": intval(state.comp_total_offered),
             "net_offered_price": intval(state.comp_net_offered),
         },
         "booking_details": {
-            "booking_file_number": val(state.comp_booking_file_no),
-            "receipt_number": val(state.comp_receipt_no),
+            "booking_file_number": val(state.comp_booking_file_number),
+            "receipt_number": val(state.comp_receipt_number),
             "booking_amount": intval(state.comp_booking_amt),
             "mode_of_payment": val(state.comp_mode_of_payment),
             "instrument_date": val(state.comp_instrument_date),
-            "instrument_number": val(state.comp_instrument_no),
+            "instrument_number": val(state.comp_instrument_number),
             "bank_name": val(state.comp_bank_name),
         },
         "remarks_page": {
@@ -10082,23 +10083,124 @@ def build_complaint_form(state: FormState):
         build_complaint_action_bar(state)
 
 
+def hydrate_customer_section(state: FormState, complaint: dict):
+
+    mapping = {
+        "customer_name": state.cust_name,
+        "customer_mobile": state.cust_mobile,
+        "customer_address": state.cust_address,
+        "customer_city": state.cust_city,
+        "customer_aadhar": state.cust_aadhar,
+        "customer_pan": state.cust_pan,
+        "customer_pin": state.cust_pincode,
+        "customer_email": state.cust_email,
+        "customer_relative": state.cust_relative,
+        "customer_other_id": state.cust_other_id,
+    }
+
+    for key, widget in mapping.items():
+        if widget:
+            widget.set_value(complaint.get(key, ""))
+
+
+def hydrate_quotation_section(state: FormState, complaint: dict):
+
+    mapping = {
+        "quotation_number": state.comp_quotation_number,
+        "quotation_date": state.comp_quotation_date,
+        "total_offered_price": state.comp_total_offered,
+        "net_offered_price": state.comp_net_offered,
+    }
+
+    for key, widget in mapping.items():
+        if widget:
+            widget.set_value(complaint.get(key, ""))
+
+
+def hydrate_comp_vehicle_section(state: FormState, complaint: dict):
+    if getattr(state, "car_color", None):
+        state.car_color.set_value(complaint.get("car_color", ""))
+
+
+def hydrate_comp_booking_section(state: FormState, complaint: dict):
+
+    mapping = {
+        "receipt_number": state.comp_receipt_number,
+        "booking_file_number": state.comp_booking_file_number,
+        "booking_amount": state.comp_booking_amt,
+        "mode_of_payment": state.comp_mode_of_payment,
+        "instrument_number": state.comp_instrument_number,
+        "instrument_date": state.comp_instrument_date,
+        "bank_name": state.comp_bank_name,
+    }
+
+    for key, widget in mapping.items():
+        if widget:
+            widget.set_value(complaint.get(key, ""))
+
+
+def hydrate_remarks_section(state: FormState, complaint: dict):
+
+    mapping = {
+        "name_aa_complainee": state.complainee_aa_name,
+        "remarks_complainant": state.complainant_remarks,
+        "remark_complainee_aa": state.complainee_aa_name,
+        "date_of_complaint": state.complaint_date,
+        "complainant_aa_remarks": state.complainant_aa_remarks,
+    }
+
+    for key, widget in mapping.items():
+        if widget:
+            widget.set_value(complaint.get(key, ""))
+
+
 async def hydrate_complaint_form(state: FormState):
-    if not state.complaint_data:
+
+    complaint = state.complaint_data
+
+    if not complaint:
         return
 
     state.is_hydrating = True
 
     try:
-        hydrate_dealership_section(state, complaint)
+        # Dealership Section
 
+        complainant_dealer = complaint.get("complainant_dealer_name")
+
+        if complainant_dealer:
+            state.complainant_dealership.set_value(complainant_dealer)
+            await _cf_on_complainant_change(state, complainant_dealer)
+            state.complainant_showroom.set_value(
+                complaint.get("complainant_showroom_name", "")
+            )
+
+        complainee_dealer = complaint.get("complainee_dealer_name")
+
+        if complainee_dealer:
+            state.complainee_dealership.set_value(complainee_dealer)
+            await _cf_on_complainee_change(state, complainee_dealer)
+            state.complainee_showroom.set_value(
+                complaint.get("complainee_showroom_name", "")
+            )
+
+        # Customer
         hydrate_customer_section(state, complaint)
 
-        hydrate_vehicle_section(state, complaint)
+        # Vehicle
+        car_name = complaint.get("car_name")
+        car = next((c for c in state.cars if c.get("name") == car_name), None)
+        if car:
+            car_id = car["id"]
+            state.car_select.set_value(car_id)
+            await _fs_on_car_change(car_id, state, preserve_variant=True)
+            variant_id = complaint.get("variant_id")
+            if variant_id:
+                state.variant_select.set_value(variant_id)
 
+        # Remaining Sections
         hydrate_quotation_section(state, complaint)
-
-        hydrate_booking_section(state, complaint)
-
+        hydrate_comp_booking_section(state, complaint)
         hydrate_remarks_section(state, complaint)
 
     finally:
@@ -10111,7 +10213,7 @@ async def initialize_complaint_form(state: FormState, complaint_code: str | None
     await load_complaint_data(state, complaint_code)
 
     build_complaint_form(state)
-    print("COMPLAINT DATA:", state.complaint_data)
+    print("COMPLAINT DATA:", json.dumps(state.complaint_data, indent=2))
     await hydrate_complaint_form(state)
 
     state.form_ready = True
