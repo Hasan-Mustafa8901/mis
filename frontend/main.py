@@ -15,6 +15,7 @@ import locale
 import asyncio
 import re
 
+from pprint import pprint
 from components.charts import render_bar_chart  # , render_line_chart
 import httpx
 from datetime import datetime, date, timedelta
@@ -70,7 +71,8 @@ CONDITION_KEYS = {
         ("corporate", "Corporate"),
         ("govt_employee", "Govt Employee"),
         ("scrap", "Scrap"),
-        ("green_bonus", "Green Bonus"),
+        ("intervention", "Intervention"),
+        ("ras", "RAS"),
         ("micro_segment", "Micro Segment (Solar Roof Top)"),
         ("sbi_yono", "SBI Yono"),
         ("power_of_twelve", "Power of 12"),
@@ -87,7 +89,8 @@ COMPONENT_CONDITIONS = {
     "Additional for Exchange Customers": "exchange",
     "Additional for Scrappage Customers": "scrap",
     "Additional for POI /Corporate Customers": "corporate",
-    "Green Bonus": "green_bonus",
+    "Intervention": "intervention",
+    "RAS": "ras",
     "Additional Loyalty (EV TO EV)": "loyalty_ev_ev",
     "Additional Loyalty (ICE TO EV)": "loyalty_ice_ev",
     "Micro Segment (Solar Roof Top)": "micro_segment",
@@ -1653,7 +1656,7 @@ def build_ordered_columns(row: dict, stage: str = "combined"):
         + pick("Power")
         + pick("Shop")
         + pick("Alliance")
-        + pick("Green")
+        + pick("Intervention")
     )
 
     # 6. Accessories / finance / exchange
@@ -1938,7 +1941,9 @@ def render_table(transactions, state, stage: str = "booking"):
     async def restore_grid_state():
         try:
             if state.filter_model:
-                await grid.run_grid_method("setFilterModel", state.filter_model)
+                await grid.run_grid_method(
+                    "setFilterModel", state.filter_model, timeout=5.0
+                )
                 logger.info("GRID FILTERS RESTORED")
 
             if state.sort_model:
@@ -1948,13 +1953,14 @@ def render_table(transactions, state, stage: str = "booking"):
                         "state": state.sort_model,
                         "defaultState": {"sort": None},
                     },
+                    timeout=5.0,
                 )
                 logger.info("GRID SORT RESTORED")
 
         except Exception as e:
             logger.exception("RESTORE GRID STATE ERROR: %s", str(e))
 
-    ui.timer(0.2, lambda: asyncio.create_task(restore_grid_state()), once=True)
+    ui.timer(1.0, lambda: asyncio.create_task(restore_grid_state()), once=True)
 
     async def save_grid_state():
         try:
@@ -6148,90 +6154,6 @@ async def settings_page():
             )
 
 
-# PAGE-LOCAL FORM STATE
-class FormController:
-    def __init__(self, state):
-        self.state = state
-
-    async def initialize(self):
-        await self.load_reference_data()
-        await self.load_transaction_if_needed()
-
-        self.build_form()
-
-        add_payment_row(self.state)
-
-        if self.state.transaction_data:
-            await self.hydrate_form()
-
-        self.refresh_visibility()
-        self.refresh_live_calculations()
-
-        self.attach_handlers()
-
-    async def load_reference_data(self):
-
-        data = get_reference_data()
-
-        if not data:
-            data = await fetch_reference_data()
-
-        self.state.cars = data.get("cars", [])
-        self.state.variants = data.get("variants", [])
-        self.state.outlets = data.get("outlets", [])
-        self.state.executives = data.get("executives", [])
-        self.state.components = data.get("components", [])
-        self.state.accessories = data.get("accessories", [])
-        self.state.dealerships = data.get("dealerships", [])
-
-    async def load_transaction_if_needed(self):
-        transaction_id = self.state.transaction_id
-        if not transaction_id:
-            return
-
-        try:
-            data = await api_get(f"/transactions/{transaction_id}")
-            if not data:
-                return
-
-            self.state.transaction_data = data
-
-        except UnauthorizedError:
-            await logout_user()
-            ui.notify("Session expired. Please login again.", type="warning")
-            ui.navigate.to("/login")
-
-        except ConnectionFailedError:
-            ui.notify("Unable to load transaction", type="negative")
-
-        except APIError as e:
-            logger.error("LOAD TRANSACTION API ERROR: %s", e, exc_info=True)
-            ui.notify("Failed to load transaction", type="negative")
-
-        except Exception as e:
-            logger.exception("LOAD TRANSACTION ERROR %s", str(e))
-            ui.notify("Something went wrong", type="negative")
-
-    def build_form(self):
-        build_full_form(self.state)
-
-    async def hydrate_form(self):
-        if self.state.transaction_data:
-            await hydrate_form(
-                self.state,
-                self.state.transaction_data,
-            )
-
-    def refresh_visibility(self):
-        refresh_visibility(self.state)
-
-    def refresh_live_calculations(self):
-        _fs_update_live(self.state)
-
-    def attach_handlers(self):
-        attach_form_handlers(self.state)
-
-
 class FormState:
     """
     All mutable state for a single /form session.
@@ -6435,6 +6357,9 @@ class FormState:
         self.total_discount_booking = 0.0
         self.other_discount_delivery = 0.0
 
+        # Complaint Data for hydration of form
+        self.complaint_data: dict = {}
+
         # Complaint Form Specifics
         self.complaint_dealerships: list = []
         self.complainant_outlets: list = []
@@ -6455,7 +6380,7 @@ class FormState:
         self.comp_booking_file_no: ui.input | None = None
         self.comp_receipt_no: ui.input | None = None
         self.comp_booking_amt: ui.input | None = None
-        self.comp_mode_of_payment: ui.input | None = None
+        self.comp_mode_of_payment: ui.select | None = None
         self.comp_instrument_date: ui.input | None = None
         self.comp_instrument_no: ui.input | None = None
         self.comp_bank_name: ui.input | None = None
@@ -6582,289 +6507,6 @@ def on_car_change(state, car_id):
     state.variant_select.options = options
 
 
-def _map_car_and_variant(state, data):
-    car_name = data.get("car_name")
-    variant_name = data.get("variant_name")
-
-    # Find Car ID
-    car_id = None
-    for car in state.cars:
-        if car["name"].strip().lower() == (car_name or "").strip().lower():
-            car_id = car["id"]
-            break
-
-    if not car_id:
-        return
-
-    # Set Car
-    state.car_select.set_value(car_id)
-    state.car_id = car_id
-
-    # Build Variant Options
-    variants = [v for v in state.variants if v["car_id"] == car_id]
-
-    options = {v["id"]: v["variant_name"] for v in variants}
-
-    # FORCE update options
-    state.variant_select.clear()
-    state.variant_select.options = options
-    state.variant_select.update()
-
-    # Find Variant ID
-    variant_id = None
-    for v in variants:
-        if (
-            variant_name
-            and variant_name.strip().lower() in v["variant_name"].strip().lower()
-        ):
-            variant_id = v["id"]
-            break
-
-    if not variant_id:
-        return
-
-    # Set Variant
-    ui.timer(0.15, lambda: state.variant_select.set_value(variant_id), once=True)
-    state.variant_id = variant_id
-
-
-def populate_from_booking(state: FormState, data: dict):
-    if not data:
-        return
-
-    # Booking
-    if state.booking_date:
-        state.booking_date.set_value(data.get("booking_date"))
-
-    if state.booking_amt:
-        state.booking_amt.set_value(data.get("booking_amt", ""))
-    if state.booking_receipt_num:
-        state.booking_receipt_num.set_value(data.get("booking_receipt_num", ""))
-
-    # Customer
-    if state.cust_name:
-        state.cust_name.set_value(data.get("customer_name", ""))
-
-    if state.cust_mobile:
-        state.cust_mobile.set_value(data.get("mobile_number", ""))
-
-    if state.cust_email:
-        state.cust_email.set_value(data.get("email", ""))
-
-    if state.cust_pan:
-        state.cust_pan.set_value(data.get("pan_number", ""))
-
-    if state.cust_aadhar:
-        state.cust_aadhar.set_value(data.get("aadhar_number", ""))
-
-    if state.cust_address:
-        state.cust_address.set_value(data.get("address", ""))
-
-    if state.cust_city:
-        state.cust_city.set_value(data.get("city", ""))
-
-    if state.cust_pincode:
-        state.cust_pincode.set_value(data.get("pin_code", ""))
-    if state.model_year:
-        state.model_year.set_value(data.get("model_year", ""))
-
-    # Vehicle
-    if state.cust_file_no:
-        state.cust_file_no.set_value(data.get("customer_file_number", ""))
-
-    if state.vin_no:
-        state.vin_no.set_value(data.get("vin_number", ""))
-
-    if state.engine_no:
-        state.engine_no.set_value(data.get("engine_number", ""))
-
-    if state.vehicle_regn_no:
-        state.vehicle_regn_no.set_value(data.get("registration_number", ""))
-
-    if state.car_color:
-        state.car_color.set_value(data.get("color", ""))
-
-    if state.regn_date:
-        state.regn_date.set_value(data.get("registration_date", ""))
-
-    if state.model_year:
-        state.model_year.set_value(data.get("model_year", ""))
-
-    # Variant / Car
-    _map_car_and_variant(state, data)
-
-    # Conditions
-    conditions = data.get("conditions", {})
-    disp_key = [
-        "Exchange",
-        "Corporate",
-        "Govt Employee",
-        "Scrap",
-        "Upgrade",
-        "Self Insurance",
-        "FasTag",
-        "Entended Warranty",
-        "Shield Of Trust",
-    ]
-    for key, cb in zip(disp_key, state.condition_cbs.values()):
-        cb.set_value(conditions.get(key, False))
-
-
-def populate_price_and_discount(
-    state,
-    booking_data: dict,
-    *,
-    edit_mode: bool = False,
-) -> None:
-    """
-    Auto-fill all price and discount inputs from booking_data.
-
-    Args:
-        state:        FormState with price_inputs / discount_inputs populated.
-        booking_data: Raw dict from the API — may contain both list prices and
-                      actual (charged) amounts under different key patterns.
-        edit_mode:    When True (editing an existing transaction), the "charged"
-                      column is filled from *_actual keys so the auditor sees
-                      what was entered previously, not the price list defaults.
-
-    Populates:
-        state.listed_prices          : price-list reference values (always)
-        state.price_listed_labels    : the ₹ display in the Listed column
-        state.discount_listed_labels : allowed amount display
-        state.discount_given_labels  : given amount display (read-only)
-        state.discount_diff_labels   : per-row difference display
-        Price and discount inputs    : filled with listed OR actual values
-    """
-    if not booking_data:
-        return
-
-    #  Build two maps: listed (price list) and actual (what was charged)
-    # listed_map:  component name → price-list value
-    # charged_map: component name → what was actually charged/given
-    listed_map: dict = {}
-    charged_map: dict = {}
-
-    for raw_key, val in booking_data.items():
-        if val is None:
-            continue
-        is_actual = raw_key.endswith("_actual")
-        is_allowed = raw_key.endswith("_allowed") or raw_key.endswith("_listed")
-        clean = re.sub(r"_(actual|allowed|listed)$", "", raw_key).strip()
-        norm = re.sub(r"[^a-z0-9]", "", clean.lower())
-
-        if is_actual:
-            charged_map[clean] = val
-            charged_map[norm] = val
-        elif is_allowed:
-            listed_map[clean] = val
-            listed_map[norm] = val
-        else:
-            # Plain key — treat as both listed and charged default
-            listed_map[clean] = val
-            listed_map[norm] = val
-            # Only use as charged default if edit_mode not explicitly set;
-            # in edit_mode we prefer *_actual keys.
-            if not edit_mode:
-                charged_map.setdefault(clean, val)
-                charged_map.setdefault(norm, val)
-
-    def _resolve_listed(name: str):
-        norm = re.sub(r"[^a-z0-9]", "", name.lower())
-        return listed_map.get(name) or listed_map.get(norm)
-
-    def _resolve_charged(name: str):
-        norm = re.sub(r"[^a-z0-9]", "", name.lower())
-        return charged_map.get(name) or charged_map.get(norm)
-
-    #  Price inputs
-    for name, inp in state.price_inputs.items():
-        listed_val = _resolve_listed(name)
-        charged_val = _resolve_charged(name) if edit_mode else listed_val
-
-        # Always store and display the listed price
-        if listed_val is not None:
-            state.listed_prices[name] = listed_val
-            lbl = state.price_listed_labels.get(name)
-            if lbl:
-                lbl.set_text(f"₹{float(listed_val):,}")
-
-        # Fill the charged input:
-        #   edit_mode  → restore what the auditor entered previously (actual)
-        #   new entry  → pre-fill with listed price so auditor can match/deviate
-        fill_val = (
-            charged_val if (edit_mode and charged_val is not None) else listed_val
-        )
-        if fill_val is not None:
-            inp.set_value(format_num_inr(fill_val))
-
-    # Discount inputs + read-only displays
-    for name, inp in state.discount_inputs.items():
-        listed_val = _resolve_listed(name)
-        charged_val = _resolve_charged(name)
-
-        if listed_val is not None:
-            state.listed_prices[name] = listed_val
-            a_lbl = state.discount_listed_labels.get(name)
-            if a_lbl:
-                a_lbl.set_text(f"₹{float(listed_val):,}")
-
-        if edit_mode and charged_val is not None:
-            inp.set_value(format_num_inr(charged_val))
-
-        # Update the read-only Given label
-        g_lbl = state.discount_given_labels.get(name)
-        if g_lbl:
-            booking_actuals: dict = getattr(state, "booking_discount_actuals", {}) or {}
-            display_val = booking_actuals.get(name, charged_val)
-            if display_val is not None:
-                g_lbl.set_text(f"₹{float(display_val):,.2f}")
-
-
-def populate_from_delivery(state: FormState, delivery: dict):
-
-    if not delivery:
-        return
-
-    populate_from_booking(state, delivery)
-
-    if state.delivery_date:
-        state.delivery_date.set_value(delivery.get("delivery_date", ""))
-    if state.car_color:
-        state.car_color.set_value(delivery.get("color", ""))
-    if state.invoice_number:
-        state.invoice_number.set_value(delivery.get("invoice_number", ""))
-    if state.invoice_date:
-        state.invoice_date.set_value(delivery.get("invoice_date", ""))
-    if state.invoice_taxable_value:
-        state.invoice_taxable_value.set_value(delivery.get("taxable_value", ""))
-    if state.invoice_ex_showroom:
-        state.invoice_ex_showroom.set_value(delivery.get("ex_showroom_price", ""))
-    if state.invoice_discount:
-        state.invoice_discount.set_value(delivery.get("discount", ""))
-    if state.invoice_cgst:
-        state.invoice_cgst.set_value(delivery.get("cgst", ""))
-    if state.invoice_sgst:
-        state.invoice_sgst.set_value(delivery.get("sgst", ""))
-    if state.invoice_igst:
-        state.invoice_igst.set_value(delivery.get("igst", ""))
-    if state.invoice_cess:
-        state.invoice_cess.set_value(delivery.get("cess", ""))
-    if state.invoice_total:
-        state.invoice_total.set_value(delivery.get("total_amount", ""))
-
-    # Delivery checks
-    delv = delivery.get("delivery_checks", {})
-    for key, cb in state.delivery_cbs.items():
-        cb.set_value(bool(delv.get(key, False)))
-
-    # Audit
-    audit = delivery.get("audit_info", {})
-    if state.audit_obs:
-        state.audit_obs.set_value(audit.get("observations", ""))
-    if state.audit_action:
-        state.audit_action.set_value(audit.get("follow_up_action", ""))
-
-
 async def resolve_form_mode(
     state: FormState, stage: str, transaction_id: int | None, mode: str | None
 ):
@@ -6930,10 +6572,7 @@ async def resolve_form_mode(
     return None
 
 
-async def hydrate_vehicle_section(
-    state,
-    txn,
-):
+async def hydrate_vehicle_section(state, txn):
 
     state.is_hydrating = True
 
@@ -7247,19 +6886,42 @@ def build_conditions_section(state: FormState) -> None:
 
 
 def build_booking_checklist_section(state: FormState) -> None:
-    with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
-        with ui.row().classes(
-            "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
+
+    with ui.card().classes(
+        "shadow-sm rounded-2xl p-6 mb-6 border border-gray-100 bg-white"
+    ):
+        # Header
+        _section_header(
+            emoji="📖",
+            title="Booking Checklist",
+            subtitle="Verify all booking requirements at the time of booking",
+            icon_bg="bg-emerald-50",
+        )
+
+        # Checklist Container
+        with ui.column().classes(
+            "w-full bg-gray-50 border border-gray-100 rounded-xl p-5 gap-4"
         ):
-            ui.label("☑️").classes("text-[20px] select-none")
-            ui.label("Booking Checklist").classes("text-[15px] font-bold text-gray-900")
-        with ui.grid(columns=FORM_COLUMNS + 2).classes("w-full"):
-            for key, label in BOOKING_CHECK_KEYS:
-                state.booking_cbs[key] = (
-                    ui.checkbox(label, value=False)
-                    .props("dense color=primary")
-                    .classes("text-gray-700 font-medium")
-                )
+            ui.label("Booking Verification").classes(
+                "text-[13px] font-semibold text-gray-700"
+            )
+
+            ui.label(
+                "Audit KYC and vehicle specs, cross-check commercial pricing, and verify mandatory booking sign-offs."
+            ).classes("text-[12px] text-gray-500 leading-5")
+
+            # Checklist Grid
+            with ui.grid(columns=5).classes("w-full gap-x-6 gap-y-4 pt-2"):
+                for key, label in BOOKING_CHECK_KEYS:
+                    with ui.row().classes(
+                        "items-center gap-2 bg-white border border-gray-100 "
+                        "rounded-lg px-3 py-2 shadow-sm"
+                    ):
+                        state.booking_cbs[key] = ui.checkbox(value=False).props(
+                            "dense size='sm'"
+                        )
+
+                        ui.label(label).classes("text-[13px] text-gray-700")
 
 
 def build_booking_section(state: FormState):
@@ -7308,17 +6970,13 @@ _MONO = "text-[14px]  text-black-500 text-center"
 _MONO_SM = "text-[11px] text-center"
 
 # Discount names that are always visible regardless of conditions
-_DEFAULT_DISC = {
-    "Cash Discount All Customers",
-    "Additional Discount From Dealer",
-    # "Maximum benefit due to price increase",
-}
+_DEFAULT_DISC = {"Cash Discount All Customers", "Additional Discount From Dealer"}
 _DEFAULT_PRICE = {"Ex Showroom Price", "TCS", "Registration", "Insurance"}
 
 # Condition key → discount component name substring mapping
 # Add more mappings as your domain grows
 _CONDITION_DISC_MAP: dict[str, list[str]] = {
-    "exchange": ["Exchange Bonus", "Exchange", "Green Bonus"],
+    "exchange": ["Exchange Bonus", "Exchange"],
     "corporate": ["Corporate"],
     "scrap": ["Scrappage", "Scrap"],
     "upgrade": ["Loyalty", "Upgrade"],
@@ -8246,10 +7904,7 @@ def build_action_bar(state: FormState) -> None:
 
 
 # FORM EVENT HANDLERS
-def handle_price_toggle(
-    state: FormState,
-    name: str,
-):
+def handle_price_toggle(state: FormState, name: str):
 
     toggle = state.price_match_toggles.get(name)
     inp = state.price_inputs.get(name)
@@ -8269,10 +7924,7 @@ def handle_price_toggle(
     _fs_update_live(state)
 
 
-def handle_discount_toggle(
-    state: FormState,
-    name: str,
-):
+def handle_discount_toggle(state: FormState, name: str):
 
     toggle = state.discount_match_toggles.get(name)
     inp = state.discount_inputs.get(name)
@@ -8387,12 +8039,7 @@ def add_payment_row(
     return payment
 
 
-def attach_payment_row_handlers(
-    state,
-    payment,
-    payment_entries,
-    total_label,
-):
+def attach_payment_row_handlers(state, payment, payment_entries, total_label):
 
     def handle_change(*_):
         if state.is_hydrating:
@@ -8460,6 +8107,20 @@ def attach_payment_handlers(state):
         )
 
 
+async def _fs_handle_price_reload(state: FormState):
+    if state.is_hydrating:
+        return
+
+    try:
+        await _fs_try_price_preload(state)
+
+        if getattr(state, "form_ready", False) and not state.is_hydrating:
+            _fs_update_live(state)
+
+    except Exception:
+        logger.exception("Price preload failed")
+
+
 def attach_form_handlers(state: FormState):
     if getattr(state, "handlers_attached", False):
         return
@@ -8522,14 +8183,26 @@ def attach_form_handlers(state: FormState):
     if getattr(state, "variant_select", None):
 
         async def handle_variant_change(e):
+            pprint("handle_variant_change called")
             if state.is_hydrating:
                 return
             variant_id = state.variant_select.value
             await _fs_on_variant_change(variant_id, state)
 
-        state.variant_select.on(
-            "update:model-value",
-            lambda e: asyncio.create_task(handle_variant_change(e)),
+        state.variant_select.on_value_change(
+            lambda e: asyncio.create_task(handle_variant_change(e))
+        )
+        pprint("Variant Select referred in Attach form handler")
+
+    # Booking
+    if getattr(state, "booking_date", None):
+        state.booking_date.on_value_change(
+            lambda e: asyncio.create_task(_fs_handle_price_reload(state))
+        )
+
+    if getattr(state, "model_year", None):
+        state.model_year.on_value_change(
+            lambda e: asyncio.create_task(_fs_handle_price_reload(state))
         )
 
     # CONDITIONS
@@ -8692,19 +8365,25 @@ async def _fs_try_price_preload(state: FormState) -> None:
     """Call GET /price-list/preview when both variant + date are known."""
     # Extract booking date from available sources
     booking_date = None
-    if state.booking_date and state.booking_date.value and state.model_year.value:
+
+    if state.booking_date and state.booking_date.value:
         booking_date = state.booking_date.value
-    elif state.delivery_date and state.delivery_date.value and state.model_year.value:
+
+    elif state.delivery_date and state.delivery_date.value:
         booking_date = state.delivery_date.value
-    if not state.variant_id or not booking_date or not state.model_year:
+
+    model_year = state.model_year.value if state.model_year else None
+    if not state.variant_id or not booking_date or not model_year:
         return
 
     try:
         booking_date = state.booking_date.value
-        model_year = state.model_year.value
+        print("BOOKING DATE: ", booking_date)
+        print("MODEL YEAR: ", model_year)
         preview = await api_get(
             f"/price-list/preview?variant_id={state.variant_id}&booking_date={booking_date}&model_year={model_year}"
         )
+        print("PREVIEW: ", preview)
         #  Store listed prices (source of truth)
         state.listed_prices = preview or {}
         filled = 0
@@ -8760,9 +8439,7 @@ async def _fs_try_price_preload(state: FormState) -> None:
 
 
 ## Invoice calculation helpers
-def update_invoice_tax_visibility(
-    state: FormState,
-):
+def update_invoice_tax_visibility(state: FormState):
 
     if state.invoice_igst:
         state.invoice_igst.set_enabled(
@@ -8775,9 +8452,7 @@ def update_invoice_tax_visibility(
         )
 
 
-def calculate_invoice_total(
-    state: FormState,
-):
+def calculate_invoice_total(state: FormState):
 
     taxable = parsed_val(state.invoice_taxable_value)
     cgst = parsed_val(state.invoice_cgst)
@@ -8797,9 +8472,7 @@ def calculate_invoice_total(
         state.invoice_total.set_value(format_num_inr(total))
 
 
-def calculate_invoice_taxes(
-    state: FormState,
-):
+def calculate_invoice_taxes(state: FormState):
     # Currently, this method is not used, DO NOT DELETE IT, we might need it in future
     taxable = parsed_val(state.invoice_taxable_value)
 
@@ -9086,10 +8759,10 @@ def _fs_update_live(state: FormState) -> None:
         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
 
 
-def get_conditions(state) -> dict:
-    return {
-        key: bool(cb.value) for key, cb in getattr(state, "condition_cbs", {}).items()
-    }
+# def get_conditions(state) -> dict:
+#     return {
+#         key: bool(cb.value) for key, cb in getattr(state, "condition_cbs", {}).items()
+#     }
 
 
 def _fs_revalidate(state: FormState) -> None:
@@ -9137,9 +8810,7 @@ async def _fs_handle_submit(state: FormState) -> None:
     if not state.error_banner or not state.error_msg_label:
         return
 
-    # =====================================================
     # VALIDATION
-    # =====================================================
 
     valid, msg = state.is_valid()
     if not valid:
@@ -9480,7 +9151,8 @@ def refresh_visibility(state: FormState) -> None:
         norm("Additional For Upward Sales Customers"): is_checked("upgrade"),
         norm("Additional Loyalty (EV TO EV)"): is_checked("loyalty_ev_ev"),
         norm("Additional Loyalty (ICE TO EV)"): is_checked("loyalty_ice_ev"),
-        norm("Green Bonus"): is_checked("green_bonus"),
+        norm("Intervention"): is_checked("intervention"),
+        norm("RAS"): is_checked("ras"),
     }
 
     price_visibility_rules = {
@@ -9859,9 +9531,7 @@ def hydrate_payment_section(state):
     if ledger_container:
         ledger_container.clear()
 
-    # -----------------------------------
     # New Schema
-    # -----------------------------------
     receipt_payments = txn.get("receipt_payments")
     ledger_payments = txn.get("ledger_payments")
 
@@ -9886,9 +9556,7 @@ def hydrate_payment_section(state):
 
         return
 
-    # -----------------------------------
     # Legacy Schema
-    # -----------------------------------
     legacy_payments = {
         "Cash": txn.get("payment_cash", 0),
         "Bank": txn.get("payment_bank", 0),
@@ -10047,7 +9715,7 @@ async def form_page(
     _fs_revalidate(state)
 
 
-# RUN
+# Complaints Form Section
 def build_complaint_dealership_section(state: FormState) -> None:
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6"):
         with ui.row().classes(
@@ -10059,7 +9727,6 @@ def build_complaint_dealership_section(state: FormState) -> None:
             )
 
         with ui.grid(columns=2).classes("w-full gap-5"):
-            # Selectors
             state.complainant_dealership = (
                 ui.select(
                     {d["name"]: d["name"] for d in state.complaint_dealerships},
@@ -10076,6 +9743,7 @@ def build_complaint_dealership_section(state: FormState) -> None:
             )
 
             complainee_options = {"X": "X"}
+
             for d in state.complaint_dealerships:
                 complainee_options[d["name"]] = d["name"]
 
@@ -10090,80 +9758,6 @@ def build_complaint_dealership_section(state: FormState) -> None:
                 .classes("w-full")
                 .props("outlined dense")
             )
-
-            # Shared Logic
-            async def handle_complainant_change(dlr):
-                if not dlr:
-                    return
-
-                # Update complainee dealership options
-                filtered = {"X": "X"}
-                for d in state.complaint_dealerships:
-                    if d["name"] != dlr:
-                        filtered[d["name"]] = d["name"]
-
-                state.complainee_dealership.options = filtered
-                state.complainee_dealership.update()
-
-                # Fetch complainant showrooms
-                try:
-                    outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
-                    if outs:
-                        state.complainant_showroom.options = {o: o for o in outs}
-                        state.complainant_showroom.update()
-                except UnauthorizedError:
-                    await logout_user()
-                    ui.notify("Session Expired. Please Login again.", type="warning")
-                    ui.navigate.to("/login")
-                except ConnectionFailedError as ce:
-                    logger.error("Connection Error: %s", ce, exc_info=True)
-                    ui.notify("Unable to connect to the server", type="warning")
-
-                except APIError as ex:
-                    logger.error("Error fetching outlets: %s", ex, exc_info=True)
-
-            async def handle_complainee_change(dlr):
-                if dlr == "X":
-                    state.complainee_showroom.options = {"X": "X"}
-                    state.complainee_showroom.update()
-                    return
-
-                if not dlr:
-                    return
-
-                try:
-                    outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
-                    if outs:
-                        opts = {"X": "X"}
-                        for o in outs:
-                            opts[o] = o
-                        state.complainee_showroom.options = opts
-                        state.complainee_showroom.update()
-
-                except APIError as ex:
-                    logger.error("Error fetching outlets: %s", ex, exc_info=True)
-
-            # Handlers
-            def on_complainant_dealership_change(e):
-                import asyncio
-
-                asyncio.create_task(handle_complainant_change(e.value))
-
-            def on_complainee_dealership_change(e):
-                import asyncio
-
-                asyncio.create_task(handle_complainee_change(e.value))
-
-            # Bind Events
-            state.complainant_dealership.on_value_change(
-                on_complainant_dealership_change
-            )
-
-            state.complainee_dealership.on_value_change(on_complainee_dealership_change)
-
-            #  SAVE HANDLERS FOR POPULATION (IMPORTANT)
-            state._handle_complainant_change = handle_complainant_change
-            state._handle_complainee_change = handle_complainee_change
 
 
 def build_complaint_quotation_section(state: FormState) -> None:
@@ -10230,7 +9824,7 @@ def build_complaint_booking_section(state: FormState) -> None:
                 "Other",
             ]
             state.comp_mode_of_payment = (
-                ui.input(label="Mode of Payment", autocomplete=mop_ops)
+                ui.select(label="Mode of Payment", options=mop_ops)
                 .classes("w-full")
                 .props("outlined dense")
             )
@@ -10307,9 +9901,9 @@ def build_complaint_action_bar(state: FormState) -> None:
     state.error_banner.set_visibility(False)
 
     with ui.row().classes("w-full items-center justify-between py-4"):
-        ui.button("← Back to Dashboard", on_click=lambda: ui.navigate.to("/")).classes(
-            "text-gray-500 text-[13px] hover:text-gray-800"
-        ).props("flat no-caps")
+        ui.button(
+            "← Back to Complaints", on_click=lambda: ui.navigate.to("/complaints-ctrl")
+        ).classes("text-gray-500 text-[13px] hover:text-gray-800").props("flat no-caps")
 
         async def handle_complaint_submit():
             if not state.error_banner or not state.error_msg_label:
@@ -10334,7 +9928,7 @@ def build_complaint_action_bar(state: FormState) -> None:
                 )
 
                 # SUCCESS NAVIGATION
-                ui.navigate.to("/")
+                ui.navigate.to("/complaints-ctrl")
 
             except UnauthorizedError:
                 await logout_user()
@@ -10362,119 +9956,6 @@ def build_complaint_action_bar(state: FormState) -> None:
             )
             .props("no-caps unelevated")
         )
-
-
-def populate_from_complaint(state: FormState, complaint: dict):
-    import asyncio
-
-    if not complaint:
-        return
-
-    # --- Customer details ---
-    if state.cust_name:
-        state.cust_name.set_value(complaint.get("customer_name", ""))
-    if state.cust_mobile:
-        state.cust_mobile.set_value(complaint.get("customer_mobile", ""))
-    if state.cust_email:
-        state.cust_email.set_value(complaint.get("email", ""))
-    if state.cust_address:
-        state.cust_address.set_value(complaint.get("customer_address", ""))
-    if state.cust_city:
-        state.cust_city.set_value(complaint.get("customer_city", ""))
-    if state.cust_pincode:
-        state.cust_pincode.set_value(complaint.get("customer_pin", ""))
-    if state.cust_pan:
-        state.cust_pan.set_value(complaint.get("customer_pan", ""))
-    if state.cust_aadhar:
-        state.cust_aadhar.set_value(complaint.get("customer_aadhar", ""))
-
-    # --- Quotation & Booking ---
-    if state.comp_quotation_no:
-        state.comp_quotation_no.set_value(complaint.get("quotation_number", ""))
-    if state.comp_quotation_date:
-        state.comp_quotation_date.set_value(complaint.get("quotation_date", ""))
-    if state.comp_net_offered:
-        state.comp_net_offered.set_value(complaint.get("net_offered_price", ""))
-    if state.comp_total_offered:
-        state.comp_total_offered.set_value(complaint.get("total_offered_price", ""))
-    if state.comp_tcs:
-        state.comp_tcs.set_value(complaint.get("tcs_amount", ""))
-    if state.comp_booking_file_no:
-        state.comp_booking_file_no.set_value(complaint.get("booking_file_number", ""))
-    if state.comp_receipt_no:
-        state.comp_receipt_no.set_value(complaint.get("receipt_number", ""))
-    if state.comp_booking_amt:
-        state.comp_booking_amt.set_value(complaint.get("booking_amount", ""))
-    if state.comp_mode_of_payment:
-        state.comp_mode_of_payment.set_value(complaint.get("mode_of_payment", ""))
-    if state.comp_instrument_date:
-        state.comp_instrument_date.set_value(complaint.get("instrument_date", ""))
-    if state.comp_instrument_no:
-        state.comp_instrument_no.set_value(complaint.get("instrument_number", ""))
-    if state.comp_bank_name:
-        state.comp_bank_name.set_value(complaint.get("bank_name", ""))
-
-    # --- Vehicle ---
-    if state.vin_no:
-        state.vin_no.set_value(complaint.get("vin_number", ""))
-    if state.engine_no:
-        state.engine_no.set_value(complaint.get("engine_number", ""))
-    if state.vehicle_regn_no:
-        state.vehicle_regn_no.set_value(complaint.get("registration_number", ""))
-    if state.regn_date:
-        state.regn_date.set_value(complaint.get("registration_date", ""))
-    if state.car_color:
-        state.car_color.set_value(complaint.get("car_color", ""))
-
-    # --- Dealerships (CRITICAL ORDER) ---
-    dlr = complaint.get("complainant_dealer_name")
-
-    if dlr:
-        state.complainant_dealership.set_value(dlr)
-
-        if hasattr(state, "_handle_complainant_change"):
-            asyncio.create_task(state._handle_complainant_change(dlr))
-
-    comp_dlr = complaint.get("complainee_dealer_name")
-
-    if comp_dlr:
-        if hasattr(state, "_handle_complainee_change"):
-            asyncio.create_task(state._handle_complainee_change(comp_dlr))
-
-    # --- Delayed dependent fields ---
-    def set_dependent_fields():
-        if state.complainant_showroom:
-            state.complainant_showroom.set_value(
-                complaint.get("complainant_showroom_name")
-            )
-
-        if state.complainee_dealership:
-            state.complainee_dealership.set_value(
-                complaint.get("complainee_dealer_name")
-            )
-
-        if state.complainee_showroom:
-            state.complainee_showroom.set_value(
-                complaint.get("complainee_showroom_name")
-            )
-
-    ui.timer(0.2, set_dependent_fields, once=True)
-
-    # --- Remarks ---
-    if state.complaint_date:
-        state.complaint_date.set_value(complaint.get("date_of_complaint", ""))
-    if state.complainant_remarks:
-        state.complainant_remarks.set_value(complaint.get("remarks_complainant", ""))
-    if state.complainee_aa_name:
-        state.complainee_aa_name.set_value(complaint.get("remark_complainee_aa", ""))
-    if state.complainant_aa_remarks:
-        state.complainant_aa_remarks.set_value(complaint.get("remark_admin", ""))
-
-    if state.complaint_status:
-        state.complaint_status.set_value(complaint.get("status", ""))
-
-    # --- Variant mapping ---
-    _map_car_and_variant(state, complaint)
 
 
 def build_complaint_payload(state: FormState) -> dict:
@@ -10562,6 +10043,193 @@ def build_complaint_payload(state: FormState) -> dict:
     }
 
 
+async def load_complaint_reference_data(state: FormState):
+
+    ref = await fetch_reference_data()
+    state.cars = ref.get("cars", [])
+    state.variants = ref.get("variants", [])
+    state.components = ref.get("components", [])
+    state.outlets = ref.get("outlets", [])
+    state.executives = ref.get("executives", [])
+    state.accessory_map = {acc["id"]: acc for acc in ref.get("accessories", [])}
+    state.complaint_dealerships = ref.get("dealerships", [])
+
+
+async def load_complaint_data(state: FormState, complaint_code: str | None):
+    state.complaint_data = {}
+    if not complaint_code:
+        return
+
+    res = await api_get("/complaints/")
+    all_complaints = res.get("data", [])
+
+    state.complaint_data = next(
+        (c for c in all_complaints if c.get("complaint_code") == complaint_code),
+        None,
+    )
+
+
+def build_complaint_form(state: FormState):
+    with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
+        ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
+
+        build_complaint_dealership_section(state)
+        build_customer_section(state)
+        build_vehicle_section(state)
+        build_complaint_quotation_section(state)
+        build_complaint_booking_section(state)
+        build_complaint_remarks_section(state)
+        build_complaint_action_bar(state)
+
+
+async def hydrate_complaint_form(state: FormState):
+    if not state.complaint_data:
+        return
+
+    state.is_hydrating = True
+
+    try:
+        hydrate_dealership_section(state, complaint)
+
+        hydrate_customer_section(state, complaint)
+
+        hydrate_vehicle_section(state, complaint)
+
+        hydrate_quotation_section(state, complaint)
+
+        hydrate_booking_section(state, complaint)
+
+        hydrate_remarks_section(state, complaint)
+
+    finally:
+        state.is_hydrating = False
+
+
+async def initialize_complaint_form(state: FormState, complaint_code: str | None):
+    await load_complaint_reference_data(state)
+
+    await load_complaint_data(state, complaint_code)
+
+    build_complaint_form(state)
+    print("COMPLAINT DATA:", state.complaint_data)
+    await hydrate_complaint_form(state)
+
+    state.form_ready = True
+
+
+async def _cf_on_complainant_change(state: FormState, dlr: str):
+    if not dlr:
+        return
+
+    filtered = {"X": "X"}
+
+    for d in state.complaint_dealerships:
+        if d["name"] != dlr:
+            filtered[d["name"]] = d["name"]
+
+    state.complainee_dealership.options = filtered
+    state.complainee_dealership.update()
+
+    try:
+        outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+        state.complainant_showroom.options = {o: o for o in outs}
+        state.complainant_showroom.update()
+
+    except Exception as ex:
+        logger.error("Error fetching complainant outlets: %s", ex, exc_info=True)
+
+
+async def _cf_on_complainee_change(state: FormState, dlr: str):
+    if dlr == "X":
+        state.complainee_showroom.options = {"X": "X"}
+        state.complainee_showroom.update()
+        return
+
+    if not dlr:
+        return
+
+    try:
+        outs = await api_get(f"/complaints/dealerships/{dlr}/outlets")
+        opts = {"X": "X"}
+        for o in outs:
+            opts[o] = o
+
+        state.complainee_showroom.options = opts
+        state.complainee_showroom.update()
+
+    except Exception as ex:
+        logger.error("Error fetching complainee outlets: %s", ex, exc_info=True)
+
+
+def attach_complaint_handlers(state):
+    if getattr(state, "handlers_attached", False):
+        return
+
+    state.handlers_attached = True
+
+    # CUSTOMER
+    if getattr(state, "cust_pan", None):
+
+        def on_pan_change(e):
+            if state.is_hydrating:
+                return
+
+            if isinstance(e.args, str):
+                upper_val = e.args.upper()
+
+                if upper_val != state.cust_pan.value:
+                    state.cust_pan.set_value(upper_val)
+
+        state.cust_pan.on("update:model-value", on_pan_change)
+
+    # CAR
+    if getattr(state, "car_select", None):
+
+        async def handle_car_change(e):
+            if state.is_hydrating:
+                return
+
+            car_id = state.car_select.value
+
+            await _fs_on_car_change(car_id, state, preserve_variant=False)
+
+        state.car_select.on(
+            "update:model-value", lambda e: asyncio.create_task(handle_car_change(e))
+        )
+
+    # VARIANT
+    if getattr(state, "variant_select", None):
+
+        async def handle_variant_change(e):
+
+            if state.is_hydrating:
+                return
+
+            variant_id = state.variant_select.value
+            await _fs_on_variant_change(variant_id, state)
+
+        state.variant_select.on(
+            "update:model-value",
+            lambda e: asyncio.create_task(handle_variant_change(e)),
+        )
+
+    if getattr(state, "complainant_dealership", None):
+        state.complainant_dealership.on(
+            "update:model-value",
+            lambda e: asyncio.create_task(
+                _cf_on_complainant_change(state, state.complainant_dealership.value)
+            ),
+        )
+
+    if getattr(state, "complainee_dealership", None):
+        state.complainee_dealership.on(
+            "update:model-value",
+            lambda e: asyncio.create_task(
+                _cf_on_complainee_change(state, state.complainee_dealership.value)
+            ),
+        )
+
+
 @require_roles("admin", "audit_assistant")
 @ui.page("/complaint-form")
 async def complaint_form_page(
@@ -10588,43 +10256,9 @@ async def complaint_form_page(
 
     render_topbar(title)
 
-    ref = await fetch_reference_data()
-    state.cars = ref.get("cars", [])
-    state.variants = ref.get("variants", [])
-    state.components = ref.get("components", [])
-    state.outlets = ref.get("outlets", [])
-    state.executives = ref.get("executives", [])
-    state.accessory_map = {acc["id"]: acc for acc in ref.get("accessories", [])}
-    state.complaint_dealerships = ref.get("dealerships", [])
+    await initialize_complaint_form(state, complaint_code)
 
-    with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
-        ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
-
-        build_complaint_dealership_section(state)
-        build_customer_section(state)
-        build_vehicle_section(state)
-        build_complaint_quotation_section(state)
-        build_complaint_booking_section(state)
-        build_complaint_remarks_section(state)
-        build_complaint_action_bar(state)
-    # Load existing complaint data if complaint_code is provided
-    if complaint_code:
-        try:
-            # Since no single-item GET exists, we fetch all and filter
-            res = await api_get("/complaints/")
-            all_complaints = res.get("data", [])
-            target = next(
-                (
-                    c
-                    for c in all_complaints
-                    if c.get("complaint_code") == complaint_code
-                ),
-                None,
-            )
-            if target:
-                populate_from_complaint(state, target)
-        except APIError as e:
-            ui.notify(f"Failed to load complaint: {str(e)}", type="negative")
+    attach_complaint_handlers(state)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
