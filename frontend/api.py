@@ -1,8 +1,12 @@
+# frontend\api.py
 import httpx
 from typing import Any
 import os
 from nicegui import app
 from dotenv import load_dotenv
+import logging
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -128,17 +132,23 @@ async def api_request(method: str, path: str, **kwargs) -> Any:
 
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
+        try:
+            detail = exc.response.json().get("detail")
+        except Exception:
+            detail = exc.response.text
+
+        logger.error("API ERROR %s %s -> %s", method, path, detail)
 
         if status == 401:
-            raise UnauthorizedError("Session expired") from exc
+            raise UnauthorizedError(detail or "Session expired") from exc
 
         if status == 403:
-            raise ForbiddenError("Access denied") from exc
+            raise ForbiddenError(detail or "Access denied") from exc
 
         if status >= 500:
-            raise ServerError(f"Server error: {status}") from exc
+            raise ServerError(detail or f"Server error: {status}") from exc
 
-        raise APIError(f"HTTP Error: {status}") from exc
+        raise APIError(detail or f"HTTP Error: {status}") from exc
 
 
 # WRAPPER METHODS
