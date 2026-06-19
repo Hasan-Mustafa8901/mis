@@ -20,6 +20,21 @@ from db.models import (
 )
 
 
+# A Bug here not handling dealership id, this is surely bite you in the coming days
+def _get_start_date(session: Session, stage: str, outlet_id: int | None) -> date | None:
+    if not stage:
+        return
+
+    if stage == "booking":
+        stmt = select(func.min(Transaction.booking_date))
+    else:
+        stmt = select(func.min(Transaction.delivery_date))
+    if outlet_id:
+        stmt = stmt.where(Transaction.outlet_id == outlet_id)
+
+    return session.exec(stmt).first()
+
+
 def _apply_export_filters(
     stmt,
     start_date: Optional[date] = None,

@@ -15,7 +15,7 @@ from services.reports.monthly.service import MonthlyReportService
 
 from services.reports.daily.daily_report_generator import generate_daily_report
 from services.reports.monthly.generator import generate_monthly_report
-from services.reports.export_query import get_export_transactions_count
+from services.reports.export_query import get_export_transactions_count, _get_start_date
 from services.reports.export_service import ExportService
 from services.reports.daily.combined_report_service import CombinedReportService
 from services.reports.daily.combined_report_generator import CombinedReportGenerator
@@ -159,6 +159,7 @@ def trigger_mis_export(
     If month is provided (e.g. "2026-06"), dates are overridden for that calendar month.
     """
     print(
+        "PAYLOAD RECEIVED:",
         payload.start_date,
         payload.end_date,
         payload.month,
@@ -191,12 +192,10 @@ def trigger_mis_export(
                 status_code=400, detail="Export date range cannot exceed 1 year."
             )
 
-    # Default to last 30 days if no dates and no month selected to prevent huge scans
+    # Default to the earliest date of transaction present for the specific outlet
     if not payload.start_date and not payload.end_date:
-        from datetime import timedelta
-
         payload.end_date = date.today()
-        payload.start_date = payload.end_date - timedelta(days=30)
+        payload.start_date = _get_start_date(session, payload.stage, payload.outlet_id)
 
     # 3. Security scoping
     allowed_outlets = get_allowed_outlets(current_user)
