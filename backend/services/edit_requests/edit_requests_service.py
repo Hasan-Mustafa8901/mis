@@ -7,9 +7,7 @@ from services.discount.discount_service import DiscountService
 
 
 class EditRequestService:
-    # =========================
     # CONFIG: MONEY FIELDS
-    # =========================
     MONEY_FIELDS = {
         "ex showroom price",
         "insurance",
@@ -20,9 +18,7 @@ class EditRequestService:
         "hyundai genuine acc kit",
     }
 
-    # =========================
     # 1. CREATE REQUEST
-    # =========================
     @staticmethod
     def create_edit_request(
         session: Session,
@@ -50,14 +46,10 @@ class EditRequestService:
 
         return edit
 
-    # =========================
     # 2. APPROVE REQUEST
-    # =========================
     @staticmethod
     def approve_edit_request(
-        session: Session,
-        edit_request_id: int,
-        reviewed_by: int,
+        session: Session, edit_request_id: int, reviewed_by: int
     ) -> EditRequest:
 
         edit = session.get(EditRequest, edit_request_id)
@@ -90,15 +82,10 @@ class EditRequestService:
 
         return edit
 
-    # =========================
     # 3. REJECT REQUEST
-    # =========================
     @staticmethod
     def reject_edit_request(
-        session: Session,
-        edit_request_id: int,
-        reviewed_by: int,
-        rejection_reason: str,
+        session: Session, edit_request_id: int, reviewed_by: int, rejection_reason: str
     ) -> EditRequest:
 
         edit = session.get(EditRequest, edit_request_id)
@@ -119,9 +106,7 @@ class EditRequestService:
 
         return edit
 
-    # =========================
     # 4. APPLY EDIT LOGIC
-    # =========================
     @staticmethod
     def apply_edit(transaction: Transaction, edit: EditRequest):
 
@@ -145,16 +130,12 @@ class EditRequestService:
         actuals[field] = float(edit.new_value)
         transaction.actual_amounts = actuals
 
-    # =========================
     # 5. CHECK MONEY FIELD
-    # =========================
     @staticmethod
     def is_money_field(field: str) -> bool:
         return field.lower().strip() in EditRequestService.MONEY_FIELDS
 
-    # =========================
     # 6. RE-CALCULATE AUDIT
-    # =========================
     @staticmethod
     def recalculate_audit(session: Session, transaction: Transaction):
 
@@ -170,9 +151,7 @@ class EditRequestService:
         transaction.total_excess_discount = audit_result["excess_discount"]
         transaction.status = audit_result["status"]
 
-    # =========================
     # 7. SAFE TYPE CAST
-    # =========================
     @staticmethod
     def cast_value(value: Optional[str]):
         if value is None:
