@@ -13,7 +13,7 @@ test_daily_report.py
 test_report.py
 test_report_empty.py
 implementation_*.md
-logs
+*.log
 manual_data_recovery.md
 
 # JS

@@ -24,7 +24,7 @@ import calendar
 from nicegui import ui, app
 from utils import get_ist_today, disp_date, get_ist_now  # , date_for_input
 from dotenv import load_dotenv
-from logger.logger_setup import setup_logger
+from logger.logger_setup import setup_logger, logging
 
 import os
 from auth import (
@@ -51,6 +51,8 @@ from api import (
 )
 
 logger = setup_logger()
+print("LOGGER HANDLERS:", logger.handlers)
+print("ROOT HANDLERS:", logging.getLogger().handlers)
 
 # CONFIG & SHARED CONSTANTS
 load_dotenv()
