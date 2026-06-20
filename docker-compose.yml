@@ -25,6 +25,8 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    volumes:
+      - ./frontend/logs:/app/logs
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
