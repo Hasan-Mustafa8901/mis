@@ -109,8 +109,10 @@ class Employee(SQLModel, table=True):
     designation: Optional[str] = None  # e.g., "Sales Executive", "Team Leader"
     created_at: datetime = Field(default_factory=get_ist_now)
 
+    # Relationships
     outlet: Optional["Outlet"] = Relationship(back_populates="employees")
     transactions: List["Transaction"] = Relationship(back_populates="sales_executive")
+    complaints: List["Complaint"] = Relationship(back_populates="employee")
 
 
 ## User Table
@@ -413,7 +415,6 @@ class EditRequest(SQLModel, table=True):
     transaction: Optional["Transaction"] = Relationship()
 
 
-#  COMPLAINT MANAGEMENT
 # Add No of files rejected, accepted, incomplete.
 class DailyBooking(SQLModel, table=True):
     __table_args__ = (
@@ -552,10 +553,12 @@ class Remark(SQLModel, table=True):
     aa_complainee: Optional[str] = None
 
 
+# --- COMPLAINT MANAGEMENT ---
 class Complaint(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     complaint_code: str = Field(unique=True)
 
+    # Multi-reference Foreign Keys
     complainant_dealership_id: Optional[int] = Field(
         default=None, foreign_key="dealership.id"
     )
@@ -573,12 +576,15 @@ class Complaint(SQLModel, table=True):
 
     remark_complainee_aa: Optional[str] = None
     remark_admin: Optional[str] = None
-
     flag: Optional[ComplaintFlag] = None
 
+    # Foreign Keys (Type matched to integer primary keys)
+    employee_id: Optional[int] = Field(default=None, foreign_key="employee.id")
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     transaction_id: Optional[int] = Field(default=None, foreign_key="transaction.id")
-    remark_id: Optional[str] = Field(default=None, foreign_key="remark.id")
+    remark_id: Optional[int] = Field(
+        default=None, foreign_key="remark.id"
+    )  # Changed str -> int
 
     # --- Vehicle Details ---
     variant_id: Optional[int] = Field(default=None, foreign_key="variant.id")
@@ -586,7 +592,7 @@ class Complaint(SQLModel, table=True):
 
     # --- Quotation Details ---
     quotation_number: Optional[str] = None
-    quotation_date: Optional[str] = None
+    quotation_date: Optional[date] = None  # Changed str -> date
     tcs_amount: Optional[int] = 0
     total_offered_price: Optional[int] = 0
     net_offered_price: Optional[int] = 0
@@ -596,7 +602,7 @@ class Complaint(SQLModel, table=True):
     receipt_number: Optional[str] = None
     booking_amount: Optional[int] = 0
     mode_of_payment: Optional[str] = None
-    instrument_date: Optional[str] = None
+    instrument_date: Optional[date] = None  # Changed str -> date
     instrument_number: Optional[str] = None
     bank_name: Optional[str] = None
 
@@ -607,26 +613,40 @@ class Complaint(SQLModel, table=True):
     discount: Optional[float] = 0.0
     accessories_charged: Optional[int] = 0
 
-    # Plain-text overrides for complainee (used when "X" is selected)
+    # Plain-text overrides for complainee
     complainee_dealer_text: Optional[str] = None
     complainee_showroom_text: Optional[str] = None
 
+    # Unidirectional or basic reciprocal relationships
     customer: Optional["Customer"] = Relationship()
     transaction: Optional["Transaction"] = Relationship()
     remark: Optional["Remark"] = Relationship()
     variant: Optional["Variant"] = Relationship()
 
+    # Fixed: added back_populates matching Employee model
+    employee: Optional["Employee"] = Relationship(back_populates="complaints")
+
+    # Fixed: corrected foreign_keys list evaluation syntax
+    # Corrected relationships block
     complainant_dealership: Optional["Dealership"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainant_dealership_id]"}
+        sa_relationship_kwargs={
+            "foreign_keys": lambda: [Complaint.complainant_dealership_id]
+        }
     )
     complainant_outlet: Optional["Outlet"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainant_outlet_id]"}
+        sa_relationship_kwargs={
+            "foreign_keys": lambda: [Complaint.complainant_outlet_id]
+        }
     )
     complainee_dealership: Optional["Dealership"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainee_dealership_id]"}
+        sa_relationship_kwargs={
+            "foreign_keys": lambda: [Complaint.complainee_dealership_id]
+        }
     )
     complainee_outlet: Optional["Outlet"] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "[Complaint.complainee_outlet_id]"}
+        sa_relationship_kwargs={
+            "foreign_keys": lambda: [Complaint.complainee_outlet_id]
+        }
     )
 
 

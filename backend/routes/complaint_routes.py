@@ -125,12 +125,48 @@ def api_save_complaint(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    from datetime import date
     from rich import print
 
-    print("Payload:\n", payload)
+    # Safely extract nested dictionaries
+    quotation_details = payload.get("quotation_details") or {}
+    booking_details = payload.get("booking_details") or {}
+    remarks_page = payload.get("remarks_page") or {}
+    vehicle_details = payload.get("vehicle_details") or {}
+
+    # Parse nested string dates to native datetime.date objects
+    if isinstance(quotation_details.get("quotation_date"), str):
+        quotation_details["quotation_date"] = date.fromisoformat(
+            quotation_details["quotation_date"]
+        )
+
+    if isinstance(booking_details.get("instrument_date"), str):
+        booking_details["instrument_date"] = date.fromisoformat(
+            booking_details["instrument_date"]
+        )
+
+    if isinstance(vehicle_details.get("registration_date"), str):
+        vehicle_details["registration_date"] = date.fromisoformat(
+            vehicle_details["registration_date"]
+        )
+
+    # Handle 'date_of_complaint' (mapped from frontend's 'complaint_raised_date')
+    if isinstance(remarks_page.get("complaint_raised_date"), str):
+        remarks_page["complaint_raised_date"] = date.fromisoformat(
+            remarks_page["complaint_raised_date"]
+        )
+
+    # Also fallback-check the root layer just in case your service unpacks it early
+    if isinstance(payload.get("date_of_complaint"), str):
+        payload["date_of_complaint"] = date.fromisoformat(payload["date_of_complaint"])
+
+    print("Corrected nested date payload handled safely:\n", payload)
+
     success, res = complaint_service.save_complaint(session, payload, current_user)
     if not success:
+        print("ERROR:", res)
         raise HTTPException(status_code=400, detail=res)
+
     return {
         "message": "Complaint saved successfully",
         "code": res,

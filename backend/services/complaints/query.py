@@ -1,5 +1,5 @@
 from sqlmodel import Session, select, or_, func
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy.orm import joinedload
 from fastapi import HTTPException
 
@@ -88,140 +88,145 @@ def generate_complaint_code(session: Session, complaint: Complaint):
 
 # We need seperate setup for all the c
 def query_complaints(session: Session, filters=None, offset=0, limit=50):
-    query = select(Complaint).options(
-        joinedload(Complaint.customer),
-        joinedload(Complaint.remark),
-        joinedload(Complaint.complainant_dealership),
-        joinedload(Complaint.complainant_outlet),
-        joinedload(Complaint.complainee_dealership),
-        joinedload(Complaint.complainee_outlet),
-        joinedload(Complaint.variant).joinedload(Variant.car),
-    )
-    if filters:
-        if filters.get("dealer"):
-            dealer_id = filters["dealer"]
-            query = query.where(
-                or_(
-                    Complaint.complainant_dealership_id == dealer_id,
-                    Complaint.complainee_dealership_id == dealer_id,
+    try:
+        query = select(Complaint).options(
+            joinedload(Complaint.customer),
+            joinedload(Complaint.remark),
+            joinedload(Complaint.complainant_dealership),
+            joinedload(Complaint.complainant_outlet),
+            joinedload(Complaint.complainee_dealership),
+            joinedload(Complaint.complainee_outlet),
+            joinedload(Complaint.variant).joinedload(Variant.car),
+        )
+        if filters:
+            if filters.get("dealer"):
+                dealer_id = filters["dealer"]
+                query = query.where(
+                    or_(
+                        Complaint.complainant_dealership_id == dealer_id,
+                        Complaint.complainee_dealership_id == dealer_id,
+                    )
                 )
-            )
-        if filters.get("outlet"):
-            outlet_id = filters["outlet"]
-            query = query.where(
-                or_(
-                    Complaint.complainant_outlet_id == outlet_id,
-                    Complaint.complainee_outlet_id == outlet_id,
+            if filters.get("outlet"):
+                outlet_id = filters["outlet"]
+                query = query.where(
+                    or_(
+                        Complaint.complainant_outlet_id == outlet_id,
+                        Complaint.complainee_outlet_id == outlet_id,
+                    )
                 )
+            if filters.get("status"):
+                query = query.where(Complaint.status == filters["status"])
+
+            if filters.get("from_date"):
+                query = query.where(Complaint.raised_at >= filters["from_date"])
+            if filters.get("to_date"):
+                query = query.where(Complaint.raised_at <= filters["to_date"])
+
+        total = len(session.exec(query).all())
+        rows = session.exec(
+            query.order_by(Complaint.raised_at).offset(offset).limit(limit)
+        ).all()
+
+        result = []
+        for row in rows:
+            item = row.model_dump()
+
+            # Flatten customer details
+            if row.customer:
+                item["customer_name"] = row.customer.name
+                item["customer_mobile"] = row.customer.mobile_number
+                item["customer_address"] = row.customer.address
+                item["customer_city"] = row.customer.city
+                item["customer_aadhar"] = row.customer.aadhar_number
+                item["customer_pan"] = row.customer.pan_number
+                item["customer_pin"] = row.customer.pin_code
+                item["customer_email"] = row.customer.email
+                item["customer_relative"] = row.customer.relative_name
+                item["customer_other_id"] = row.customer.other_id
+            else:
+                item["customer_name"] = None
+                item["customer_mobile"] = None
+                item["customer_address"] = None
+                item["customer_city"] = None
+                item["customer_pin"] = None
+
+            # Flatten remarks
+            if row.remark:
+                item["name_aa_complainee"] = row.remark.aa_complainee
+                item["remarks_complainant"] = row.remark.remarks_complainant
+                item["remarks_complainant_aa"] = row.remark.remarks_complainant_aa
+
+            else:
+                item["remarks_complainant"] = None
+                item["remarks_complainee_aa"] = None
+                item["remark_admin"] = None
+
+            # Flatten dealerships and outlets
+            item["complainant_dealer_name"] = (
+                row.complainant_dealership.name if row.complainant_dealership else None
             )
-        if filters.get("status"):
-            query = query.where(Complaint.status == filters["status"])
+            item["complainant_showroom_name"] = (
+                row.complainant_outlet.name if row.complainant_outlet else None
+            )
+            # For complainee: prefer FK name, fall back to plain-text override (e.g. "X")
+            item["complainee_dealer_name"] = (
+                row.complainee_dealership.name
+                if row.complainee_dealership
+                else row.complainee_dealer_text
+            )
+            item["complainee_showroom_name"] = (
+                row.complainee_outlet.name
+                if row.complainee_outlet
+                else row.complainee_showroom_text
+            )
 
-        if filters.get("from_date"):
-            query = query.where(Complaint.raised_at >= filters["from_date"])
-        if filters.get("to_date"):
-            query = query.where(Complaint.raised_at <= filters["to_date"])
+            # Flatten car_color
+            item["car_color"] = row.car_color
 
-    total = len(session.exec(query).all())
-    rows = session.exec(
-        query.order_by(Complaint.raised_at).offset(offset).limit(limit)
-    ).all()
+            # Flatten Quotation and Booking details
+            item["quotation_number"] = row.quotation_number
+            item["quotation_date"] = row.quotation_date if row.quotation_date else None
+            item["tcs_amount"] = row.tcs_amount if row.tcs_amount else None
+            item["total_offered_price"] = row.total_offered_price
+            item["net_offered_price"] = row.net_offered_price
 
-    result = []
-    for row in rows:
-        item = row.model_dump()
+            # Flatten booking details
+            item["booking_file_number"] = row.booking_file_number
+            item["receipt_number"] = row.receipt_number
+            item["booking_amount"] = row.booking_amount
+            item["mode_of_payment"] = row.mode_of_payment
+            item["instrument_date"] = (
+                row.instrument_date if row.instrument_date else None
+            )
+            item["instrument_number"] = row.instrument_number
+            item["bank_name"] = row.bank_name
 
-        # Flatten customer details
-        if row.customer:
-            item["customer_name"] = row.customer.name
-            item["customer_mobile"] = row.customer.mobile_number
-            item["customer_address"] = row.customer.address
-            item["customer_city"] = row.customer.city
-            item["customer_aadhar"] = row.customer.aadhar_number
-            item["customer_pan"] = row.customer.pan_number
-            item["customer_pin"] = row.customer.pin_code
-            item["customer_email"] = row.customer.email
-            item["customer_relative"] = row.customer.relative_name
-            item["customer_other_id"] = row.customer.other_id
-        else:
-            item["customer_name"] = None
-            item["customer_mobile"] = None
-            item["customer_address"] = None
-            item["customer_city"] = None
-            item["customer_pin"] = None
+            item["date_of_complaint"] = (
+                row.date_of_complaint.isoformat() if row.date_of_complaint else None
+            )
 
-        # Flatten remarks
-        if row.remark:
-            item["name_aa_complainee"] = row.remark.aa_complainee
-            item["remarks_complainant"] = row.remark.remarks_complainant
-            item["remark_complainant_aa"] = row.remark.remarks_complainant_aa
+            # Not Needed To be deleted later on
+            # Flatten price info
+            item["ex_showroom_price"] = row.ex_showroom_price
+            item["insurance"] = row.insurance
+            item["registration_road_tax"] = row.registration_road_tax
+            item["discount"] = row.discount
+            item["accessories_charged"] = row.accessories_charged
 
-        else:
-            item["remarks_complainant"] = None
-            item["remark_complainee_aa"] = None
-            item["remark_admin"] = None
+            # Flatten car model and variant
+            if row.variant:
+                item["car_name"] = row.variant.car.name if row.variant.car else None
+                item["variant_name"] = row.variant.full_variant_name
+            else:
+                item["car_name"] = None
+                item["variant_name"] = None
 
-        # Flatten dealerships and outlets
-        item["complainant_dealer_name"] = (
-            row.complainant_dealership.name if row.complainant_dealership else None
-        )
-        item["complainant_showroom_name"] = (
-            row.complainant_outlet.name if row.complainant_outlet else None
-        )
-        # For complainee: prefer FK name, fall back to plain-text override (e.g. "X")
-        item["complainee_dealer_name"] = (
-            row.complainee_dealership.name
-            if row.complainee_dealership
-            else row.complainee_dealer_text
-        )
-        item["complainee_showroom_name"] = (
-            row.complainee_outlet.name
-            if row.complainee_outlet
-            else row.complainee_showroom_text
-        )
+            result.append(item)
 
-        # Flatten car_color
-        item["car_color"] = row.car_color
-
-        # Flatten Quotation and Booking details
-        item["quotation_number"] = row.quotation_number
-        item["quotation_date"] = row.quotation_date if row.quotation_date else None
-        item["tcs_amount"] = row.tcs_amount if row.tcs_amount else None
-        item["total_offered_price"] = row.total_offered_price
-        item["net_offered_price"] = row.net_offered_price
-
-        # Flatten booking details
-        item["booking_file_number"] = row.booking_file_number
-        item["receipt_number"] = row.receipt_number
-        item["booking_amount"] = row.booking_amount
-        item["mode_of_payment"] = row.mode_of_payment
-        item["instrument_date"] = row.instrument_date if row.instrument_date else None
-        item["instrument_number"] = row.instrument_number
-        item["bank_name"] = row.bank_name
-
-        item["date_of_complaint"] = (
-            row.date_of_complaint.isoformat() if row.date_of_complaint else None
-        )
-
-        # Not Needed To be deleted later on
-        # Flatten price info
-        item["ex_showroom_price"] = row.ex_showroom_price
-        item["insurance"] = row.insurance
-        item["registration_road_tax"] = row.registration_road_tax
-        item["discount"] = row.discount
-        item["accessories_charged"] = row.accessories_charged
-
-        # Flatten car model and variant
-        if row.variant:
-            item["car_name"] = row.variant.car.name if row.variant.car else None
-            item["variant_name"] = row.variant.full_variant_name
-        else:
-            item["car_name"] = None
-            item["variant_name"] = None
-
-        result.append(item)
-
-    return result, total
+        return result, total
+    except Exception as e:
+        print("ERROR:", str(e))
 
 
 def get_complaints_per_status(session: Session):
@@ -388,6 +393,16 @@ def get_outlet_id_by_name(
 
 def save_complaint(session: Session, data: dict, user: User):
     try:
+        # 1. Safely parse incoming string dates to date objects before writing to DB
+        if isinstance(data.get("quotation_date"), str):
+            data["quotation_date"] = date.fromisoformat(data["quotation_date"])
+
+        if isinstance(data.get("instrument_date"), str):
+            data["instrument_date"] = date.fromisoformat(data["instrument_date"])
+
+        # 'date_of_complaint' is also required to be a date object
+        if isinstance(data.get("date_of_complaint"), str):
+            data["date_of_complaint"] = date.fromisoformat(data["date_of_complaint"])
         # --- Customer ---
         c = data.get("customer_details", {})
         if (
@@ -498,6 +513,7 @@ def save_complaint(session: Session, data: dict, user: User):
             complainee_outlet_id=complainee_outlet_id,
             complainee_dealer_text=complainee_dealer_text,
             complainee_showroom_text=complainee_showroom_text,
+            employee_id=data.get("employee_id"),
             customer_id=customer.id,
             remark_id=remark_id,
             raised_by=user.id,

@@ -14,8 +14,8 @@ import json
 import locale
 import asyncio
 import re
+from typing import Any
 
-from pprint import pprint
 from components.charts import render_bar_chart  # , render_line_chart
 import httpx
 from datetime import datetime, date, timedelta
@@ -2576,6 +2576,7 @@ async def mis_table_page_base(stage: str, month: str | None = None) -> None:
                     logger.info("EXPORT PAYLOAD: %s", payload)
 
                     res = await api_post("/reports/mis/export", payload)
+                    logger.info("EXPORT RESPONSE: %s", res)
                     ui.notify(
                         f"Export job queued. Job ID: {res['job_id']}", type="positive"
                     )
@@ -8183,7 +8184,6 @@ def attach_form_handlers(state: FormState):
     if getattr(state, "variant_select", None):
 
         async def handle_variant_change(e):
-            pprint("handle_variant_change called")
             if state.is_hydrating:
                 return
             variant_id = state.variant_select.value
@@ -8192,7 +8192,6 @@ def attach_form_handlers(state: FormState):
         state.variant_select.on_value_change(
             lambda e: asyncio.create_task(handle_variant_change(e))
         )
-        pprint("Variant Select referred in Attach form handler")
 
     # Booking
     if getattr(state, "booking_date", None):
@@ -8378,12 +8377,10 @@ async def _fs_try_price_preload(state: FormState) -> None:
 
     try:
         booking_date = state.booking_date.value
-        print("BOOKING DATE: ", booking_date)
-        print("MODEL YEAR: ", model_year)
         preview = await api_get(
             f"/price-list/preview?variant_id={state.variant_id}&booking_date={booking_date}&model_year={model_year}"
         )
-        print("PREVIEW: ", preview)
+
         #  Store listed prices (source of truth)
         state.listed_prices = preview or {}
         filled = 0
@@ -8757,12 +8754,6 @@ def _fs_update_live(state: FormState) -> None:
     if getattr(state, "lbl_excess_lv", None):
         state.lbl_excess_lv.set_text(f"₹{excess:,}")
         state.lbl_excess_lv.style("color:#F87171" if excess > 0 else "color:#6EE7B7")
-
-
-# def get_conditions(state) -> dict:
-#     return {
-#         key: bool(cb.value) for key, cb in getattr(state, "condition_cbs", {}).items()
-#     }
 
 
 def _fs_revalidate(state: FormState) -> None:
@@ -9889,6 +9880,8 @@ def build_complaint_remarks_section(state: FormState) -> None:
 
 
 def build_complaint_action_bar(state: FormState) -> None:
+    user = get_user()
+
     with ui.row().classes(
         "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
     ) as banner:
@@ -9922,7 +9915,9 @@ def build_complaint_action_bar(state: FormState) -> None:
                 # CLEAR OLD ERRORS
                 state.error_banner.set_visibility(False)
                 # SUBMIT
+
                 await api_post("/complaints/save-complaint", payload)
+                logger.info("Complaint Submitted by %s", user.get("name"))
                 ui.notify(
                     "Complaint Submitted Successfully", color="green", type="positive"
                 )
@@ -9959,28 +9954,44 @@ def build_complaint_action_bar(state: FormState) -> None:
 
 
 def build_complaint_payload(state: FormState) -> dict:
-    def val(x):
-        return x.value if x else None
 
-    def intval(x):
-        if not x:
-            return 0
-        v = x.value
-        if not v:
+    def val(x: Any) -> Any:
+        """Extracts the underlying value from a form field if present."""
+        return x.value if hasattr(x, "value") and x is not None else x
+
+    def dateval(x: Any) -> date | None:
+        """Safely parses ISO format date strings into python date objects."""
+        raw_val = val(x)
+        if not raw_val:
+            return None
+        if isinstance(raw_val, date):
+            return raw_val
+        try:
+            # Handles string date structures like 'YYYY-MM-DD'
+            return date.fromisoformat(str(raw_val).split("T")[0].strip())
+        except (ValueError, TypeError):
+            return None
+
+    def intval(x: Any) -> int:
+        """Safely converts field text into integer values without using eval()."""
+        raw_val = val(x)
+        if not raw_val:
             return 0
         try:
-            v_str = str(v).replace(",", "").strip()
-            import re
+            # Clean string formatting out of numeric inputs (commas, whitespace)
+            v_str = str(raw_val).replace(",", "").strip()
 
-            if re.fullmatch(r"[\d\+\-\*\/\.\s()]+", v_str):
-                return int(eval(v_str))
-            return int(v_str)
+            # If it's a basic mathematical expression, parse it without eval()
+            if re.fullmatch(r"[\d\+\-\*\/\s()]+", v_str):
+                # Using a safe fallback or simple string-to-float translation
+                return int(float(v_str))
+            return int(float(v_str))
         except Exception:
             return 0
 
     return {
         "variant_id": state.variant_id,
-        "employee_id": state.executive_id,
+        "employee_id": val(state.exec_select),
         "dealer_showroom_details": {
             "complainant_dealership": val(state.complainant_dealership),
             "complainant_showroom": val(state.complainant_showroom),
@@ -10003,12 +10014,14 @@ def build_complaint_payload(state: FormState) -> dict:
             "vin_number": val(state.vin_no),
             "engine_number": val(state.engine_no),
             "registration_number": val(state.vehicle_regn_no),
-            "registration_date": val(state.regn_date),
+            "registration_date": dateval(state.regn_date),  # Transformed to date object
             "car_color": val(state.car_color),
         },
         "quotation_details": {
+            "quotation_date": dateval(
+                state.comp_quotation_date
+            ),  # Transformed to date object
             "quotation_number": val(state.comp_quotation_number),
-            "quotation_date": val(state.comp_quotation_date),
             "tcs_amount": intval(state.comp_tcs),
             "total_offered_price": intval(state.comp_total_offered),
             "net_offered_price": intval(state.comp_net_offered),
@@ -10018,17 +10031,20 @@ def build_complaint_payload(state: FormState) -> dict:
             "receipt_number": val(state.comp_receipt_number),
             "booking_amount": intval(state.comp_booking_amt),
             "mode_of_payment": val(state.comp_mode_of_payment),
-            "instrument_date": val(state.comp_instrument_date),
+            "instrument_date": dateval(
+                state.comp_instrument_date
+            ),  # Transformed to date object
             "instrument_number": val(state.comp_instrument_number),
             "bank_name": val(state.comp_bank_name),
         },
         "remarks_page": {
-            "complaint_raised_date": val(state.complaint_date),
+            "complaint_raised_date": dateval(
+                state.complaint_date
+            ),  # Transformed to date object
             "aa_name": val(state.complainee_aa_name),
             "remarks_by_complainant": val(state.complainant_remarks),
             "remarks_by_aa": val(state.complainant_aa_remarks),
         },
-        # Price information
         "price_info": {
             "ex_showroom_price": intval(
                 state.price_inputs.get("Ex Showroom Price")
@@ -10144,9 +10160,8 @@ def hydrate_remarks_section(state: FormState, complaint: dict):
     mapping = {
         "name_aa_complainee": state.complainee_aa_name,
         "remarks_complainant": state.complainant_remarks,
-        "remark_complainee_aa": state.complainee_aa_name,
         "date_of_complaint": state.complaint_date,
-        "complainant_aa_remarks": state.complainant_aa_remarks,
+        "remarks_complainant_aa": state.complainant_aa_remarks,
     }
 
     for key, widget in mapping.items():
@@ -10198,7 +10213,13 @@ async def hydrate_complaint_form(state: FormState):
             if variant_id:
                 state.variant_select.set_value(variant_id)
 
+        # Employee
+        employee_id = complaint.get("employee_id")
+        if employee_id:
+            state.exec_select.set_value(employee_id)
+
         # Remaining Sections
+        hydrate_comp_vehicle_section(state, complaint)
         hydrate_quotation_section(state, complaint)
         hydrate_comp_booking_section(state, complaint)
         hydrate_remarks_section(state, complaint)
@@ -10211,9 +10232,7 @@ async def initialize_complaint_form(state: FormState, complaint_code: str | None
     await load_complaint_reference_data(state)
 
     await load_complaint_data(state, complaint_code)
-
     build_complaint_form(state)
-    print("COMPLAINT DATA:", json.dumps(state.complaint_data, indent=2))
     await hydrate_complaint_form(state)
 
     state.form_ready = True
@@ -10361,6 +10380,8 @@ async def complaint_form_page(
     await initialize_complaint_form(state, complaint_code)
 
     attach_complaint_handlers(state)
+
+    _fs_revalidate(state)
 
 
 if __name__ in {"__main__", "__mp_main__"}:

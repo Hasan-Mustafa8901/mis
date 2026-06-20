@@ -2,6 +2,8 @@
 import httpx
 from typing import Any
 import os
+import json
+from datetime import datetime, date
 from nicegui import app
 from dotenv import load_dotenv
 import logging
@@ -11,6 +13,14 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 BASE_URL = os.getenv("API_URL", "http://localhost:8000")
+
+
+# Safe JSON helper
+def json_serial(obj):
+    """Fallback serializer for dates."""
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 # EXCEPTIONS
@@ -157,7 +167,13 @@ async def api_get(path: str, params: dict | None = None):
 
 
 async def api_post(path: str, payload: dict):
-    return await api_request("POST", path, json=payload)
+    safe_json_str = json.dumps(payload, default=json_serial)
+    return await api_request(
+        "POST",
+        path,
+        content=safe_json_str,
+        headers={"Content-Type": "application/json"},
+    )
 
 
 async def api_put(path: str, payload: dict):
