@@ -14,7 +14,7 @@ def setup_logger():
     LOG_DIR.mkdir(exist_ok=True)
 
     file_handler = RotatingFileHandler(
-        LOG_DIR / "logs/frontend.log",
+        LOG_DIR / "frontend.log",
         maxBytes=10 * 1024 * 1024,  # 10 MB
         backupCount=5,
         encoding="utf-8",
