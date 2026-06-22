@@ -1,14 +1,20 @@
 # frontend\logger\logger_setup.py
 import logging
+import os
+from dotenv import load_dotenv
 
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-print(Path.cwd())
+load_dotenv()
+env = os.getenv("ENV")
+DEV_LOG_PATH = r"C:\Users\hasan\Asija\mis"
 
 
 def setup_logger():
     BASE_DIR = Path(__file__).resolve().parent.parent
+    if env == "dev":
+        BASE_DIR = Path(DEV_LOG_PATH)
     LOG_DIR = BASE_DIR / "logs"
 
     LOG_DIR.mkdir(exist_ok=True)
