@@ -2827,7 +2827,7 @@ def render_complaints_table(complaints):
             "field": "complaint_code",
             "headerName": "Complaint Code",
             "pinned": "left",
-            "width": 130,
+            "width": 200,
             "checkboxSelection": True,
         },
         {
@@ -2849,80 +2849,80 @@ def render_complaints_table(complaints):
         # Customer Details
         {"field": "customer_name", "headerName": "Customer Name", "width": 160},
         {"field": "customer_mobile", "headerName": "Mobile", "width": 130},
-        {"field": "customer_address", "headerName": "Address", "width": 180},
-        {"field": "customer_city", "headerName": "City", "width": 120},
-        {"field": "customer_pin", "headerName": "PIN", "width": 100},
-        {"field": "customer_aadhar", "headerName": "Aadhar", "width": 150},
-        {"field": "customer_pan", "headerName": "PAN", "width": 130},
+        # {"field": "customer_address", "headerName": "Address", "width": 180},
+        # {"field": "customer_city", "headerName": "City", "width": 120},
+        # {"field": "customer_pin", "headerName": "PIN", "width": 100},
+        # {"field": "customer_aadhar", "headerName": "Aadhar", "width": 150},
+        # {"field": "customer_pan", "headerName": "PAN", "width": 130},
         # Vehicle
         {"field": "car_name", "headerName": "Car Model", "width": 150},
         {"field": "variant_name", "headerName": "Variant", "width": 200},
         # Dealership Info
         {
-            "field": "complainant_dealer_name",
+            "field": "complainant_dealership",
             "headerName": "Complainant Dealer",
             "width": 180,
         },
         {
-            "field": "complainant_showroom_name",
+            "field": "complainant_outlet",
             "headerName": "Complainant Showroom",
             "width": 180,
         },
         {
-            "field": "complainee_dealer_name",
+            "field": "complainee_dealership",
             "headerName": "Complainee Dealer",
             "width": 180,
         },
         {
-            "field": "complainee_showroom_name",
+            "field": "complainee_outlet",
             "headerName": "Complainee Showroom",
             "width": 180,
         },
-        # Quotation
-        {"field": "quotation_number", "headerName": "Quotation No", "width": 150},
-        {
-            "field": "quotation_date",
-            "headerName": "Quotation Date",
-            "width": 140,
-            ":valueFormatter": "params.value ? new Date(params.value).toLocaleDateString() : '—'",
-        },
-        {
-            "field": "tcs_amount",
-            "headerName": "TCS",
-            "width": 120,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        {
-            "field": "total_offered_price",
-            "headerName": "Total Offered",
-            "width": 140,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        {
-            "field": "net_offered_price",
-            "headerName": "Net Offered",
-            "width": 140,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        # Booking
-        {"field": "booking_file_number", "headerName": "File No", "width": 140},
-        {"field": "receipt_number", "headerName": "Receipt No", "width": 140},
-        {
-            "field": "booking_amount",
-            "headerName": "Booking Amount",
-            "width": 140,
-            ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
-        },
-        {"field": "mode_of_payment", "headerName": "Payment Mode", "width": 130},
-        {
-            "field": "instrument_date",
-            "headerName": "Instrument Date",
-            "width": 140,
-            ":valueFormatter": "params.value ? new Date(params.value).toLocaleDateString() : '—'",
-        },
-        {"field": "instrument_number", "headerName": "Instrument No", "width": 150},
-        {"field": "bank_name", "headerName": "Bank", "width": 150},
-        # Pricing
+        # # Quotation
+        # {"field": "quotation_number", "headerName": "Quotation No", "width": 150},
+        # {
+        #     "field": "quotation_date",
+        #     "headerName": "Quotation Date",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value ? new Date(params.value).toLocaleDateString() : '—'",
+        # },
+        # {
+        #     "field": "tcs_amount",
+        #     "headerName": "TCS",
+        #     "width": 120,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # {
+        #     "field": "total_offered_price",
+        #     "headerName": "Total Offered",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # {
+        #     "field": "net_offered_price",
+        #     "headerName": "Net Offered",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # # Booking
+        # {"field": "booking_file_number", "headerName": "File No", "width": 140},
+        # {"field": "receipt_number", "headerName": "Receipt No", "width": 140},
+        # {
+        #     "field": "booking_amount",
+        #     "headerName": "Booking Amount",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
+        # },
+        # {"field": "mode_of_payment", "headerName": "Payment Mode", "width": 130},
+        # {
+        #     "field": "instrument_date",
+        #     "headerName": "Instrument Date",
+        #     "width": 140,
+        #     ":valueFormatter": "params.value ? new Date(params.value).toLocaleDateString() : '—'",
+        # },
+        # {"field": "instrument_number", "headerName": "Instrument No", "width": 150},
+        # {"field": "bank_name", "headerName": "Bank", "width": 150},
+        # # Pricing
         # {
         #     "field": "ex_showroom_price",
         #     "headerName": "Ex-Showroom",
@@ -2953,14 +2953,16 @@ def render_complaints_table(complaints):
         #     "width": 140,
         #     ":valueFormatter": "params.value != null ? Math.floor(params.value).toLocaleString() : '—'",
         # },
-        # Remarks
-        {
-            "field": "remarks_complainant",
-            "headerName": "Complainant Remarks",
-            "width": 220,
-        },
-        {"field": "remark_complainee_aa", "headerName": "AA Remarks", "width": 220},
-        {"field": "remark_admin", "headerName": "Admin Remarks", "width": 220},
+        # # Remarks
+        # {
+        #     "field": "remarks_complainant",
+        #     "headerName": "Complainant Remarks",
+        #     "width": 220,
+        # },
+        # {"field": "remark_complainee_aa", "headerName": "AA Remarks", "width": 220},
+        # {"field": "remark_admin", "headerName": "Admin Remarks", "width": 220},
+        {"field": "raised_by", "headerName": "Raised By", "width": 100},
+        {"field": "raised_at", "headerName": "Raised At", "width": 120},
     ]
 
     grid = (
@@ -2994,9 +2996,9 @@ def render_complaints_table(complaints):
 
     async def on_cell_clicked(e):
         row = e.args.get("data", {})
-        complaint_code = row.get("complaint_code")
-        if complaint_code:
-            ui.navigate.to(f"/complaint-form?complaint_code={complaint_code}")
+        complaint_id = row.get("id")
+        if complaint_id:
+            ui.navigate.to(f"/complaint-form?complaint_id={complaint_id}")
 
     grid.on("cellClicked", on_cell_clicked)
 
@@ -3014,8 +3016,8 @@ async def complaints_ctrl_page():
     complaints: list[dict] = []
     total_entries: int = 0
     try:
-        response: dict = await api_get("/complaints/")
-        complaints: list[dict] = response.get("data", [])
+        response: dict = await api_get("/complaints/table")
+        complaints: list[dict] = response.get("rows", [])
         total_entries = response.get("total", 0)
     except UnauthorizedError:
         await logout_user()
@@ -10077,20 +10079,16 @@ async def load_complaint_reference_data(state: FormState):
     state.complaint_dealerships = ref.get("dealerships", [])
 
 
-async def load_complaint_data(state: FormState, complaint_code: str | None):
+async def load_complaint_data(state: FormState, complaint_id: int | None):
     state.complaint_data = {}
-    if not complaint_code:
+    if not complaint_id:
         return
 
-    res = await api_get("/complaints/")
-    all_complaints = res.get("data", [])
+    state.complaint_data = await api_get(f"/complaints/{complaint_id}")
 
-    state.complaint_data = next(
-        (c for c in all_complaints if c.get("complaint_code") == complaint_code),
-        None,
+    state.complaint_history = (
+        state.complaint_data.get("history") if state.complaint_data else []
     )
-
-    state.complaint_history = state.complaint_data.get("histort") or []
 
 
 def build_complaint_form(state: FormState):
@@ -10235,10 +10233,10 @@ async def hydrate_complaint_form(state: FormState):
         state.is_hydrating = False
 
 
-async def initialize_complaint_form(state: FormState, complaint_code: str | None):
+async def initialize_complaint_form(state: FormState, complaint_id: int | None):
     await load_complaint_reference_data(state)
 
-    await load_complaint_data(state, complaint_code)
+    await load_complaint_data(state, complaint_id)
     build_complaint_form(state)
     await hydrate_complaint_form(state)
 
@@ -10362,6 +10360,7 @@ def attach_complaint_handlers(state):
 @ui.page("/complaint-form")
 async def complaint_form_page(
     transaction_id: int | None = None,
+    complaint_id: int | None = None,
     complaint_code: str | None = None,
 ) -> None:
 
@@ -10395,7 +10394,7 @@ async def complaint_form_page(
 
     render_topbar(title)
 
-    await initialize_complaint_form(state, complaint_code)
+    await initialize_complaint_form(state, complaint_id)
 
     attach_complaint_handlers(state)
 

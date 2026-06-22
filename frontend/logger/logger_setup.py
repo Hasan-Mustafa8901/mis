@@ -7,7 +7,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 load_dotenv()
-env = os.getenv("ENV")
+env = os.getenv("ENV", None)
 DEV_LOG_PATH = r"C:\Users\hasan\Asija\mis"
 
 

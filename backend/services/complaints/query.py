@@ -86,6 +86,165 @@ def generate_complaint_code(session: Session, complaint: Complaint):
     return code, serial_no
 
 
+def add_history_event(complaint: Complaint, actor: str, description: str) -> None:
+
+    history = list(complaint.history or [])
+    print("HISTORY BEFORE APPEND:", len(complaint.history or []))
+
+    history.append(
+        {
+            "actor": actor,
+            "timestamp": get_ist_now().strftime("%d %b %I:%M %p"),
+            "description": description,
+        }
+    )
+
+    complaint.history = history
+    print("HISTORY AFTER APPEND:", len(history))
+
+
+def serialize_complaint_rows(c: Complaint):
+    complaint_row = {
+        "id": c.id,
+        "complaint_code": c.complaint_code,
+        "status": c.status,
+        "customer_name": c.customer.name if c.customer else None,
+        "customer_mobile": c.customer.mobile_number if c.customer else None,
+        "date_of_complaint": c.date_of_complaint.isoformat()
+        if c.date_of_complaint
+        else None,
+        "car_name": c.variant.car.name if c.variant and c.variant.car else None,
+        "variant_name": c.variant.full_variant_name if c.variant else None,
+        "complainant_dealership": (
+            c.complainant_dealership.name if c.complainant_dealership else None
+        ),
+        "complainant_outlet": (
+            c.complainant_outlet.name if c.complainant_outlet else None
+        ),
+        "complainee_dealership": (
+            c.complainee_dealership.name if c.complainee_dealership else None
+        ),
+        "complainee_outlet": (
+            c.complainee_outlet.name if c.complainee_outlet else None
+        ),
+        "raised_by": c.raised_by_user.name if c.raised_by else None,
+        "raised_at": (c.raised_at.isoformat() if c.raised_at else None),
+    }
+    return complaint_row
+
+
+def get_complaint_reconstruction(session: Session, complaint_id: int) -> dict:
+    complaint = session.exec(
+        select(Complaint)
+        .where(Complaint.id == complaint_id)
+        .options(
+            joinedload(Complaint.customer),
+            joinedload(Complaint.remark),
+            joinedload(Complaint.complainant_dealership),
+            joinedload(Complaint.complainant_outlet),
+            joinedload(Complaint.complainee_dealership),
+            joinedload(Complaint.complainee_outlet),
+            joinedload(Complaint.variant).joinedload(Variant.car),
+        )
+    ).first()
+
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    data = complaint.model_dump()
+
+    # CUSTOMER
+    if complaint.customer:
+        data.update(
+            {
+                "customer_name": complaint.customer.name,
+                "customer_mobile": complaint.customer.mobile_number,
+                "customer_address": complaint.customer.address,
+                "customer_city": complaint.customer.city,
+                "customer_aadhar": complaint.customer.aadhar_number,
+                "customer_pan": complaint.customer.pan_number,
+                "customer_pin": complaint.customer.pin_code,
+                "customer_email": complaint.customer.email,
+                "customer_relative": complaint.customer.relative_name,
+                "customer_other_id": complaint.customer.other_id,
+            }
+        )
+
+    # REMARKS
+    if complaint.remark:
+        data.update(
+            {
+                "name_aa_complainee": complaint.remark.aa_complainee,
+                "remarks_complainant": (complaint.remark.remarks_complainant),
+                "remarks_complainant_aa": (complaint.remark.remarks_complainant_aa),
+            }
+        )
+
+    # DEALERSHIPS
+    data.update(
+        {
+            "complainant_dealer_name": (
+                complaint.complainant_dealership.name
+                if complaint.complainant_dealership
+                else None
+            ),
+            "complainant_showroom_name": (
+                complaint.complainant_outlet.name
+                if complaint.complainant_outlet
+                else None
+            ),
+            "complainee_dealer_name": (
+                complaint.complainee_dealership.name
+                if complaint.complainee_dealership
+                else complaint.complainee_dealer_text
+            ),
+            "complainee_showroom_name": (
+                complaint.complainee_outlet.name
+                if complaint.complainee_outlet
+                else complaint.complainee_showroom_text
+            ),
+        }
+    )
+
+    # VARIANT / CAR
+    if complaint.variant:
+        data.update(
+            {
+                "car_name": (
+                    complaint.variant.car.name if complaint.variant.car else None
+                ),
+                "variant_name": (complaint.variant.full_variant_name),
+            }
+        )
+
+    # DATES
+    data["date_of_complaint"] = (
+        complaint.date_of_complaint.isoformat() if complaint.date_of_complaint else None
+    )
+
+    data["quotation_date"] = (
+        complaint.quotation_date.isoformat() if complaint.quotation_date else None
+    )
+
+    data["instrument_date"] = (
+        complaint.instrument_date.isoformat() if complaint.instrument_date else None
+    )
+
+    # HISTORY
+
+    data["history"] = complaint.history
+    data["raised_at"] = complaint.raised_at.isoformat() if complaint.raised_at else None
+    data["updated_at"] = (
+        complaint.updated_at.isoformat()
+        if getattr(complaint, "updated_at", None)
+        else None
+    )
+    data["status"] = complaint.status
+    data["flag"] = complaint.flag
+
+    return data
+
+
 # We need seperate setup for all the c
 def query_complaints(session: Session, filters=None, offset=0, limit=50):
     try:
@@ -266,7 +425,7 @@ def get_complaints_per_status(session: Session):
 
 
 def update_complaint_status(
-    session: Session, complaint_code: str, status: ComplaintStatus
+    session: Session, complaint_code: str, status: ComplaintStatus, current_user: User
 ):
     complaint = session.exec(
         select(Complaint).where(Complaint.complaint_code == complaint_code)
@@ -274,6 +433,12 @@ def update_complaint_status(
 
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
+
+    add_history_event(
+        complaint,
+        current_user.name,
+        description=f"Status updated to {ComplaintStatus(status).title()}",
+    )
 
     complaint.status = status
     session.add(complaint)
@@ -283,7 +448,9 @@ def update_complaint_status(
     return complaint
 
 
-def update_complaint_flag(session: Session, complaint_code: str, flag: ComplaintFlag):
+def update_complaint_flag(
+    session: Session, complaint_code: str, flag: ComplaintFlag, current_user: User
+):
     complaint = session.exec(
         select(Complaint).where(Complaint.complaint_code == complaint_code)
     ).first()
@@ -291,8 +458,18 @@ def update_complaint_flag(session: Session, complaint_code: str, flag: Complaint
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
 
+    add_history_event(
+        complaint,
+        current_user.name,
+        description=f"Flag Updated to {ComplaintFlag(flag).title()}",
+    )
+
     complaint.flag = flag
     session.add(complaint)
+
+    print(
+        f"UPDATE COMPLAINT FLAG CALLED\nLENGTH OF UPDATED HISTORY LIST: {len(complaint.history)}"
+    )
     session.commit()
     session.refresh(complaint)
 
@@ -331,6 +508,8 @@ def submit_remarks(
             complaint.remark_complainee_aa += f"\\n{new_entry}"
     else:
         return False
+
+    add_history_event(complaint, user.name, description=remark)
 
     session.add(complaint)
     session.commit()
@@ -549,6 +728,9 @@ def save_complaint(session: Session, data: dict, user: User):
 
         code, serial = generate_complaint_code(session, complaint)
         complaint.complaint_code = code
+
+        description = f"Remarks by Complainant: {r.get('remarks_by_complainant')}\nRemarks by Stationed AA: {r.get('remarks_by_aa')}"
+        add_history_event(complaint, user.name, description=description)
 
         session.add(complaint)
         session.commit()

@@ -1,11 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session
-from typing import Optional, Dict, Any
+from sqlmodel import Session, select
+from sqlalchemy.orm import joinedload
+from sqlalchemy import or_, func, desc
+from typing import Dict, Any
 from datetime import date
 from pydantic import BaseModel
 from db.session import get_session
-from db.models import User
+from db.models import User, Complaint, Variant
 from services.complaints import query as complaint_service
 from services.auth.dependencies import get_current_user
 from schemas.complaints import UpdateStatusRequest, UpdateFlagRequest, RemarkPayload
@@ -23,31 +25,88 @@ def get_outlets_by_dealership(name: str, session: Session = Depends(get_session)
     return complaint_service.get_outlets_by_dealership(session, name)
 
 
-@router.get("/")
-def get_complaints(
-    dealer: Optional[int] = None,
-    outlet: Optional[int] = None,
-    status: Optional[str] = None,
-    from_date: Optional[date] = None,
-    to_date: Optional[date] = None,
-    offset: int = 0,
-    limit: int = 50,
-    session: Session = Depends(get_session),
-):
-    filters = {}
-    if dealer:
-        filters["dealer"] = dealer
-    if outlet:
-        filters["outlet"] = outlet
-    if status:
-        filters["status"] = status
-    if from_date:
-        filters["from_date"] = from_date
-    if to_date:
-        filters["to_date"] = to_date
+@router.get("/flags")
+def api_get_flags():
+    return {"data": complaint_service.get_complaint_flags()}
 
-    rows, total = complaint_service.query_complaints(session, filters, offset, limit)
-    return {"data": rows, "total": total}
+
+@router.get("/statuses")
+def api_get_statuses():
+    return {"data": complaint_service.get_complaint_status()}
+
+
+# Add access check later on when the complaints flow is complete
+@router.get("/table")
+def get_complaints_table(
+    dealer: int | None = None,
+    outlet: int | None = None,
+    status: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    limit: int = 25,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    stmt = select(Complaint).options(
+        joinedload(Complaint.customer),
+        joinedload(Complaint.variant).joinedload(Variant.car),
+        joinedload(Complaint.complainant_dealership),
+        joinedload(Complaint.complainant_outlet),
+        joinedload(Complaint.complainee_dealership),
+        joinedload(Complaint.complainee_outlet),
+    )
+
+    # FILTERS
+    if dealer:
+        stmt = stmt.where(
+            or_(
+                Complaint.complainant_dealership_id == dealer,
+                Complaint.complainee_dealership_id == dealer,
+            )
+        )
+
+    if outlet:
+        stmt = stmt.where(
+            or_(
+                Complaint.complainant_outlet_id == outlet,
+                Complaint.complainee_outlet_id == outlet,
+            )
+        )
+
+    if status:
+        stmt = stmt.where(Complaint.status == status)
+
+    if from_date:
+        stmt = stmt.where(Complaint.raised_at >= from_date)
+
+    if to_date:
+        stmt = stmt.where(Complaint.raised_at <= to_date)
+
+    # TOTAL COUNT
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+
+    total_count = session.exec(count_stmt).one()
+
+    # PAGINATION
+    stmt = stmt.order_by(desc(Complaint.raised_at)).offset(offset).limit(limit)
+
+    complaints = session.exec(stmt).all()
+
+    return {
+        "rows": [complaint_service.serialize_complaint_rows(c) for c in complaints],
+        "total": total_count,
+    }
+
+
+@router.get("/{complaint_id}")
+def get_complaint(
+    complaint_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+
+    return complaint_service.get_complaint_reconstruction(session, complaint_id)
 
 
 @router.get("/metrics/status")
@@ -76,25 +135,17 @@ def submit_remark(
     return {"message": "Remark submitted successfully"}
 
 
-@router.get("/flags")
-def api_get_flags():
-    return {"data": complaint_service.get_complaint_flags()}
-
-
-@router.get("/statuses")
-def api_get_statuses():
-    return {"data": complaint_service.get_complaint_status()}
-
-
 @router.post("/update-status")
 def update_status(
     payload: UpdateStatusRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     updated = complaint_service.update_complaint_status(
         session=session,
         complaint_code=payload.complaint_code,
         status=payload.status,
+        current_user=current_user,
     )
 
     return {
@@ -107,11 +158,13 @@ def update_status(
 def update_flag(
     payload: UpdateFlagRequest,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ):
     updated = complaint_service.update_complaint_flag(
         session=session,
         complaint_code=payload.complaint_code,
         flag=payload.flag,
+        current_user=current_user,
     )
     return {
         "message": "Flag updated successfully",

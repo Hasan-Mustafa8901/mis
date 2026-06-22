@@ -1,9 +1,4 @@
-from datetime import datetime, date
 from nicegui import ui
-
-# from main import get_user, FormState
-
-# helper functions
 
 
 def expandable_remark(text: str):
@@ -15,19 +10,20 @@ def expandable_remark(text: str):
     if len(text) <= LIMIT:
         ui.label(text)
 
-    with ui.column().classes("gap-1"):
-        preview = ui.label(text[:LIMIT] + "...")
+    else:
+        with ui.column().classes("gap-1"):
+            preview = ui.label(text[:LIMIT] + "...")
 
-        full = ui.label(text)
-        full.visible = False
+            full = ui.label(text)
+            full.visible = False
 
-        def toggle():
-            full.visible = not full.visible
-            preview.visible = not preview.visible
+            def toggle():
+                full.visible = not full.visible
+                preview.visible = not preview.visible
 
-            btn.text = "Show Less" if full.visible else "See More"
+                btn.text = "Show Less" if full.visible else "See More"
 
-        btn = ui.button("See More", on_click=toggle).props("flat dense")
+            btn = ui.button("See More", on_click=toggle).props("flat dense")
 
 
 def render_timeline(history: list):
@@ -52,7 +48,7 @@ def render_timeline(history: list):
         for item in reversed(history):
             actor = item.get("actor", "Unknown")
             timestamp = item.get("timestamp", "")
-            remarks = item.get("remarks", "")
+            remarks = item.get("description", "")
 
             with ui.timeline_entry(title=actor):
                 ui.label(timestamp).classes("text-caption text-grey-700")

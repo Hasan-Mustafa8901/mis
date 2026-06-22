@@ -139,6 +139,14 @@ class User(SQLModel, table=True):
         back_populates="updated_by_user",
         sa_relationship_kwargs={"foreign_keys": "Transaction.updated_by"},
     )
+    raised_complaints: list["Complaint"] = Relationship(
+        back_populates="raised_by_user",
+        sa_relationship_kwargs={"foreign_keys": "Complaint.raised_by"},
+    )
+    updated_complaints: list["Complaint"] = Relationship(
+        back_populates="updated_by_user",
+        sa_relationship_kwargs={"foreign_keys": "Complaint.updated_by"},
+    )
     export_jobs: list["ExportJob"] = Relationship(back_populates="user")
     outlet: Optional["Outlet"] = Relationship(back_populates="users")
 
@@ -569,9 +577,12 @@ class Complaint(SQLModel, table=True):
     )
 
     status: ComplaintStatus = Field(default=ComplaintStatus.ESCALATED)
-    raised_by: int = Field(foreign_key="user.id")
 
+    raised_by: int = Field(foreign_key="user.id")
     raised_at: date = Field(default_factory=get_ist_today)
+
+    updated_by: int = Field(default=None, foreign_key="user.id")
+    updated_at: date = Field(default_factory=get_ist_today)
     date_of_complaint: date
 
     remark_complainee_aa: Optional[str] = None
@@ -617,17 +628,27 @@ class Complaint(SQLModel, table=True):
     complainee_dealer_text: Optional[str] = None
     complainee_showroom_text: Optional[str] = None
 
-    # Unidirectional or basic reciprocal relationships
+    # History/Timeline of the complaint
+    history: list[dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
+
+    # relationships
+    raised_by_user: Optional["User"] = Relationship(
+        back_populates="raised_complaints",
+        sa_relationship_kwargs={"foreign_keys": lambda: [Complaint.raised_by]},
+    )
+    updated_by_user: Optional["User"] = Relationship(
+        back_populates="updated_complaints",
+        sa_relationship_kwargs={"foreign_keys": lambda: [Complaint.updated_by]},
+    )
     customer: Optional["Customer"] = Relationship()
     transaction: Optional["Transaction"] = Relationship()
     remark: Optional["Remark"] = Relationship()
     variant: Optional["Variant"] = Relationship()
 
-    # Fixed: added back_populates matching Employee model
+    # added back_populates matching Employee model
     employee: Optional["Employee"] = Relationship(back_populates="complaints")
 
-    # Fixed: corrected foreign_keys list evaluation syntax
-    # Corrected relationships block
+    # corrected foreign_keys list evaluation syntax
     complainant_dealership: Optional["Dealership"] = Relationship(
         sa_relationship_kwargs={
             "foreign_keys": lambda: [Complaint.complainant_dealership_id]
