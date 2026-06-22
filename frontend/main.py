@@ -17,6 +17,7 @@ import re
 from typing import Any
 
 from components.charts import render_bar_chart  # , render_line_chart
+from components.history import build_timeline_drawer
 import httpx
 from datetime import datetime, date, timedelta
 from collections import defaultdict
@@ -51,8 +52,6 @@ from api import (
 )
 
 logger = setup_logger()
-print("LOGGER HANDLERS:", logger.handlers)
-print("ROOT HANDLERS:", logging.getLogger().handlers)
 
 # CONFIG & SHARED CONSTANTS
 load_dotenv()
@@ -6393,6 +6392,10 @@ class FormState:
         self.complainant_aa_remarks: ui.textarea | None = None
         self.complaint_date: ui.input | None = None
 
+        # Complaint's timeline
+        self.comp_timeline_open: bool = False
+        self.complaint_history: list = []
+
     @property
     def all_component_inputs(self) -> dict[str, ui.input]:
         return {**self.price_inputs, **self.discount_inputs}
@@ -10087,6 +10090,8 @@ async def load_complaint_data(state: FormState, complaint_code: str | None):
         None,
     )
 
+    state.complaint_history = state.complaint_data.get("histort") or []
+
 
 def build_complaint_form(state: FormState):
     with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
@@ -10356,24 +10361,35 @@ def attach_complaint_handlers(state):
 @require_roles("admin", "audit_assistant")
 @ui.page("/complaint-form")
 async def complaint_form_page(
-    transaction_id: int | None = None, complaint_code: str | None = None
+    transaction_id: int | None = None,
+    complaint_code: str | None = None,
 ) -> None:
+
     logger.info(
-        "Accessing /complaint-form page (transaction_id: %s, complaint_code: %s) for user: %s",
+        "Accessing /complaint-form page "
+        "(transaction_id: %s, complaint_code: %s) "
+        "for user: %s",
         transaction_id,
         complaint_code,
         app.storage.user.get("name"),
     )
+
     state = FormState()
+
+    state.comp_timeline_open = False
+
     state.form_mode = (
         "complaint_edit" if transaction_id or complaint_code else "complaint_create"
     )
+
     state.txn_id = transaction_id
     state.edit_mode = bool(transaction_id or complaint_code)
 
     title = "New Complaint"
+
     if transaction_id:
         title = f"Edit Complaint #{transaction_id}"
+
     elif complaint_code:
         title = f"Edit Complaint {complaint_code}"
 
@@ -10385,6 +10401,26 @@ async def complaint_form_page(
 
     _fs_revalidate(state)
 
+    timeline_drawer = build_timeline_drawer(state)
+
+    (
+        ui.button(
+            icon="history",
+            on_click=timeline_drawer.toggle,
+        )
+        .tooltip("Complaint History")
+        .props("round color=primary")
+        .classes(
+            """
+            fixed
+            bottom-8
+            right-8
+            z-50
+            shadow-lg
+            """
+        )
+    )
+
 
 if __name__ in {"__main__", "__mp_main__"}:
     app.colors(primary="#e8402a")
@@ -10393,7 +10429,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY_FRONTEND,
-        reload=False,  # make false at the time of deployement
+        reload=True,  # make false at the time of deployement
         uvicorn_reload_excludes="logs/**",
         port=3000,
         reconnect_timeout=60,
