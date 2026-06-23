@@ -16,6 +16,7 @@ def setup_logger():
     if env == "dev":
         BASE_DIR = Path(DEV_LOG_PATH)
     LOG_DIR = BASE_DIR / "logs"
+    print(LOG_DIR)
 
     LOG_DIR.mkdir(exist_ok=True)
 
