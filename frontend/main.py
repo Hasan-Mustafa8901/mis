@@ -6446,21 +6446,6 @@ class FormState:
         if not self.variant_id:
             return False, "Please select a Car and Variant."
 
-        print(
-            {
-                "complainant_dealership": getattr(
-                    self.complainant_dealership, "value", None
-                ),
-                "complainant_showroom": getattr(
-                    self.complainant_showroom, "value", None
-                ),
-                "complainee_dealership": getattr(
-                    self.complainee_dealership, "value", None
-                ),
-                "complainee_showroom": getattr(self.complainee_showroom, "value", None),
-            }
-        )
-
         return True, ""
 
     def is_valid(self) -> tuple[bool, str]:
@@ -6664,6 +6649,8 @@ def build_vehicle_section(state: FormState) -> None:
     }
     exec_opts = {executive["id"]: executive["name"] for executive in state.executives}
 
+    FORM_COLUMNS = 2 if state.form_mode in ["complaint_create", "complaint_edit"] else 3
+
     with ui.card().classes("shadow-sm rounded-xl p-6 mb-6 w-full"):
         with ui.row().classes(
             "w-full items-center gap-2 mb-4 pb-2 border-b border-gray-100"
@@ -6673,20 +6660,12 @@ def build_vehicle_section(state: FormState) -> None:
 
         with ui.grid(columns=FORM_COLUMNS).classes("w-full gap-5"):
             state.car_select = (
-                ui.select(
-                    options=car_opts,
-                    label="Car *",
-                    with_input=True,
-                )
+                ui.select(options=car_opts, label="Car *", with_input=True)
                 .classes("w-full")
                 .props("outlined dense")
             )
             state.variant_select = (
-                ui.select(
-                    options={},
-                    with_input=True,
-                    label="Variant *",
-                )
+                ui.select(options={}, with_input=True, label="Variant *")
                 .classes("w-full")
                 .props("outlined dense")
             )
@@ -6694,11 +6673,7 @@ def build_vehicle_section(state: FormState) -> None:
                 ui.input(label="Car Colour").classes("w-full").props("outlined dense")
             )
             state.exec_select = (
-                ui.select(
-                    options=exec_opts,
-                    with_input=True,
-                    label="Team Leader *",
-                )
+                ui.select(options=exec_opts, with_input=True, label="Team Leader *")
                 .classes("w-full")
                 .props("outlined dense")
             )
@@ -6723,10 +6698,7 @@ def build_vehicle_section(state: FormState) -> None:
                     .props("outlined dense")
                 )
                 state.outlet_select = (
-                    ui.select(
-                        options=outlet_opts,
-                        label="Outlet *",
-                    )
+                    ui.select(options=outlet_opts, label="Outlet *")
                     .classes("w-full")
                     .props("outlined dense")
                 )
@@ -9302,10 +9274,7 @@ def build_form(state: FormState):
         build_file_status_section(state)
         build_audit_section(state)
 
-    elif state.form_mode in [
-        "delivery_from_booking",
-        "delivery_edit",
-    ]:
+    elif state.form_mode in ["delivery_from_booking", "delivery_edit"]:
         title = (
             "Delivery (From Booking)"
             if state.form_mode == "delivery_from_booking"
@@ -9683,7 +9652,7 @@ async def form_page(
     # Load transaction data
     await load_transaction(state)
 
-    with ui.element("div").classes("max-w-[1200px] mx-auto p-6"):
+    with ui.element("div").classes("w-[900px] max-w-[900px] mx-auto p-6"):
         # MODE BANNER
         banner_modes = {
             "booking_edit": {
@@ -9748,7 +9717,7 @@ def build_complaint_dealership_section(state: FormState) -> None:
                 "text-[15px] font-bold text-gray-900"
             )
 
-        with ui.grid(columns=2).classes("w-full gap-5"):
+        with ui.grid(columns=FORM_COLUMNS - 1).classes("w-full gap-5"):
             state.complainant_dealership = (
                 ui.select(
                     {d["name"]: d["name"] for d in state.complaint_dealerships},
@@ -9791,7 +9760,7 @@ def build_complaint_quotation_section(state: FormState) -> None:
             ui.label("Complaint Quotation Details").classes(
                 "text-[15px] font-bold text-gray-900"
             )
-        with ui.grid(columns=3).classes("w-full gap-5"):
+        with ui.grid(columns=FORM_COLUMNS - 1).classes("w-full gap-5"):
             state.comp_quotation_number = (
                 ui.input(label="Quotation Number")
                 .classes("w-full")
@@ -9809,7 +9778,7 @@ def build_complaint_quotation_section(state: FormState) -> None:
                 .classes("w-full")
                 .props('outlined dense type="date"')
             )
-            state.comp_tcs = accounting_input(label_text="TCS")
+            # state.comp_tcs = accounting_input(label_text="TCS")
             state.comp_total_offered = accounting_input(
                 label_text="Total Offered Price"
             )
@@ -9879,7 +9848,7 @@ def build_complaint_remarks_section(state: FormState) -> None:
         ):
             ui.label("💬").classes("text-[20px] select-none")
             ui.label("Remarks").classes("text-[15px] font-bold text-gray-900")
-        with ui.grid(columns=2).classes("w-full gap-5"):
+        with ui.grid(columns=FORM_COLUMNS - 1).classes("w-full gap-5"):
             state.complaint_date = (
                 ui.input(
                     label="Date of Complaint Raised",
@@ -9933,25 +9902,6 @@ def build_complaint_action_bar(state: FormState) -> None:
             if not state.error_banner or not state.error_msg_label:
                 return
             # VALIDATION
-            print(
-                "COMPLAINANT DEALER:",
-                state.complainant_dealership.value,
-            )
-
-            print(
-                "COMPLAINANT SHOWROOM:",
-                state.complainant_showroom.value,
-            )
-
-            print(
-                "COMPLAINEE DEALER:",
-                state.complainee_dealership.value,
-            )
-
-            print(
-                "COMPLAINEE SHOWROOM:",
-                state.complainee_showroom.value,
-            )
             valid, msg = state.is_valid()
 
             if not valid:
@@ -10135,16 +10085,15 @@ async def load_complaint_data(state: FormState, complaint_id: int | None):
 
 
 def build_complaint_form(state: FormState):
-    with ui.element("div").classes("max-w-[1100px] mx-auto p-6"):
-        ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
+    ui.label("Complaint MIS Form").classes("text-2xl font-bold mb-5")
 
-        build_complaint_dealership_section(state)
-        build_customer_section(state)
-        build_vehicle_section(state)
-        build_complaint_quotation_section(state)
-        build_complaint_booking_section(state)
-        build_complaint_remarks_section(state)
-        build_complaint_action_bar(state)
+    build_complaint_dealership_section(state)
+    build_customer_section(state)
+    build_vehicle_section(state)
+    build_complaint_quotation_section(state)
+    build_complaint_booking_section(state)
+    build_complaint_remarks_section(state)
+    build_complaint_action_bar(state)
 
 
 def hydrate_customer_section(state: FormState, complaint: dict):
@@ -10383,20 +10332,12 @@ def attach_complaint_handlers(state):
         )
 
     async def handle_complainant_change(e):
-        print("DEALER CHANGED:", state.complainant_dealership.value)
         await _cf_on_complainant_change(state, state.complainant_dealership.value)
 
     if getattr(state, "complainant_dealership", None):
         state.complainant_dealership.on_value_change(handle_complainant_change)
-        # state.complainant_dealership.on(
-        #     "update:model-value",
-        #     lambda e: asyncio.create_task(
-        #         _cf_on_complainant_change(state, state.complainant_dealership.value)
-        #     ),
-        # )
 
     async def handle_complainee_change(e):
-        print("DEALER CHANGED:", state.complainee_dealership.value)
         await _cf_on_complainee_change(state, state.complainee_dealership.value)
 
     if getattr(state, "complainee_dealership", None):
@@ -10410,6 +10351,9 @@ async def complaint_form_page(
     complaint_id: int | None = None,
     complaint_code: str | None = None,
 ) -> None:
+
+    title = "New Complaint"
+    render_topbar(title)
 
     logger.info(
         "Accessing /complaint-form page "
@@ -10431,17 +10375,14 @@ async def complaint_form_page(
     state.txn_id = transaction_id
     state.edit_mode = bool(transaction_id or complaint_code)
 
-    title = "New Complaint"
+    with ui.element("div").classes("w-[900px] max-w-[900px] mx-auto p-6"):
+        if transaction_id:
+            title = f"Edit Complaint #{transaction_id}"
 
-    if transaction_id:
-        title = f"Edit Complaint #{transaction_id}"
+        elif complaint_code:
+            title = f"Edit Complaint {complaint_code}"
 
-    elif complaint_code:
-        title = f"Edit Complaint {complaint_code}"
-
-    render_topbar(title)
-
-    await initialize_complaint_form(state, complaint_id)
+        await initialize_complaint_form(state, complaint_id)
 
     attach_complaint_handlers(state)
 
