@@ -6418,24 +6418,48 @@ class FormState:
     def _validate_complaint(self) -> tuple[bool, str]:
         if not self.complainant_dealership or not self.complainant_dealership.value:
             return False, "Complainant dealership is required."
+
         if not self.complainant_showroom or not self.complainant_showroom.value:
             return False, "Complainant showroom is required."
+
         if not self.complainee_dealership or not self.complainee_dealership.value:
             return False, "Complainee dealership is required."
+
         if not self.complainee_showroom or not self.complainee_showroom.value:
             return False, "Complainee showroom is required."
+
         if not self.cust_name or not self.cust_name.value:
             return False, "Customer Name is required."
+
         if not self.cust_mobile or not self.cust_mobile.value:
             return False, "Customer Mobile is required."
+
         if not self.cust_address or not self.cust_address.value:
             return False, "Customer Address is required."
+
         if not self.cust_city or not self.cust_city.value:
             return False, "Customer City is required."
+
         if not self.cust_pincode or not self.cust_pincode.value:
             return False, "Customer PIN Code is required."
+
         if not self.variant_id:
             return False, "Please select a Car and Variant."
+
+        print(
+            {
+                "complainant_dealership": getattr(
+                    self.complainant_dealership, "value", None
+                ),
+                "complainant_showroom": getattr(
+                    self.complainant_showroom, "value", None
+                ),
+                "complainee_dealership": getattr(
+                    self.complainee_dealership, "value", None
+                ),
+                "complainee_showroom": getattr(self.complainee_showroom, "value", None),
+            }
+        )
 
         return True, ""
 
@@ -9909,6 +9933,25 @@ def build_complaint_action_bar(state: FormState) -> None:
             if not state.error_banner or not state.error_msg_label:
                 return
             # VALIDATION
+            print(
+                "COMPLAINANT DEALER:",
+                state.complainant_dealership.value,
+            )
+
+            print(
+                "COMPLAINANT SHOWROOM:",
+                state.complainant_showroom.value,
+            )
+
+            print(
+                "COMPLAINEE DEALER:",
+                state.complainee_dealership.value,
+            )
+
+            print(
+                "COMPLAINEE SHOWROOM:",
+                state.complainee_showroom.value,
+            )
             valid, msg = state.is_valid()
 
             if not valid:
@@ -10339,21 +10382,25 @@ def attach_complaint_handlers(state):
             lambda e: asyncio.create_task(handle_variant_change(e)),
         )
 
+    async def handle_complainant_change(e):
+        print("DEALER CHANGED:", state.complainant_dealership.value)
+        await _cf_on_complainant_change(state, state.complainant_dealership.value)
+
     if getattr(state, "complainant_dealership", None):
-        state.complainant_dealership.on(
-            "update:model-value",
-            lambda e: asyncio.create_task(
-                _cf_on_complainant_change(state, state.complainant_dealership.value)
-            ),
-        )
+        state.complainant_dealership.on_value_change(handle_complainant_change)
+        # state.complainant_dealership.on(
+        #     "update:model-value",
+        #     lambda e: asyncio.create_task(
+        #         _cf_on_complainant_change(state, state.complainant_dealership.value)
+        #     ),
+        # )
+
+    async def handle_complainee_change(e):
+        print("DEALER CHANGED:", state.complainee_dealership.value)
+        await _cf_on_complainee_change(state, state.complainee_dealership.value)
 
     if getattr(state, "complainee_dealership", None):
-        state.complainee_dealership.on(
-            "update:model-value",
-            lambda e: asyncio.create_task(
-                _cf_on_complainee_change(state, state.complainee_dealership.value)
-            ),
-        )
+        state.complainee_dealership.on_value_change(handle_complainee_change)
 
 
 @require_roles("admin", "audit_assistant")
@@ -10398,8 +10445,6 @@ async def complaint_form_page(
 
     attach_complaint_handlers(state)
 
-    _fs_revalidate(state)
-
     timeline_drawer = build_timeline_drawer(state)
 
     (
@@ -10419,6 +10464,7 @@ async def complaint_form_page(
             """
         )
     )
+    _fs_revalidate(state)
 
 
 if __name__ in {"__main__", "__mp_main__"}:

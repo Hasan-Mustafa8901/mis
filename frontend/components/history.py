@@ -8,13 +8,13 @@ def expandable_remark(text: str):
         ui.label("-")
 
     if len(text) <= LIMIT:
-        ui.label(text)
+        ui.html(text)
 
     else:
         with ui.column().classes("gap-1"):
-            preview = ui.label(text[:LIMIT] + "...")
+            preview = ui.html(text[:LIMIT] + "...")
 
-            full = ui.label(text)
+            full = ui.html(text)
             full.visible = False
 
             def toggle():

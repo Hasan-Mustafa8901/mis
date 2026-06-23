@@ -729,7 +729,7 @@ def save_complaint(session: Session, data: dict, user: User):
         code, serial = generate_complaint_code(session, complaint)
         complaint.complaint_code = code
 
-        description = f"Remarks by Complainant: {r.get('remarks_by_complainant')}\nRemarks by Stationed AA: {r.get('remarks_by_aa')}"
+        description = f"Remarks by Complainant: {r.get('remarks_by_complainant')}<br>Remarks by Stationed AA: {r.get('remarks_by_aa')}"
         add_history_event(complaint, user.name, description=description)
 
         session.add(complaint)
