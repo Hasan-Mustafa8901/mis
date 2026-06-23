@@ -351,6 +351,7 @@ class TransactionService:
         transaction.total_receivable = payload.get("total_receivable", 0)
         transaction.total_received = payload.get("total_received", 0)
         transaction.balance = balance
+        transaction.balance_by_user = payload.get("balance_by_user", 0)
         transaction.ledger_adjustment = payload.get("ledger_adjustment", 0)
         transaction.ledger_adjustment_remarks = payload.get(
             "ledger_adjustment_remarks", ""
@@ -427,6 +428,7 @@ class TransactionService:
         transaction.total_receivable = payload.get("total_receivable", 0)
         transaction.total_received = payload.get("total_received", 0)
         transaction.balance = balance
+        transaction.balance_by_user = payload.get("balance_by_user", 0)
         transaction.ledger_adjustment = payload.get("ledger_adjustment", 0)
         transaction.ledger_adjustment_remarks = payload.get(
             "ledger_adjustment_remarks", ""
@@ -753,8 +755,7 @@ class TransactionService:
                     "total_receivable": transaction.total_receivable,
                     "total_received": transaction.total_received,
                     "balance_amount": transaction.balance,
-                    "ledger_adjustment": transaction.ledger_adjustment,
-                    "ledger_adjustment_remarks": transaction.ledger_adjustment_remarks,
+                    "balance_by_user": transaction.balance_by_user,
                     "discount_booking": transaction.discount_booking,
                     "total_discount_booking": transaction.total_discount_booking,
                     "price_offered_booking": transaction.price_offered_booking,
@@ -964,6 +965,7 @@ class TransactionService:
             "total_receivable",
             "total_received",
             "balance",
+            "balance_by_user",
             "ledger_adjustment",
             "ledger_adjustment_remarks",
             "price_offered_booking",

@@ -6279,7 +6279,7 @@ class FormState:
         self.total_receivable: ui.label | None = None
         self.total_received: ui.label | None = None
         self.balance_amount: ui.label | None = None
-        self.balance_amount_by_user: ui.input | None = None
+        self.balance_by_user: ui.input | None = None
         self.variation: ui.label | None = None
 
         # Checkboxes
@@ -7791,7 +7791,7 @@ def build_ledger_section(state: FormState) -> None:
                     "text-[14px] font-bold  tracking-wide text-black-500"
                 )
 
-                state.balance_amount_by_user = accounting_input(
+                state.balance_by_user = accounting_input(
                     label_text="",
                     placeholder="₹0",
                     compact=True,
@@ -8248,8 +8248,8 @@ def attach_form_handlers(state: FormState):
         state.adjustment_input.on_value_change(live_update)
 
     # Balance entered by the user in ledger section
-    if getattr(state, "balance_amount_by_user", None):
-        state.balance_amount_by_user.on_value_change(live_update)
+    if getattr(state, "balance_by_user", None):
+        state.balance_by_user.on_value_change(live_update)
 
     # PRICE TOGGLES
     for name, toggle in getattr(state, "price_match_toggles", {}).items():
@@ -8717,7 +8717,7 @@ def _fs_update_live(state: FormState) -> None:
     user_balance = 0
 
     try:
-        user_balance = int(parsed_val(state.balance_amount_by_user) or 0)
+        user_balance = int(parsed_val(state.balance_by_user) or 0)
     except Exception:
         user_balance = 0
 
@@ -9119,6 +9119,8 @@ def build_payload(state: FormState) -> dict:
         payload["total_actual_discount"] = lbl_val(state.total_given)
         payload["total_allowed_discount"] = lbl_val(state.total_allowed)
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
+        print("Balance for payload", intval(state.balance_by_user))
+        payload["balance_by_user"] = intval(state.balance_by_user)
 
     return payload
 
@@ -9227,6 +9229,7 @@ async def load_transaction(state: FormState):
 
     try:
         txn = await api_get(f"/transactions/{state.transaction_id}")
+        print("TRANSACTION: ", json.dumps(txn, indent=2))
 
         state.transaction_data = txn
         state.booking_data = txn
@@ -9455,7 +9458,11 @@ async def hydrate_form(state: FormState, txn: dict):
 
 
 ## Hydration of the balance amount entered by user will be done by this method.
-def hydrate_ledger_section(state: FormState, txn: dict): ...
+def hydrate_ledger_section(state: FormState, txn: dict):
+    balance_by_user = txn.get("balance_by_user", 0)
+
+    if getattr(state, "balance_by_user", None):
+        state.balance_by_user.set_value(balance_by_user)
 
 
 def hydrate_invoice_section(state: FormState, txn: dict):
