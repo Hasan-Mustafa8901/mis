@@ -9119,7 +9119,6 @@ def build_payload(state: FormState) -> dict:
         payload["total_actual_discount"] = lbl_val(state.total_given)
         payload["total_allowed_discount"] = lbl_val(state.total_allowed)
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
-        print("Balance for payload", intval(state.balance_by_user))
         payload["balance_by_user"] = intval(state.balance_by_user)
 
     return payload
@@ -9229,7 +9228,6 @@ async def load_transaction(state: FormState):
 
     try:
         txn = await api_get(f"/transactions/{state.transaction_id}")
-        print("TRANSACTION: ", json.dumps(txn, indent=2))
 
         state.transaction_data = txn
         state.booking_data = txn
@@ -10422,7 +10420,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY_FRONTEND,
-        reload=True,  # make false at the time of deployement
+        reload=False,  # make false at the time of deployement
         uvicorn_reload_excludes="logs/**",
         port=3000,
         reconnect_timeout=60,
