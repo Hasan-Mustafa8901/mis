@@ -198,11 +198,13 @@ class TransactionService:
             for field in [
                 "name",
                 "email",
+                "relative_name",
                 "pan_number",
                 "aadhar_number",
                 "address",
                 "city",
                 "pin_code",
+                "other_id",
             ]:
                 if cust_data.get(field):
                     setattr(existing, field, cust_data[field])
@@ -214,6 +216,7 @@ class TransactionService:
         # Create new
         customer = Customer(
             name=cust_data.get("name"),
+            relative_name=cust_data.get("relative_name"),
             mobile_number=cust_data.get("mobile_number"),
             email=cust_data.get("email"),
             pan_number=cust_data.get("pan_number"),
@@ -221,6 +224,7 @@ class TransactionService:
             address=cust_data.get("address"),
             city=cust_data.get("city"),
             pin_code=cust_data.get("pin_code"),
+            other_id=cust_data.get("other_id"),
         )
 
         session.add(customer)
@@ -605,6 +609,8 @@ class TransactionService:
                     {
                         "customer_name": customer.name,
                         "mobile_number": customer.mobile_number,
+                        "other_id": customer.other_id,
+                        "relative_name": customer.relative_name,
                         "alternate_mobile": customer.alternate_mobile,
                         "email": customer.email,
                         "pan_number": customer.pan_number,
@@ -853,9 +859,7 @@ class TransactionService:
 
     @staticmethod
     def apply_funds_reconciliation(
-        session: Session,
-        transaction: Transaction,
-        payload: Dict[str, Any],
+        session: Session, transaction: Transaction, payload: Dict[str, Any]
     ):
 
         # from sqlmodel import select
