@@ -1,7 +1,10 @@
-from sqlmodel import Session, select, or_, func
+# backend/services/complaint_service.py
+
+from sqlmodel import Session, select, or_
 from datetime import datetime, date
 from sqlalchemy.orm import joinedload
 from fastapi import HTTPException
+from rich import print
 
 # Avoid conflicts with python built-ins
 from db.models import (
@@ -16,6 +19,7 @@ from db.models import (
     Remark,
     Variant,
 )
+from schemas.complaints import ComplaintUpdatePayload
 from services.utils import get_ist_today, get_ist_now
 
 
@@ -740,3 +744,215 @@ def save_complaint(session: Session, data: dict, user: User):
     except Exception as e:
         session.rollback()
         return False, str(e)
+
+
+def delete_complaint(session: Session, complaint_id: int):
+    complaint = session.get(Complaint, complaint_id)
+
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    remark = complaint.remark
+    session.delete(complaint)
+    if remark:
+        session.delete(remark)
+
+    session.commit()
+
+    return {"message": "Complaint deleted successfully"}
+
+
+def update_complaint(
+    session: Session,
+    complaint_id: int,
+    payload: ComplaintUpdatePayload,
+    current_user: User,
+):
+
+    complaint = session.exec(
+        select(Complaint)
+        .where(Complaint.id == complaint_id)
+        .options(joinedload(Complaint.customer), joinedload(Complaint.remark))
+    ).first()
+
+    if not complaint:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+
+    changed_fields: list[str] = []
+
+    # COMPLAINT
+    if payload.variant_id is not None and payload.variant_id != complaint.variant_id:
+        complaint.variant_id = payload.variant_id
+        changed_fields.append("variant_id")
+
+    # QUOTATION
+    quotation = payload.quotation_details
+
+    if quotation:
+        if quotation.quotation_number != complaint.quotation_number:
+            complaint.quotation_number = quotation.quotation_number
+            changed_fields.append("quotation_number")
+
+        if quotation.quotation_date != complaint.quotation_date:
+            complaint.quotation_date = quotation.quotation_date
+            changed_fields.append("quotation_date")
+
+        if quotation.tcs_amount != complaint.tcs_amount:
+            complaint.tcs_amount = quotation.tcs_amount
+            changed_fields.append("tcs_amount")
+
+        if quotation.total_offered_price != complaint.total_offered_price:
+            complaint.total_offered_price = quotation.total_offered_price
+            changed_fields.append("total_offered_price")
+
+        if quotation.net_offered_price != complaint.net_offered_price:
+            complaint.net_offered_price = quotation.net_offered_price
+            changed_fields.append("net_offered_price")
+
+    # BOOKING
+    booking = payload.booking_details
+
+    if booking:
+        if booking.booking_file_number != complaint.booking_file_number:
+            complaint.booking_file_number = booking.booking_file_number
+            changed_fields.append("booking_file_number")
+
+        if booking.receipt_number != complaint.receipt_number:
+            complaint.receipt_number = booking.receipt_number
+            changed_fields.append("receipt_number")
+
+        if booking.booking_amount != complaint.booking_amount:
+            complaint.booking_amount = booking.booking_amount
+            changed_fields.append("booking_amount")
+
+        if booking.mode_of_payment != complaint.mode_of_payment:
+            complaint.mode_of_payment = booking.mode_of_payment
+            changed_fields.append("mode_of_payment")
+
+        if booking.instrument_date != complaint.instrument_date:
+            complaint.instrument_date = booking.instrument_date
+            changed_fields.append("instrument_date")
+
+        if booking.instrument_number != complaint.instrument_number:
+            complaint.instrument_number = booking.instrument_number
+            changed_fields.append("instrument_number")
+
+        if booking.bank_name != complaint.bank_name:
+            complaint.bank_name = booking.bank_name
+            changed_fields.append("bank_name")
+
+    # CUSTOMER
+    customer = payload.customer_details
+
+    if customer and complaint.customer:
+        if customer.customer_name != complaint.customer.name:
+            complaint.customer.name = customer.customer_name
+            changed_fields.append("customer_name")
+
+        if customer.contact_number != complaint.customer.mobile_number:
+            complaint.customer.mobile_number = customer.contact_number
+            changed_fields.append("customer_mobile")
+
+        if customer.address != complaint.customer.address:
+            complaint.customer.address = customer.address
+            changed_fields.append("customer_address")
+
+        if customer.city != complaint.customer.city:
+            complaint.customer.city = customer.city
+            changed_fields.append("customer_city")
+
+        if customer.pin != complaint.customer.pin_code:
+            complaint.customer.pin_code = customer.pin
+            changed_fields.append("customer_pin")
+
+        if customer.pan != complaint.customer.pan_number:
+            complaint.customer.pan_number = customer.pan
+            changed_fields.append("customer_pan")
+
+        if customer.aadhar != complaint.customer.aadhar_number:
+            complaint.customer.aadhar_number = customer.aadhar
+            changed_fields.append("customer_aadhar")
+
+        if customer.email != complaint.customer.email:
+            complaint.customer.email = customer.email
+            changed_fields.append("customer_email")
+
+        if customer.relative_name != complaint.customer.relative_name:
+            complaint.customer.relative_name = customer.relative_name
+            changed_fields.append("customer_relative")
+
+        if customer.other_id != complaint.customer.other_id:
+            complaint.customer.other_id = customer.other_id
+            changed_fields.append("customer_other_id")
+
+    # VEHICLE
+    vehicle = payload.vehicle_details
+
+    if vehicle:
+        if vehicle.car_color != complaint.car_color:
+            complaint.car_color = vehicle.car_color
+            changed_fields.append("car_color")
+
+    # PRICE
+    price = payload.price_info
+
+    if price:
+        if price.ex_showroom_price != complaint.ex_showroom_price:
+            complaint.ex_showroom_price = price.ex_showroom_price
+            changed_fields.append("ex_showroom_price")
+
+        if price.insurance != complaint.insurance:
+            complaint.insurance = price.insurance
+            changed_fields.append("insurance")
+
+        if price.registration_road_tax != complaint.registration_road_tax:
+            complaint.registration_road_tax = price.registration_road_tax
+            changed_fields.append("registration_road_tax")
+
+        if price.discount != complaint.discount:
+            complaint.discount = price.discount
+            changed_fields.append("discount")
+
+        if price.accessories_charged != complaint.accessories_charged:
+            complaint.accessories_charged = price.accessories_charged
+            changed_fields.append("accessories_charged")
+
+    # REMARKS
+    remarks = payload.remarks_page
+
+    if remarks:
+        if remarks.complaint_raised_date != complaint.date_of_complaint:
+            complaint.date_of_complaint = remarks.complaint_raised_date
+            changed_fields.append("date_of_complaint")
+
+        if complaint.remark:
+            if remarks.remarks_by_complainant != complaint.remark.remarks_complainant:
+                complaint.remark.remarks_complainant = remarks.remarks_by_complainant
+                changed_fields.append("remarks_complainant")
+
+            if remarks.remarks_by_aa != complaint.remark.remarks_complainant_aa:
+                complaint.remark.remarks_complainant_aa = remarks.remarks_by_aa
+                changed_fields.append("remarks_complainant_aa")
+
+            if remarks.aa_name != complaint.remark.aa_complainee:
+                complaint.remark.aa_complainee = remarks.aa_name
+                changed_fields.append("aa_complainee")
+
+    # HISTORY
+    if changed_fields:
+        add_history_event(
+            complaint,
+            current_user.name,
+            "Complaint updated: " + ", ".join(sorted(set(changed_fields))),
+        )
+
+    # SAVE
+    session.add(complaint)
+    session.commit()
+    session.refresh(complaint)
+
+    return {
+        "message": "Complaint updated successfully",
+        "complaint_id": complaint.id,
+        "updated_fields": sorted(set(changed_fields)),
+    }

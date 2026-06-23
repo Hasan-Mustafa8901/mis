@@ -177,7 +177,13 @@ async def api_post(path: str, payload: dict):
 
 
 async def api_put(path: str, payload: dict):
-    return await api_request("PUT", path, json=payload)
+    safe_json_str = json.dumps(payload, default=json_serial)
+    return await api_request(
+        "PUT",
+        path,
+        content=safe_json_str,
+        headers={"Content-Type": "application/json"},
+    )
 
 
 async def api_delete(path: str, payload: dict | None = None):

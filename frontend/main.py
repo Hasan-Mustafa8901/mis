@@ -6364,6 +6364,9 @@ class FormState:
         # Complaint Data for hydration of form
         self.complaint_data: dict = {}
 
+        # Complaint ID of existing complaint
+        self.complaint_id: int | None = None
+
         # Complaint Form Specifics
         self.complaint_dealerships: list = []
         self.complainant_outlets: list = []
@@ -9046,6 +9049,7 @@ def build_payload(state: FormState) -> dict:
         #  CUSTOMER
         "customer": {
             "name": val(state.cust_name),
+            "relative_name": val(state.cust_relative),
             "mobile_number": val(state.cust_mobile),
             "email": val(state.cust_email),
             "pan_number": val(state.cust_pan),
@@ -9053,6 +9057,7 @@ def build_payload(state: FormState) -> dict:
             "address": val(state.cust_address),
             "city": val(state.cust_city),
             "pin_code": val(state.cust_pincode),
+            "other_id": val(state.cust_other_id),
         },
         #  VEHICLE
         "customer_file_number": val(state.cust_file_no),
@@ -9366,6 +9371,8 @@ async def hydrate_form(state: FormState, txn: dict):
             state.cust_address: txn.get("address"),
             state.cust_city: txn.get("city"),
             state.cust_pincode: txn.get("pin_code"),
+            state.cust_relative: txn.get("relative_name"),
+            state.cust_other_id: txn.get("other_id"),
             state.vin_no: txn.get("vin_number"),
             state.engine_no: txn.get("engine_number"),
             state.vehicle_regn_no: txn.get("registration_number"),
@@ -9884,80 +9891,6 @@ def build_complaint_remarks_section(state: FormState) -> None:
             )
 
 
-def build_complaint_action_bar(state: FormState) -> None:
-    user = get_user()
-
-    with ui.row().classes(
-        "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
-    ) as banner:
-        state.error_banner = banner
-        ui.label("⚠️").classes("text-red-500")
-        state.error_msg_label = ui.label("").classes(
-            "text-red-800 text-[13px] font-medium"
-        )
-
-    state.error_banner.set_visibility(False)
-
-    with ui.row().classes("w-full items-center justify-between py-4"):
-        ui.button(
-            "← Back to Complaints", on_click=lambda: ui.navigate.to("/complaints-ctrl")
-        ).classes("text-gray-500 text-[13px] hover:text-gray-800").props("flat no-caps")
-
-        async def handle_complaint_submit():
-            if not state.error_banner or not state.error_msg_label:
-                return
-            # VALIDATION
-            valid, msg = state.is_valid()
-
-            if not valid:
-                state.error_msg_label.set_text(msg)
-                state.error_banner.set_visibility(True)
-                return
-
-            payload = build_complaint_payload(state)
-
-            try:
-                # CLEAR OLD ERRORS
-                state.error_banner.set_visibility(False)
-                # SUBMIT
-
-                await api_post("/complaints/save-complaint", payload)
-                logger.info("Complaint Submitted by %s", user.get("name"))
-                ui.notify(
-                    "Complaint Submitted Successfully", color="green", type="positive"
-                )
-
-                # SUCCESS NAVIGATION
-                ui.navigate.to("/complaints-ctrl")
-
-            except UnauthorizedError:
-                await logout_user()
-                ui.notify("Session expired. Please login again.", type="warning")
-                ui.navigate.to("/login")
-
-            except ConnectionFailedError as e:
-                state.error_msg_label.set_text(str(e))
-                state.error_banner.set_visibility(True)
-
-            except APIError as e:
-                logger.error("COMPLAINT SUBMIT API ERROR: %s", e, exc_info=True)
-                state.error_msg_label.set_text(str(e))
-                state.error_banner.set_visibility(True)
-
-            except Exception as e:
-                logger.exception("COMPLAINT SUBMIT ERROR: %s", str(e))
-                state.error_msg_label.set_text(str(e))
-                state.error_banner.set_visibility(True)
-
-        state.submit_btn = (
-            ui.button("Submit Complaint", on_click=handle_complaint_submit)
-            .classes(
-                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
-            )
-            .props("no-caps unelevated")
-        )
-
-
 def build_complaint_payload(state: FormState) -> dict:
 
     def val(x: Any) -> Any:
@@ -10063,6 +9996,103 @@ def build_complaint_payload(state: FormState) -> dict:
             "accessories_charged": intval(state.acc_charged),
         },
     }
+
+
+def build_complaint_action_bar(state: FormState) -> None:
+    user = get_user()
+
+    with ui.row().classes(
+        "w-full bg-red-50 border border-red-200 p-3 rounded-lg items-center gap-3 mb-4"
+    ) as banner:
+        state.error_banner = banner
+        ui.label("⚠️").classes("text-red-500")
+        state.error_msg_label = ui.label("").classes(
+            "text-red-800 text-[13px] font-medium"
+        )
+
+    state.error_banner.set_visibility(False)
+
+    with ui.row().classes("w-full items-center justify-between py-4"):
+        ui.button(
+            "← Back to Complaints", on_click=lambda: ui.navigate.to("/complaints-ctrl")
+        ).classes("text-gray-500 text-[13px] hover:text-gray-800").props("flat no-caps")
+
+        async def handle_complaint_submit():
+            if not state.error_banner or not state.error_msg_label:
+                return
+
+            # VALIDATION
+            valid, msg = state.is_valid()
+
+            if not valid:
+                state.error_msg_label.set_text(msg)
+                state.error_banner.set_visibility(True)
+                return
+
+            payload = build_complaint_payload(state)
+
+            try:
+                # CLEAR OLD ERRORS
+                state.error_banner.set_visibility(False)
+
+                # UPDATE
+                if state.edit_mode and state.complaint_id:
+                    await api_put(f"/complaints/{state.complaint_id}", payload)
+
+                    logger.info(
+                        "Complaint %s updated by %s",
+                        state.complaint_id,
+                        user.get("name"),
+                    )
+
+                    ui.notify(
+                        "Complaint updated successfully", type="positive", color="green"
+                    )
+
+                # CREATE
+                else:
+                    await api_post("/complaints/save-complaint", payload)
+                    logger.info("Complaint submitted by %s", user.get("name"))
+                    ui.notify(
+                        "Complaint submitted successfully",
+                        type="positive",
+                        color="green",
+                    )
+
+                # SUCCESS NAVIGATION
+                ui.navigate.to("/complaints-ctrl")
+
+            except UnauthorizedError:
+                await logout_user()
+                ui.notify("Session expired. Please login again.", type="warning")
+                ui.navigate.to("/login")
+
+            except ConnectionFailedError as e:
+                state.error_msg_label.set_text(str(e))
+                state.error_banner.set_visibility(True)
+
+            except APIError as e:
+                logger.error("COMPLAINT SUBMIT API ERROR: %s", e, exc_info=True)
+                state.error_msg_label.set_text(str(e))
+                state.error_banner.set_visibility(True)
+
+            except Exception as e:
+                logger.exception("COMPLAINT SUBMIT ERROR: %s", str(e))
+                state.error_msg_label.set_text(str(e))
+                state.error_banner.set_visibility(True)
+
+        submit_btn_txt = (
+            "Submit Complaint"
+            if state.form_mode == "complaint_create"
+            else "Update Complaint"
+        )
+        state.submit_btn = (
+            ui.button(submit_btn_txt, on_click=handle_complaint_submit)
+            .classes(
+                "bg-gradient-to-r from-[#E8402A] to-[#c73019] text-white px-8 py-2.5 rounded-lg font-bold shadow-lg shadow-red-500/20"
+            )
+            .props("no-caps elevated")
+        )
 
 
 async def load_complaint_reference_data(state: FormState):
@@ -10360,25 +10390,32 @@ async def complaint_form_page(
     title = "New Complaint"
     render_topbar(title)
 
-    logger.info(
-        "Accessing /complaint-form page "
-        "(transaction_id: %s, complaint_code: %s) "
-        "for user: %s",
-        transaction_id,
-        complaint_code,
-        app.storage.user.get("name"),
-    )
-
     state = FormState()
 
     state.comp_timeline_open = False
 
     state.form_mode = (
-        "complaint_edit" if transaction_id or complaint_code else "complaint_create"
+        "complaint_edit"
+        if transaction_id or complaint_code or complaint_id
+        else "complaint_create"
     )
 
     state.txn_id = transaction_id
-    state.edit_mode = bool(transaction_id or complaint_code)
+    state.complaint_id = complaint_id
+    state.edit_mode = bool(transaction_id or complaint_code or complaint_id)
+
+    logger.info(
+        "Accessing /complaint-form page "
+        "in %s and the edit-mode is %s"
+        "(transaction_id: %s, complaint_code: %s, complaint_id: %s) "
+        "for user: %s",
+        state.form_mode,
+        state.edit_mode,
+        transaction_id,
+        complaint_code,
+        complaint_id,
+        app.storage.user.get("name"),
+    )
 
     with ui.element("div").classes("w-[900px] max-w-[900px] mx-auto p-6"):
         if transaction_id:
@@ -10420,7 +10457,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY_FRONTEND,
-        reload=False,  # make false at the time of deployement
+        reload=True,  # make false at the time of deployement
         uvicorn_reload_excludes="logs/**",
         port=3000,
         reconnect_timeout=60,

@@ -10,7 +10,13 @@ from db.session import get_session
 from db.models import User, Complaint, Variant
 from services.complaints import query as complaint_service
 from services.auth.dependencies import get_current_user
-from schemas.complaints import UpdateStatusRequest, UpdateFlagRequest, RemarkPayload
+from rich import print
+from schemas.complaints import (
+    UpdateStatusRequest,
+    UpdateFlagRequest,
+    RemarkPayload,
+    ComplaintUpdatePayload,
+)
 
 router = APIRouter(prefix="/complaints", tags=["Complaints"])
 
@@ -109,6 +115,32 @@ def get_complaint(
     return complaint_service.get_complaint_reconstruction(session, complaint_id)
 
 
+@router.delete("/{complaint_id}")
+def delete_complaint(
+    complaint_id: int,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return complaint_service.delete_complaint(
+        session=session, complaint_id=complaint_id
+    )
+
+
+@router.put("/{complaint_id}")
+def update_complaint(
+    complaint_id: int,
+    payload: ComplaintUpdatePayload,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    return complaint_service.update_complaint(
+        session=session,
+        complaint_id=complaint_id,
+        payload=payload,
+        current_user=current_user,
+    )
+
+
 @router.get("/metrics/status")
 def get_complaints_per_status(
     session: Session = Depends(get_session),
@@ -178,8 +210,6 @@ def api_save_complaint(
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    from datetime import date
-    from rich import print
 
     # Safely extract nested dictionaries
     quotation_details = payload.get("quotation_details") or {}

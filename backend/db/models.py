@@ -593,9 +593,7 @@ class Complaint(SQLModel, table=True):
     employee_id: Optional[int] = Field(default=None, foreign_key="employee.id")
     customer_id: Optional[int] = Field(default=None, foreign_key="customer.id")
     transaction_id: Optional[int] = Field(default=None, foreign_key="transaction.id")
-    remark_id: Optional[int] = Field(
-        default=None, foreign_key="remark.id"
-    )  # Changed str -> int
+    remark_id: Optional[str] = Field(default=None, foreign_key="remark.id")
 
     # --- Vehicle Details ---
     variant_id: Optional[int] = Field(default=None, foreign_key="variant.id")
