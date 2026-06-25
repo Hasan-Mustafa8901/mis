@@ -98,7 +98,10 @@ def export_mis_excel_incremental(
         "Other Discount (Delivery)",
         "Other Discount (Booking)",
         "Payment Status",
-        "Accessories",
+        # "Accessories",
+        "Total Allowed Discount",
+        "Total Actual Discount",
+        "Total Excess Discount",
     ]
     # Add dynamic columns
     for comp in components:
@@ -231,7 +234,10 @@ def export_mis_excel_incremental(
                 txn.get("other_discount_delivery"),
                 txn.get("other_discount_booking"),
                 txn.get("payment_status") or "",
-                ", ".join(txn.get("accessories") or []),
+                # ", ".join(txn.get("accessories") or []),
+                txn.get("total_allowed_discount"),
+                txn.get("total_actual_discount"),
+                txn.get("total_excess_discount"),
             ]
 
             # Dynamic components values
