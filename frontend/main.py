@@ -9126,6 +9126,8 @@ def build_payload(state: FormState) -> dict:
         payload["total_excess_discount"] = lbl_val(state.lbl_excess_discount)
         payload["balance_by_user"] = intval(state.balance_by_user)
 
+    print(json.dumps(payload, indent=2))
+
     return payload
 
 
