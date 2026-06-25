@@ -367,6 +367,8 @@ class TransactionService:
         )  # Optional: track who made the update
         transaction.updated_at = get_ist_now()
 
+        transaction.other_discount_delivery = payload.get("other_discount_delivery", 0)
+
         session.add(transaction)
         session.commit()
         # Match this record with ebd
@@ -437,6 +439,7 @@ class TransactionService:
         transaction.ledger_adjustment_remarks = payload.get(
             "ledger_adjustment_remarks", ""
         )
+        transaction.other_discount_delivery = payload.get("other_discount_delivery", 0)
 
         session.add(transaction)
         session.commit()
