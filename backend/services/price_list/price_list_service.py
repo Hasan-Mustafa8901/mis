@@ -1,7 +1,8 @@
 from sqlmodel import Session, select, desc, col
 from datetime import date
 from typing import Dict, Optional
-from db.models import PriceList, PriceListItem, DiscountComponent
+from sqlalchemy.orm import selectinload
+from db.models import PriceList, PriceListItem, DiscountComponent, Transaction
 
 import logging
 
@@ -84,3 +85,86 @@ class PriceListService:
                 allowed_map[item.component_id] = item.allowed_amount
 
         return allowed_map
+
+    @staticmethod
+    def update_allowed_amounts(session: Session, price_list: PriceList) -> int:
+        """
+        Updates stored transaction item allowed amounts for transactions covered by
+        the given price list interval and model year.
+        """
+        if not price_list.id:
+            return 0
+
+        statement = (
+            select(Transaction)
+            .where(
+                Transaction.booking_date >= price_list.valid_from,
+                Transaction.model_year == price_list.model_year,
+            )
+            .options(selectinload(Transaction.items))  # type: ignore
+        )
+
+        if price_list.valid_to is not None:
+            statement = statement.where(Transaction.booking_date <= price_list.valid_to)
+
+        components = PriceListService.get_all_components(session)
+        discount_component_ids = {
+            component.id for component in components if component.type == "discount"
+        }
+        transactions = session.exec(statement).all()
+        updated_count = 0
+
+        for transaction in transactions:
+            allowed_map = PriceListService.get_allowed_amounts(
+                session,
+                price_list.id,
+                transaction.variant_id,
+                transaction.conditions or {},
+            )
+
+            transaction_updated = False
+            allowed_discount_total = sum(
+                allowed_map.get(component_id, 0.0)
+                for component_id in discount_component_ids
+            )
+
+            for item in transaction.items:
+                allowed_amount = float(allowed_map.get(item.component_id, 0.0))
+
+                if item.allowed_amount != allowed_amount:
+                    item.allowed_amount = allowed_amount
+                    transaction_updated = True
+
+                difference = allowed_amount - (item.actual_amount or 0.0)
+                if item.difference != difference:
+                    item.difference = difference
+                    transaction_updated = True
+
+            if transaction.stage == "delivery":
+                transaction.total_allowed_discount = allowed_discount_total
+                transaction.total_excess_discount = (
+                    transaction.total_actual_discount - allowed_discount_total
+                )
+                transaction.status = (
+                    "Excess Discount"
+                    if transaction.total_excess_discount > 0
+                    else "No Excess Discount"
+                )
+                transaction_updated = True
+            elif transaction.stage == "booking":
+                transaction.excess_booking = (
+                    transaction.total_discount_booking - allowed_discount_total
+                )
+                transaction.status = (
+                    "Excess Discount"
+                    if transaction.excess_booking > 0
+                    else "No Excess Discount"
+                )
+                transaction_updated = True
+
+            if transaction_updated:
+                session.add(transaction)
+                updated_count += 1
+
+        session.flush()
+        return updated_count

@@ -12,6 +12,7 @@ from db.models import (
     DiscountComponent,
     FuelType,
 )
+from services.price_list.price_list_service import PriceListService
 from rich import print
 
 
@@ -85,7 +86,11 @@ class PriceListIngestionService:
             raise ValueError("valid_from is required")
 
         price_list = session.exec(
-            select(PriceList).where(PriceList.valid_from == valid_from)
+            select(PriceList).where(
+                PriceList.valid_from == valid_from,
+                PriceList.valid_to == valid_to,
+                PriceList.model_year == model_year,
+            )
         ).first()
 
         if not price_list:
@@ -161,6 +166,11 @@ class PriceListIngestionService:
                         session.add(item)
                         existing_items[key] = item
 
+        session.flush()
+        updated_transactions = PriceListService.update_allowed_amounts(
+            session, price_list
+        )
+
         # 7. Commit once
         session.commit()
 
@@ -168,4 +178,5 @@ class PriceListIngestionService:
             "status": "success",
             "columns_mapped": len(mapped_cols),
             "valid_from_used": str(valid_from),
+            "transactions_updated": updated_transactions,
         }
