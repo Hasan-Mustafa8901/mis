@@ -122,14 +122,26 @@ def serialize_complaint_rows(c: Complaint):
         "complainant_dealership": (
             c.complainant_dealership.name if c.complainant_dealership else None
         ),
+        "complainant_dealership_id": (
+            c.complainant_dealership.id if c.complainant_dealership else None
+        ),
         "complainant_outlet": (
             c.complainant_outlet.name if c.complainant_outlet else None
+        ),
+        "complainant_outlet_id": (
+            c.complainant_outlet.id if c.complainant_outlet else None
         ),
         "complainee_dealership": (
             c.complainee_dealership.name if c.complainee_dealership else None
         ),
+        "complainee_dealership_id": (
+            c.complainee_dealership.id if c.complainee_dealership else None
+        ),
         "complainee_outlet": (
             c.complainee_outlet.name if c.complainee_outlet else None
+        ),
+        "complainee_outlet_id": (
+            c.complainee_outlet.id if c.complainee_outlet else None
         ),
         "raised_by": c.raised_by_user.name if c.raised_by else None,
         "raised_at": (c.raised_at.isoformat() if c.raised_at else None),
