@@ -10614,7 +10614,7 @@ async def complaints_dashboard_page():
         return grid
 
     with ui.row().classes("w-full no-wrap items-stretch min-h-[calc(100vh-52px)]"):
-        # ── SIDEBAR ─────────────────────────────────────────
+        # Sidebar
         with ui.column().classes(
             "w-[220px] shrink-0 bg-white border-r border-gray-200 py-4 pb-10 sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto"
         ):
@@ -10639,9 +10639,8 @@ async def complaints_dashboard_page():
             ui.link("📑 Complaints Control Panel", "/complaints-ctrl").classes(
                 "flex px-4 py-2 text-[12.5px] font-medium text-gray-600 border-l-3 border-transparent hover:bg-gray-50 no-underline"
             )
-            sidebar()
 
-        # ── MAIN CONTENT ─────────────────────────────────────
+        # Main Content
         with ui.column().classes("flex-1 min-w-0 p-6 px-7 pb-16 overflow-x-hidden"):
             # Page header
             with ui.row().classes("w-full items-center justify-between mb-5"):
@@ -10663,7 +10662,7 @@ async def complaints_dashboard_page():
                     ui.icon("add").classes("text-white text-lg text-weight-bold")
                     ui.label("New Complaint").classes("text-weight-bold pl-2")
 
-            # ── HORIZONTAL LAYOUT: Tables Side by Side ──
+            # HORIZONTAL LAYOUT: Tables Side by Side
             with ui.row().classes("w-full gap-4 mb-6"):
                 # Left: Complaints Against You
                 with ui.column().classes("flex-1 min-w-0"):
@@ -10748,9 +10747,9 @@ async def complaints_dashboard_page():
                                         ).classes("text-xs text-gray-500")
 
                                     # Status badge
-                                    status = complaint.get("status", "OPEN")
+                                    status = complaint.get("status", "escalated")
                                     status_colors = {
-                                        "OPEN": "bg-blue-100 text-blue-800",
+                                        "escalated": "bg-blue-100 text-blue-800",
                                         "IN_PROGRESS": "bg-yellow-100 text-yellow-800",
                                         "RESOLVED": "bg-green-100 text-green-800",
                                         "CLOSED": "bg-gray-100 text-gray-800",
@@ -10890,8 +10889,8 @@ if __name__ in {"__main__", "__mp_main__"}:
         favicon="🚗",
         host="0.0.0.0",
         storage_secret=SECRET_KEY_FRONTEND,
-        reload=True,  # make false at the time of deployement
-        uvicorn_reload_excludes="logs/**",
+        reload=False,  # make false at the time of deployement
+        uvicorn_reload_excludes=["logs/**", "frontend/logs/**", "*.log"],
         port=3000,
         reconnect_timeout=60,
     )

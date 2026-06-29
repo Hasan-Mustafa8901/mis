@@ -8,15 +8,11 @@ from pathlib import Path
 
 load_dotenv()
 env = os.getenv("ENV", None)
-DEV_LOG_PATH = r"C:\Users\hasan\Asija\mis"
 
 
 def setup_logger():
     BASE_DIR = Path(__file__).resolve().parent.parent
-    if env == "dev":
-        BASE_DIR = Path(DEV_LOG_PATH)
     LOG_DIR = BASE_DIR / "logs"
-    print(LOG_DIR)
 
     LOG_DIR.mkdir(exist_ok=True)
 
