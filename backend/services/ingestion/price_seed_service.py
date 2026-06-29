@@ -43,6 +43,7 @@ class PriceListIngestionService:
         sheet_name: Union[str, int] = 0,
         valid_from: date | None = None,
         valid_to: date | None = None,
+        update_entries: bool = False,
     ):
 
         # 1. Read Excel (SINGLE HEADER ONLY)
@@ -167,9 +168,12 @@ class PriceListIngestionService:
                         existing_items[key] = item
 
         session.flush()
-        updated_transactions = PriceListService.update_allowed_amounts(
-            session, price_list
-        )
+        updated_transactions = None
+
+        if update_entries:
+            updated_transactions = PriceListService.update_allowed_amounts(
+                session, price_list
+            )
 
         # 7. Commit once
         session.commit()

@@ -3,6 +3,7 @@ from datetime import date
 from typing import Dict, Optional
 from sqlalchemy.orm import selectinload
 from db.models import PriceList, PriceListItem, DiscountComponent, Transaction
+from rich import print
 
 import logging
 
@@ -107,10 +108,6 @@ class PriceListService:
         if price_list.valid_to is not None:
             statement = statement.where(Transaction.booking_date <= price_list.valid_to)
 
-        components = PriceListService.get_all_components(session)
-        discount_component_ids = {
-            component.id for component in components if component.type == "discount"
-        }
         transactions = session.exec(statement).all()
         updated_count = 0
 
@@ -123,13 +120,21 @@ class PriceListService:
             )
 
             transaction_updated = False
-            allowed_discount_total = sum(
-                allowed_map.get(component_id, 0.0)
-                for component_id in discount_component_ids
-            )
+            allowed_discount_total = 0.0
 
             for item in transaction.items:
                 allowed_amount = float(allowed_map.get(item.component_id, 0.0))
+                is_applied = (
+                    item.component_id in allowed_map
+                    or (item.actual_amount or 0.0) != 0.0
+                    or (item.allowed_amount or 0.0) != 0.0
+                )
+
+                if not is_applied:
+                    continue
+
+                if item.component_type == "discount":
+                    allowed_discount_total += allowed_amount
 
                 if item.allowed_amount != allowed_amount:
                     item.allowed_amount = allowed_amount

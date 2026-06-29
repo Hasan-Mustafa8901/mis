@@ -267,6 +267,7 @@ async def upload_price_list(
             sheet_name=parsed_sheet,
             valid_from=valid_from,
             valid_to=valid_to,
+            update_entries=True,
         )
         return result
     except Exception as e:
@@ -660,4 +661,4 @@ def api_get_transaction(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

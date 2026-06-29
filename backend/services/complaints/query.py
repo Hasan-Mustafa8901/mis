@@ -93,7 +93,6 @@ def generate_complaint_code(session: Session, complaint: Complaint):
 def add_history_event(complaint: Complaint, actor: str, description: str) -> None:
 
     history = list(complaint.history or [])
-    print("HISTORY BEFORE APPEND:", len(complaint.history or []))
 
     history.append(
         {
@@ -104,7 +103,6 @@ def add_history_event(complaint: Complaint, actor: str, description: str) -> Non
     )
 
     complaint.history = history
-    print("HISTORY AFTER APPEND:", len(history))
 
 
 def serialize_complaint_rows(c: Complaint):
